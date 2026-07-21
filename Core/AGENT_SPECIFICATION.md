@@ -2,7 +2,7 @@
 
 > Every agent defined under `Agents/` or `Departments/*/Agents/` must be authored as an instance of this specification. This is the "job description template" every one of the eventual 100+ specialists inherits. An agent file that omits a required section is not spec-compliant and should not be trusted to run unsupervised.
 
-Governed by `AI_OS_CONSTITUTION.md`. Decision logic referenced here is defined once in `DECISION_FRAMEWORK.md`. Output shape referenced here is defined once in `OUTPUT_STANDARD.md`. Do not restate those rules inside an agent file — link to them.
+Governed by `AI_OS_CONSTITUTION.md`. Enterprise worker-class rules (taxonomy axes, capability accountability, collaboration patterns, spec lifecycle beyond Draft→Active→Deprecated, contracts, metrics families, failure modes) live in `SPECIALIST_ARCHITECTURE_STANDARD.md` — this file remains the instance template; that Standard is the job-family / ladder framework. Decision logic referenced here is defined once in `DECISION_FRAMEWORK.md`. Output shape referenced here is defined once in `OUTPUT_STANDARD.md`. Do not restate those rules inside an agent file — link to them.
 
 ## Why a Specification, Not a Prompt
 

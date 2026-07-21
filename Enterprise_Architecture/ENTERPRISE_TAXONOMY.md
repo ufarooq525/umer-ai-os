@@ -16,12 +16,19 @@ Without a shared, referenceable set of definitions, "initiative" in Business mea
 | **Domain** | A coherent area of organizational concern grouping related capabilities — e.g., "Commerce," "Platform," "Growth." Defined in full in `ENTERPRISE_DOMAIN_MAP.md`. | A Capability (domains group multiple capabilities) |
 | **Department** | An organizational unit (per `Governance/ORGANIZATIONAL_CHART.md`) staffed by Agents that delivers against one or more Capabilities. Departments are the least stable noun in this taxonomy — they reorganize far more often than Capabilities or Domains do. | A Capability (stable) vs. a Department (the current organizational home for delivering it) |
 | **Agent** | A single specialized role, per `Core/AGENT_SPECIFICATION.md`, belonging to exactly one Department. | A Department (a Department contains many Agents) |
+| **Specialist** | The enterprise refinement of **Agent** — the universal worker class governed by `Core/SPECIALIST_ARCHITECTURE_STANDARD.md`. Every Specialist is an Agent; there is no second worker type. "Specialist" names job-family / ladder concerns (class, authority, collaboration, lifecycle); "Agent" remains the canonical file form and taxonomy parent. | An Agent file that ignores the Specialist Architecture Standard (non-conformant worker); a Department; a Skill/Tool |
 | **Artifact** | Any typed, contract-bound deliverable moving through the system, per `Execution/ARTIFACT_CONTRACTS.md`'s registry. | A Document (an artifact is a specific registered type; not every document in the repository is an artifact in this technical sense) |
 | **Workflow** | A named, defined sequence of stages Departments execute against, per `Core/WORKFLOW_STANDARD.md` and its runtime instance in `Execution/WORKFLOW_ENGINE.md`. | A Value Stream (a Workflow is the mechanical pipeline; a Value Stream, per `ENTERPRISE_VALUE_STREAMS.md`, is the end-to-end flow of value a Workflow is one segment of) |
 | **Initiative** | A funded, business-cased body of work pursuing a Strategic Theme, per `Business/Contexts/Strategy.md` and `Business/Contexts/Business_Case_Management.md` — larger than a single task, smaller than a permanent Capability. | A Project (see below) — an Initiative is the Business-layer funding unit; a Project is the Execution-layer tracking unit it becomes once approved |
 | **Objective** | A specific, time-bound target in service of a Goal — the CEO's brief states an Objective, per `Executive/CEO/CEO_AGENT.md`. | A Goal (broader, more durable) |
 | **Goal** | A durable, longer-horizon aim, typically expressed as a Strategic Theme's Business Objective (`Business/Contexts/Strategy.md`). | An Objective (a Goal is realized through one or more Objectives over time) |
 | **Project** | The `Projects/<name>/` tracked unit of work once an Initiative is approved and enters `Execution/REQUEST_LIFECYCLE.md` — the container for its Epics, Sprints, decisions, risks, and retrospective. | An Initiative (the Business-layer funding/rationale unit that a Project operationalizes) |
+| **Milestone** | A named checkpoint toward an Objective within a Project — planning acceptance check, not a task container. Specialized under `Execution/WORK_MANAGEMENT_FRAMEWORK.md`. | An Epic (Epics hold scope and Tasks; Milestones only check progress) |
+| **Epic** | A milestone-sized scope container inside a Project, decomposed into Tasks and scheduled across Sprints. Shape SoR: `Executive/Project_Manager/Templates/Epic.md`. Work rules: `Execution/WORK_MANAGEMENT_FRAMEWORK.md`. | A Project (container of Epics); a Sprint (time-box, orthogonal) |
+| **Sprint** | A time-boxed commitment of Tasks drawn from one or more Epics — capacity and reporting unit. Shape SoR: `Executive/Project_Manager/Templates/Sprint.md`. | An Epic (scope); an EXEC instance (pipeline position) |
+| **Task** | The smallest **schedulable** unit of work; belongs to one Epic; carries acceptance criteria before Ready. Shape SoR: `Executive/Project_Manager/Templates/Task.md`. Classes (Spike, Research, DefectFix, etc.) are dimensions on Task, not separate hierarchy levels. | A Work Package (dispatch envelope); a Subtask (forbidden as a first-class object) |
+| **Work Package** | The **dispatch unit** binding Task(s) + EXEC stage + Specialist Spec version + context/envelope for Runtime invocation. Keystone of `Execution/WORK_MANAGEMENT_FRAMEWORK.md`. Runtime executes Work Packages, never bare Tasks. | A Task (scheduling record); an Agent run (one attempt inside a Package) |
+| **Request** | Intake object that becomes scoped work via `Execution/REQUEST_LIFECYCLE.md` before a Project/EXEC exists. | A Task (only exists after routing/planning) |
 | **Product** | A durable, customer-facing offering composed of one or more Capabilities, owned by Product Management (`Business/Contexts/Product_Management.md`). | A Service (see below) — a Product is customer-facing and commercially packaged; a Service may be internal-only |
 | **Service** | A discrete unit of functionality, internal or external, that implements part of a Capability — may or may not be customer-facing or separately commercialized. | A Capability (a Service is one implementation of a Capability; a Capability may be realized by multiple Services over time as implementation evolves) |
 | **Platform** | The shared, cross-cutting technical and organizational infrastructure multiple Products/Services build on (e.g., the future `Platform/` layer referenced in the repository growth plan). | A Product (a Platform is not sold directly to end customers; it enables what is) |
@@ -35,11 +42,19 @@ flowchart TD
     Service -->|composed into| Product
     Domain -.mapped to.-> Department
     Department -->|staffed by| Agent
+    Agent -.->|refined as| Specialist
     Goal --> Objective
     Objective -->|pursued via| Initiative
     Initiative -->|approved, becomes| Project
+    Project -->|contains| Epic
+    Epic -->|decomposes into| Task
+    Project -->|schedules via| Sprint
+    Sprint -->|commits| Task
     Project -->|executes via| Workflow
-    Workflow -->|produces| Artifact
+    Workflow -->|dispatches| WorkPackage[Work Package]
+    WorkPackage -->|binds| Task
+    WorkPackage -->|invokes| Specialist
+    Specialist -->|seals| Artifact
 ```
 
 ## Usage Rule

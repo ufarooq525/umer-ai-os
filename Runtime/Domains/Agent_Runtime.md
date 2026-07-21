@@ -12,7 +12,7 @@ Agent run sandboxes; mandate binding checks (spec hash/version); tool/skill invo
 Agent specification content (`Core/`); Department structure; Business/Executive judgment; prompt packs as architecture; multi-agent “society” policy beyond Orchestration graphs.
 
 ## Inputs
-Dispatch from Orchestration; Agent spec version; Context handle; Trust principal; Resource envelope; allowed tool set.
+Dispatch from Orchestration as a **Work Package** (`Execution/WORK_MANAGEMENT_FRAMEWORK.md`) — never a bare Task; Agent spec version; Context handle; Trust principal; Resource envelope; allowed tool set.
 
 ## Outputs
 Agent run results; artifact productions; violation events; completion/failure to Orchestration.

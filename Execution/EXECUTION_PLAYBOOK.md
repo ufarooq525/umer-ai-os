@@ -1,8 +1,8 @@
 # Execution Playbook
 
-> The narrative reference for how every project — from a one-line bug fix to a full SaaS build — actually flows through the Execution engine end to end. The other ten `Execution/` documents each define one mechanism (intake, the state machine, gates, handoffs, parallelism, priority, context, artifacts, failure recovery, feedback); this document shows them operating together, with five worked examples spanning the range of request types this OS handles.
+> The narrative reference for how every project — from a one-line bug fix to a full SaaS build — actually flows through the Execution engine end to end. The `Execution/` mechanism docs (intake, state machine, gates, handoffs, parallelism, priority, context, artifacts, failure recovery, feedback) plus `Execution/WORK_MANAGEMENT_FRAMEWORK.md` (work hierarchy: Initiative → Project → Epic → Task → Work Package) define the parts; this document shows them operating together, with five worked examples spanning the range of request types this OS handles.
 
-Governed by `Core/AI_OS_CONSTITUTION.md`. Read after the other ten `Execution/` documents.
+Governed by `Core/AI_OS_CONSTITUTION.md`. Read after the other Execution documents, especially `WORK_MANAGEMENT_FRAMEWORK.md`.
 
 ## The Full Engine, One Diagram
 
@@ -14,9 +14,11 @@ flowchart TD
     C -- yes --> E[Scoping → Routing]
     E --> F["Execution/WORKFLOW_ENGINE.md instance created\n(EXEC-###)"]
     F --> G["Execution/CONTEXT_MANAGEMENT.md package initialized\n(incl. Intelligence/ retrieval)"]
-    G --> H[Pipeline runs: Research → Architecture → Design → Development → QA → SEO → Marketing → Deployment]
-    H --> I["Execution/APPROVAL_GATES.md at every transition"]
-    H --> J["Execution/DEPARTMENT_HANDOFFS.md + Execution/ARTIFACT_CONTRACTS.md at every handoff"]
+    G --> G2["Planning: Epics/Tasks/Sprints\n(Execution/WORK_MANAGEMENT_FRAMEWORK.md)"]
+    G2 --> H[Pipeline runs: Research → Architecture → Design → Development → QA → SEO → Marketing → Deployment]
+    H --> H2["Work Packages dispatched to Specialists\n(WORK_MANAGEMENT_FRAMEWORK keystone)"]
+    H2 --> I["Execution/APPROVAL_GATES.md at every transition"]
+    H2 --> J["Execution/DEPARTMENT_HANDOFFS.md + Execution/ARTIFACT_CONTRACTS.md at every handoff"]
     H --> K["Execution/PARALLEL_EXECUTION.md where tracks run concurrently"]
     H -.failure.-> L["Execution/FAILURE_RECOVERY.md"]
     L --> H
