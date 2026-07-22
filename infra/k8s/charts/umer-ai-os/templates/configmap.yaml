@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "umer.fullname" . }}-env
+  labels:
+    {{- include "umer.labels" . | nindent 4 }}
+data:
+{{- range $k, $v := .Values.global.env }}
+  {{ $k }}: {{ $v | quote }}
+{{- end }}
+  CONTROL_API_PORT: {{ .Values.apps.controlApi.port | quote }}
+  GATEWAY_PORT: {{ .Values.apps.gateway.port | quote }}
+  WEB_PORT: {{ .Values.apps.web.port | quote }}
+  NEXT_PUBLIC_CONTROL_API_URL: {{ printf "http://%s-control-api:%v" (include "umer.fullname" .) .Values.apps.controlApi.port | quote }}

@@ -1,0 +1,70 @@
+{{- range $key, $app := dict "orchestration" .Values.apps.orchestration "agent" .Values.apps.agent "extension" .Values.apps.extension "audit" .Values.apps.audit }}
+{{- if $app.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "umer.fullname" $ }}-{{ $key }}
+  labels:
+    {{- include "umer.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $key }}
+spec:
+  replicas: {{ $app.replicas }}
+  selector:
+    matchLabels:
+      {{- include "umer.selectorLabels" (dict "component" $key "Release" $.Release) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "umer.selectorLabels" (dict "component" $key "Release" $.Release) | nindent 8 }}
+    spec:
+      {{- if eq $key "agent" }}
+      serviceAccountName: {{ include "umer.fullname" $ }}-agent
+      {{- end }}
+      containers:
+        - name: {{ $key }}
+          image: {{ include "umer.image" (dict "root" $ "image" $app.image) }}
+          imagePullPolicy: {{ $.Values.imagePullPolicy }}
+          ports:
+            - containerPort: {{ $app.healthPort }}
+              name: health
+          envFrom:
+            - configMapRef:
+                name: {{ include "umer.fullname" $ }}-env
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 20
+{{- if and $app.hpa $app.hpa.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "umer.fullname" $ }}-{{ $key }}
+  labels:
+    {{- include "umer.labels" $ | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "umer.fullname" $ }}-{{ $key }}
+  minReplicas: {{ $app.hpa.minReplicas }}
+  maxReplicas: {{ $app.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $app.hpa.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}
+{{- end }}

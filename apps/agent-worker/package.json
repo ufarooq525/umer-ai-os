@@ -1,0 +1,28 @@
+{
+  "name": "@umer/app-agent-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run --passWithNoTests",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@umer/agent-runtime": "workspace:*",
+    "@umer/artifacts": "workspace:*",
+    "@umer/config": "workspace:*",
+    "@umer/observability": "workspace:*",
+    "@umer/kernel": "workspace:*",
+    "@umer/message-fabric": "workspace:*",
+    "@umer/specialist-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2"
+  }
+}

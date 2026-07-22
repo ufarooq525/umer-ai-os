@@ -1,0 +1,33 @@
+{
+  "name": "@umer/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "migrate": "tsx src/cli-migrate.ts",
+    "seed": "tsx src/cli-seed.ts"
+  },
+  "dependencies": {
+    "@umer/config": "workspace:*",
+    "postgres": "^3.4.5",
+    "ioredis": "^5.4.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

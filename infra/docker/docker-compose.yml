@@ -1,0 +1,230 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: umer
+      POSTGRES_PASSWORD: umer
+      POSTGRES_DB: umer_ai_os
+    ports:
+      - '5432:5432'
+    volumes:
+      - umer_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U umer -d umer_ai_os']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nats:
+    image: nats:2.10-alpine
+    command: ['-js', '-m', '8222']
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8222/healthz']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - umer_minio:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.0
+    command: ['--config=/etc/otel-collector-config.yaml']
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+
+  control-api:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+      args:
+        APP_NAME: control-api
+    image: umer-control-api:local
+    environment: &app-env
+      NODE_ENV: production
+      LOG_LEVEL: info
+      DATABASE_URL: postgres://umer:umer@postgres:5432/umer_ai_os
+      REDIS_URL: redis://redis:6379
+      NATS_URL: nats://nats:4222
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_ARTIFACTS: umer-artifacts
+      S3_FORCE_PATH_STYLE: 'true'
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      CONTROL_API_PORT: '4000'
+      HEALTH_PORT: '8080'
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api-gateway:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+      args:
+        APP_NAME: api-gateway
+    image: umer-gateway:local
+    environment:
+      <<: *app-env
+      GATEWAY_PORT: '4080'
+      OTEL_SERVICE_NAME: api-gateway
+    ports:
+      - '4080:4080'
+    depends_on:
+      control-api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_CONTROL_API_URL: http://localhost:4000
+    image: umer-web:local
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      NEXT_PUBLIC_CONTROL_API_URL: http://localhost:4000
+    ports:
+      - '3000:3000'
+    depends_on:
+      control-api:
+        condition: service_healthy
+
+  orchestration-worker:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+      args:
+        APP_NAME: orchestration-worker
+    image: umer-orchestration:local
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: orchestration-worker
+      HEALTH_PORT: '8080'
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  agent-worker:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+      args:
+        APP_NAME: agent-worker
+    image: umer-agent:local
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: agent-worker
+      HEALTH_PORT: '8080'
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  extension-worker:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+      args:
+        APP_NAME: extension-worker
+    image: umer-extension:local
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: extension-worker
+      HEALTH_PORT: '8080'
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  audit-sink:
+    profiles: ['apps']
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+      args:
+        APP_NAME: audit-sink
+    image: umer-audit:local
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: audit-sink
+      HEALTH_PORT: '8080'
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  umer_pg:
+  umer_minio:

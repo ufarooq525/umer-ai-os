@@ -1,0 +1,6 @@
+apiVersion: v2
+name: umer-ai-os
+description: Umer AI OS production chart (Architecture V1)
+type: application
+version: 0.1.0
+appVersion: '1.0.0'

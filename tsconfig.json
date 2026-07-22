@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "paths": {
+      "@umer/contracts": ["./packages/contracts/src/index.ts"],
+      "@umer/config": ["./packages/config/src/index.ts"],
+      "@umer/db": ["./packages/db/src/index.ts"],
+      "@umer/auth": ["./packages/auth/src/index.ts"],
+      "@umer/message-fabric": ["./packages/message-fabric/src/index.ts"],
+      "@umer/kernel": ["./packages/kernel/src/index.ts"],
+      "@umer/trust": ["./packages/trust/src/index.ts"],
+      "@umer/control-plane": ["./packages/control-plane/src/index.ts"],
+      "@umer/registry": ["./packages/registry/src/index.ts"],
+      "@umer/model-routing": ["./packages/model-routing/src/index.ts"],
+      "@umer/context": ["./packages/context/src/index.ts"],
+      "@umer/memory-access": ["./packages/memory-access/src/index.ts"],
+      "@umer/orchestration": ["./packages/orchestration/src/index.ts"],
+      "@umer/artifacts": ["./packages/artifacts/src/index.ts"],
+      "@umer/resilience": ["./packages/resilience/src/index.ts"],
+      "@umer/session": ["./packages/session/src/index.ts"],
+      "@umer/resource-economy": ["./packages/resource-economy/src/index.ts"],
+      "@umer/observability": ["./packages/observability/src/index.ts"],
+      "@umer/audit": ["./packages/audit/src/index.ts"],
+      "@umer/extension": ["./packages/extension/src/index.ts"],
+      "@umer/agent-runtime": ["./packages/agent-runtime/src/index.ts"],
+      "@umer/specialist-sdk": ["./packages/specialist-sdk/src/index.ts"],
+      "@umer/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"],
+      "@umer/ui": ["./packages/ui/src/index.ts"]
+    }
+  },
+  "files": [],
+  "references": []
+}
