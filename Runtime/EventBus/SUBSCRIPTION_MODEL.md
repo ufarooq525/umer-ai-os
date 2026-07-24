@@ -149,6 +149,6 @@ delivery is an HTTP call with signature; retries per policy; exhaustion → DLQ.
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 last_reviewed: 2026-07-25
 ```

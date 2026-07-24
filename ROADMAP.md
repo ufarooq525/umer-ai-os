@@ -26,4 +26,6 @@ Architecture V1 and the Implementation Blueprint are **frozen**. Progress is mea
 4. Merge  
 5. Start next milestone  
 
-New architectural ideas require an RFC only when implementation exposes a real limitation.
+New architectural ideas inside an **already-Accepted** milestone design require an RFC only when implementation exposes a real limitation.
+
+**Runtime exception (RFC-003):** new or materially extended Runtime subsystems must follow `Runtime/RUNTIME_SYSTEMS_ARCHITECT_DOCTRINE.md` — research, RFC, architecture approval — **before** implementation. See `RFC/Records/RFC-003-runtime-subsystem-architecture-gate.md`.

@@ -133,7 +133,7 @@ wire):
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 wire_sot: packages/contracts (to be extended per IMPLEMENTATION_PLAN.md)
 last_reviewed: 2026-07-25
 ```

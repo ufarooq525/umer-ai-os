@@ -5,7 +5,7 @@ mandate_domain: Operations Orchestration
 authority_class: Orchestrate
 interaction_mode: Orchestrator
 version: 1.0.0
-status: proposed
+status: active
 ---
 
 # Chief of Staff — Operations Specialist
@@ -302,7 +302,7 @@ All carry `correlationId` / instance lineage per envelope rules.
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 department: Executive
 authority_class: Orchestrate
 owner: human principal (accountability anchor), CEO (mandate ratification)

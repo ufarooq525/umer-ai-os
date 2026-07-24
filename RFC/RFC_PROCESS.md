@@ -44,6 +44,8 @@ flowchart TD
 
 See `RFC/Templates/RFC_TEMPLATE.md` for the authoring format. Numbered records live at `RFC/Records/RFC-###-<slug>.md`, sequential and never reused, mirroring `Governance/DECISION_LOG_STANDARD.md`'s numbering convention.
 
+**Runtime subsystems:** use `RFC/Templates/RUNTIME_SUBSYSTEM_RFC_TEMPLATE.md` and the gate in `Runtime/RUNTIME_SYSTEMS_ARCHITECT_DOCTRINE.md` (ratified by `RFC/Records/RFC-003-runtime-subsystem-architecture-gate.md`). Architecture Review for those RFCs includes the Doctrine §15 checklist.
+
 ## Architecture Review (Stage 1)
 
 The first gate — checked before any Executive/Governance time is spent:

@@ -403,7 +403,7 @@ memory).
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 last_reviewed: 2026-07-25
 owner: Runtime (architecture), Engineering (extractor quality), project departments (module maps)
 related:

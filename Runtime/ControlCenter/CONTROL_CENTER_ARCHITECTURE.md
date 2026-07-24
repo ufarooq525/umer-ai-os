@@ -369,7 +369,7 @@ B/C/E without new SoRs.
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 last_reviewed: 2026-07-25
 owner: Runtime (Control API + apps/web), CoS Operations (LiveOps feed), Departments (score evidence)
 related:

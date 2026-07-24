@@ -204,7 +204,7 @@ workflow topology.
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 supersedes: none (refines Runtime/Domains/Message_Fabric.md event plane)
 last_reviewed: 2026-07-25
 ```

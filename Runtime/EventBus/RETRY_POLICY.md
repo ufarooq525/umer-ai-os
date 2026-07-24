@@ -138,7 +138,7 @@ review. Poison entries are excluded from bulk replay selectors by default.
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 depends_on: packages/resilience (backoff/jitter/circuit primitives)
 last_reviewed: 2026-07-25
 ```

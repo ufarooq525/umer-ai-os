@@ -504,7 +504,7 @@ policy requires refresh — same honesty rule as Repo Intelligence.
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 last_reviewed: 2026-07-25
 owner: Runtime (scheduling/events), owning Departments (watchdog judgment), Chief of Staff (escalation/noise health)
 related:

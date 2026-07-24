@@ -128,6 +128,6 @@ of the two (decision recorded in `IMPLEMENTATION_PLAN.md` §Phase 1).
 
 ```yaml
 version: 1.0.0
-status: proposed
+status: active
 last_reviewed: 2026-07-25
 ```
