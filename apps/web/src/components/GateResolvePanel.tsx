@@ -10,6 +10,8 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
   const [rationale, setRationale] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applySummary, setApplySummary] = useState<string | null>(null);
+  const [applyFiles, setApplyFiles] = useState<string[]>([]);
 
   async function decide(decision: 'Pass' | 'Fail') {
     if (!rationale.trim()) {
@@ -18,12 +20,28 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
     }
     setBusy(true);
     setError(null);
+    setApplySummary(null);
+    setApplyFiles([]);
     try {
-      await resolveGate(gate.waitId, {
+      const result = await resolveGate(gate.waitId, {
         decision,
         approver: 'human.approver',
         rationale: rationale.trim(),
       });
+      if (result.applyResult?.summary) {
+        setApplySummary(result.applyResult.summary);
+        const fileLines = result.applyResult.files
+          .filter((f) => f.action === 'created' || f.action === 'updated')
+          .map((f) => `${f.action}: ${f.path}`);
+        const checkLines = (result.applyResult.checks ?? [])
+          .slice(0, 8)
+          .map((c) => `${c.status}: ${c.itemId}`);
+        const runLines = (result.applyResult.runs ?? []).map(
+          (r) =>
+            `${r.skipped ? 'skip' : r.exitCode === 0 ? 'pass' : 'fail'}: ${r.kind}`,
+        );
+        setApplyFiles([...fileLines, ...runLines, ...checkLines]);
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -42,6 +60,20 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
           Stage {gate.stageFrom} → {gate.stageTo} · Exec {gate.execId}
           {gate.artifactId ? ` · Artifact ${gate.artifactId}` : ''}
         </p>
+        {gate.gateId.startsWith('gate-seo-') ? (
+          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
+            Approve will apply an SEO package into the Laragon project (
+            <code>.umer/seo/</code>
+            ).
+          </p>
+        ) : null}
+        {gate.gateId.startsWith('gate-qa-') ? (
+          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
+            Approve will apply a QA evidence package into the Laragon project (
+            <code>.umer/qa/</code>
+            ) — scan, TEST_PLAN, and suite runs (PHPUnit / Playwright when available).
+          </p>
+        ) : null}
         <textarea
           value={rationale}
           onChange={(e) => setRationale(e.target.value)}
@@ -59,6 +91,20 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
           }}
         />
         {error ? <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p> : null}
+        {applySummary ? (
+          <div style={{ fontSize: 14 }}>
+            <p style={{ color: '#3ecf8e', margin: '0 0 8px' }}>{applySummary}</p>
+            {applyFiles.length > 0 ? (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {applyFiles.map((f) => (
+                  <li key={f}>
+                    <code>{f}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div style={{ display: 'flex', gap: 12 }}>
         <Button disabled={busy} onClick={() => void decide('Pass')}>

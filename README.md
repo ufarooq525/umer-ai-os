@@ -20,6 +20,16 @@ pnpm --filter @umer/app-control-api dev
 pnpm --filter @umer/app-web dev
 ```
 
+## Projects (Laragon)
+
+Eight apps are registered in `projects/catalog.json`. Open **Projects** in the UI to submit PM intake.
+
+For QA: choose a project (e.g. **school-app**), set type **`qa`**, submit — then approve the `gate-qa-*` gate to seal `.umer/qa/` evidence and **run** allowlisted suites (PHPUnit / Playwright).
+
+Skip suite execution with `UMER_QA_SKIP_RUN=1`. Skip only Playwright with `UMER_QA_SKIP_PLAYWRIGHT=1`.
+
+To add another app later, append an entry to the catalog — see `projects/README.md`.
+
 ## Production-like stack
 
 ```bash

@@ -1,6 +1,20 @@
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { AuditContract } from '@umer/contracts';
 import type { ControlPlaneService } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
+import {
+  applyQaToProject,
+  applySeoToProject,
+  createProjectRegistry,
+  planIntake,
+  type IntakeInstruction,
+  type IntakePlan,
+  type ProjectRegistry,
+  type QaApplyResult,
+  type ResolvedProject,
+  type SeoApplyResult,
+} from '@umer/registry';
 
 export type WorkPackageSummary = {
   workPackageId: string;
@@ -9,13 +23,35 @@ export type WorkPackageSummary = {
   specialistId: string;
   stage: string;
   artifactId?: string;
+  projectId?: string;
+};
+
+export type IntakeRecord = {
+  intakeId: string;
+  plan: IntakePlan;
+  createdAt: string;
+  status: 'planned' | 'approved' | 'rejected';
+  applyResult?: SeoApplyResult | QaApplyResult;
 };
 
 export type ControlApiState = {
   controlPlane: ControlPlaneService;
   auditService: AuditService;
   workPackages: WorkPackageSummary[];
+  projectRegistry: ProjectRegistry;
+  intakes: IntakeRecord[];
 };
+
+export function resolveCatalogPath(): string {
+  const fromEnv = process.env.UMER_PROJECTS_CATALOG;
+  if (fromEnv && fromEnv.length > 0) return fromEnv;
+  const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
+  return join(repoRoot, 'projects', 'catalog.json');
+}
+
+export async function loadProjectRegistry(): Promise<ProjectRegistry> {
+  return createProjectRegistry({ catalogPath: resolveCatalogPath() });
+}
 
 export async function seedDemoState(state: ControlApiState): Promise<void> {
   state.workPackages.length = 0;
@@ -26,6 +62,7 @@ export async function seedDemoState(state: ControlApiState): Promise<void> {
     specialistId: 'eng.app-delivery',
     stage: 'Development',
     artifactId: 'art-wp-e2e-1-1',
+    projectId: 'nitrotickets-new',
   });
 
   await state.controlPlane.requestGateReview(
@@ -64,6 +101,170 @@ export async function seedDemoState(state: ControlApiState): Promise<void> {
     },
     'corr-e2e-flow',
   );
+}
+
+export function listProjects(state: ControlApiState): ResolvedProject[] {
+  return state.projectRegistry.list();
+}
+
+export async function submitIntake(
+  state: ControlApiState,
+  instruction: IntakeInstruction,
+): Promise<IntakeRecord> {
+  const plan = planIntake(state.projectRegistry, instruction);
+  const intakeId = `intake-${Date.now()}`;
+  const record: IntakeRecord = {
+    intakeId,
+    plan,
+    createdAt: new Date().toISOString(),
+    status: 'planned',
+  };
+  state.intakes.unshift(record);
+
+  const isSeo = instruction.type === 'seo';
+  const isQa = instruction.type === 'qa';
+  const execId = isSeo ? 'EXEC-9100' : isQa ? 'EXEC-9200' : 'EXEC-9000';
+  const specialistId = isSeo ? 'seo.audit' : isQa ? 'qa.verify' : 'pm.intake';
+  const stage = isSeo ? 'SEO Audit' : isQa ? 'QA Verify' : 'Intake';
+  const gateId = isSeo
+    ? `gate-seo-${plan.projectId}`
+    : isQa
+      ? `gate-qa-${plan.projectId}`
+      : `gate-intake-${plan.projectId}`;
+
+  state.workPackages.unshift({
+    workPackageId: `wp-${intakeId}`,
+    execId,
+    status: 'AwaitingReview',
+    specialistId,
+    stage,
+    projectId: plan.projectId,
+  });
+
+  await state.controlPlane.requestGateReview(
+    {
+      gateId,
+      execId,
+      workPackageId: `wp-${intakeId}`,
+      stageFrom: stage,
+      stageTo: 'Dispatch',
+      requiredApprovers: ['human.approver'],
+      humanRequired: true,
+    },
+    `corr-${intakeId}`,
+  );
+
+  await state.auditService.append(
+    {
+      action: 'control.approval.requested',
+      actor: specialistId,
+      resourceType: 'project',
+      resourceId: plan.projectId,
+      outcome: 'success',
+      correlationId: `corr-${intakeId}`,
+      detail: {
+        intakeId,
+        type: plan.type,
+        goal: plan.goal,
+        seoItemCount: plan.seoAudit?.items.length ?? 0,
+        qaItemCount: plan.qaAudit?.items.length ?? 0,
+      },
+    },
+    `corr-${intakeId}`,
+  );
+
+  return record;
+}
+
+export async function applySeoOnGatePass(
+  state: ControlApiState,
+  input: {
+    workPackageId: string;
+    gateId: string;
+    rationale: string;
+  },
+): Promise<SeoApplyResult | undefined> {
+  if (!input.gateId.startsWith('gate-seo-')) {
+    return undefined;
+  }
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake?.plan.seoAudit) {
+    return undefined;
+  }
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const applyResult = await applySeoToProject({
+    project,
+    audit: intake.plan.seoAudit,
+    rationale: input.rationale,
+  });
+  intake.status = 'approved';
+  intake.applyResult = applyResult;
+
+  await state.auditService.append(
+    {
+      action: 'artifact.sealed',
+      actor: 'seo.audit',
+      resourceType: 'project',
+      resourceId: project.projectId,
+      outcome: 'success',
+      correlationId: `corr-apply-${intake.intakeId}`,
+      detail: {
+        intakeId: intake.intakeId,
+        summary: applyResult.summary,
+        files: applyResult.files.map((f) => f.path),
+        stillManual: applyResult.stillManual.length,
+      },
+    },
+    `corr-apply-${intake.intakeId}`,
+  );
+
+  return applyResult;
+}
+
+export async function applyQaOnGatePass(
+  state: ControlApiState,
+  input: {
+    workPackageId: string;
+    gateId: string;
+    rationale: string;
+  },
+): Promise<QaApplyResult | undefined> {
+  if (!input.gateId.startsWith('gate-qa-')) {
+    return undefined;
+  }
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake?.plan.qaAudit) {
+    return undefined;
+  }
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const applyResult = await applyQaToProject({
+    project,
+    audit: intake.plan.qaAudit,
+    rationale: input.rationale,
+  });
+  intake.status = 'approved';
+  intake.applyResult = applyResult;
+
+  await state.auditService.append(
+    {
+      action: 'artifact.sealed',
+      actor: 'qa.verify',
+      resourceType: 'project',
+      resourceId: project.projectId,
+      outcome: 'success',
+      correlationId: `corr-apply-${intake.intakeId}`,
+      detail: {
+        intakeId: intake.intakeId,
+        summary: applyResult.summary,
+        files: applyResult.files.map((f) => f.path),
+        stillManual: applyResult.stillManual.length,
+        recommendedCommand: applyResult.recommendedCommand,
+      },
+    },
+    `corr-apply-${intake.intakeId}`,
+  );
+
+  return applyResult;
 }
 
 export async function listRecentAudit(state: ControlApiState): Promise<AuditContract[]> {

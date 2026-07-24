@@ -1,0 +1,184 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useState, type CSSProperties, type FormEvent } from 'react';
+import { Badge, Button, Card } from '@umer/ui';
+import { submitIntake, type IntakeRecord, type ProjectRecord } from '@/lib/control-api';
+
+const TYPES = ['feature', 'bug', 'seo', 'security', 'ux', 'qa', 'perf', 'brainstorm'] as const;
+
+export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
+  const router = useRouter();
+  const school = projects.find((p) => p.projectId === 'school-app');
+  const seoProjects = projects.filter(
+    (p) => p.tags.includes('seo') || p.defaultSpecialists.includes('seo.audit'),
+  );
+  const defaultProject =
+    school?.projectId ??
+    seoProjects.find((p) => p.projectId === 'cursive-generator')?.projectId ??
+    projects[0]?.projectId ??
+    '';
+  const [projectId, setProjectId] = useState(defaultProject);
+  const [type, setType] = useState<(typeof TYPES)[number]>('qa');
+  const [goal, setGoal] = useState('');
+  const [doneWhen, setDoneWhen] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [last, setLast] = useState<IntakeRecord | null>(null);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!projectId || goal.trim().length < 8) {
+      setError('Pick a project and write a goal (at least 8 characters).');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const record = await submitIntake({
+        projectId,
+        type,
+        goal: goal.trim(),
+        doneWhen: doneWhen.trim() || undefined,
+      });
+      setLast(record);
+      setGoal('');
+      setDoneWhen('');
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const seo = last?.plan.seoAudit;
+  const qa = last?.plan.qaAudit;
+  const checklist = seo ?? qa;
+  const checklistTitle = seo
+    ? `seo.audit — ${seo.projectName}`
+    : qa
+      ? `qa.verify — ${qa.projectName}`
+      : '';
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <Card title="PM intake — give an instruction">
+        <form onSubmit={(e) => void onSubmit(e)} style={{ display: 'grid', gap: 12 }}>
+          <label style={{ display: 'grid', gap: 4, fontSize: 14 }}>
+            Project
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              style={fieldStyle}
+            >
+              {projects.map((p) => (
+                <option key={p.projectId} value={p.projectId}>
+                  {p.name} ({p.projectId})
+                  {p.tags.includes('seo') ? ' · SEO' : ''}
+                  {p.defaultSpecialists.includes('qa.verify') ? ' · QA' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 4, fontSize: 14 }}>
+            Type
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as (typeof TYPES)[number])}
+              style={fieldStyle}
+            >
+              {TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 4, fontSize: 14 }}>
+            Goal / instruction
+            <textarea
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              rows={3}
+              placeholder="e.g. Test school-app functional + non-functional UI journeys and seal evidence"
+              style={fieldStyle}
+            />
+          </label>
+          <label style={{ display: 'grid', gap: 4, fontSize: 14 }}>
+            Done when (optional)
+            <input
+              value={doneWhen}
+              onChange={(e) => setDoneWhen(e.target.value)}
+              placeholder="Acceptance criteria in one line"
+              style={fieldStyle}
+            />
+          </label>
+          {error ? <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p> : null}
+          {last && !checklist ? (
+            <p style={{ color: '#3ecf8e', margin: 0, fontSize: 14 }}>{last.plan.summary}</p>
+          ) : null}
+          <Button type="submit" disabled={busy}>
+            {busy ? 'Planning…' : 'Submit to PM intake'}
+          </Button>
+        </form>
+      </Card>
+
+      {checklist ? (
+        <Card title={checklistTitle}>
+          <p style={{ marginTop: 0, opacity: 0.85 }}>{checklist.summary}</p>
+          <p style={{ fontSize: 14, opacity: 0.8 }}>
+            Path: <code>{checklist.absolutePath}</code>
+          </p>
+          <h3 style={{ fontSize: 15, marginBottom: 8 }}>Quick wins</h3>
+          <ul style={{ marginTop: 0 }}>
+            {checklist.quickWins.map((w) => (
+              <li key={w} style={{ marginBottom: 4, fontSize: 14 }}>
+                {w}
+              </li>
+            ))}
+          </ul>
+          <h3 style={{ fontSize: 15, marginBottom: 8 }}>Checklist</h3>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
+            {checklist.items.map((item) => (
+              <li
+                key={item.id}
+                style={{
+                  borderBottom: '1px solid #2d3a4d',
+                  paddingBottom: 12,
+                  fontSize: 14,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Badge tone={item.priority === 'P0' ? 'danger' : item.priority === 'P1' ? 'warning' : 'default'}>
+                    {item.priority}
+                  </Badge>
+                  <Badge>{item.category}</Badge>
+                  <strong>{item.title}</strong>
+                </div>
+                <p style={{ margin: '6px 0 0', opacity: 0.85 }}>{item.check}</p>
+                <p style={{ margin: '4px 0 0', opacity: 0.65, fontSize: 13 }}>
+                  Verify: {item.howToVerify}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p style={{ marginTop: 16, fontSize: 14, opacity: 0.8 }}>
+            Approve on <a href="/gates">Gates</a> before applying{' '}
+            {qa ? 'the QA evidence package' : 'fixes'} in the repo.
+          </p>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
+const fieldStyle: CSSProperties = {
+  width: '100%',
+  padding: 10,
+  borderRadius: 6,
+  border: '1px solid #2d3a4d',
+  background: '#0f1419',
+  color: '#e8eef4',
+  fontFamily: 'inherit',
+};

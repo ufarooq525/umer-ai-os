@@ -12,13 +12,20 @@ const log = createLogger(serviceName);
 
 const runtime = await startRuntime({ serviceName });
 const env = loadEnv();
-const state = createControlApiState();
+const state = await createControlApiState();
 await bootstrapDemoState(state);
 
 const server = createControlApiServer(state);
 
 server.listen(env.CONTROL_API_PORT, () => {
-  log.info({ port: env.CONTROL_API_PORT }, 'control-api listening');
+  log.info(
+    {
+      port: env.CONTROL_API_PORT,
+      projects: state.projectRegistry.list().length,
+      projectsRoot: state.projectRegistry.getProjectsRoot(),
+    },
+    'control-api listening',
+  );
 });
 
 void runtime;

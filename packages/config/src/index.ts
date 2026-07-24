@@ -34,6 +34,10 @@ export const envSchema = z.object({
   /** HTTP probe port for workers (K8s/Docker healthchecks). */
   HEALTH_PORT: z.coerce.number().default(8080),
   NEXT_PUBLIC_CONTROL_API_URL: z.string().default('http://127.0.0.1:4000'),
+  /** Root folder that contains Laragon project directories. */
+  UMER_PROJECTS_ROOT: z.string().default('C:/laragon/www'),
+  /** Optional absolute path to projects/catalog.json */
+  UMER_PROJECTS_CATALOG: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

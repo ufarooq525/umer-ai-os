@@ -1,0 +1,106 @@
+{
+  "$schema": "./catalog.schema.json",
+  "version": "1.0.0",
+  "projectsRootEnv": "UMER_PROJECTS_ROOT",
+  "defaultProjectsRoot": "C:/laragon/www",
+  "projects": [
+    {
+      "projectId": "nitrotickets-new",
+      "name": "NitroTickets",
+      "slug": "nitrotickets-new",
+      "path": "nitrotickets-new",
+      "status": "active",
+      "stack": ["laravel", "php", "fullstack"],
+      "defaultSpecialists": ["pm.intake", "eng.app-delivery", "seo.audit", "perf.optimize", "qa.verify"],
+      "constraints": ["Do not change payment provider config without explicit approval"],
+      "tags": ["tickets", "events", "commerce"]
+    },
+    {
+      "projectId": "erpapi_v2",
+      "name": "ERP API v2",
+      "slug": "erpapi_v2",
+      "path": "ERPAPI_V2",
+      "status": "active",
+      "stack": ["laravel", "php", "api"],
+      "defaultSpecialists": ["pm.intake", "eng.app-delivery", "security.review", "perf.optimize", "qa.verify"],
+      "constraints": ["Preserve API versioning and auth contracts"],
+      "tags": ["erp", "api", "backend"]
+    },
+    {
+      "projectId": "erp_web_dashboard",
+      "name": "ERP Web Dashboard",
+      "slug": "erp_web_dashboard",
+      "path": "erp_web_dashboard",
+      "status": "active",
+      "stack": ["frontend", "dashboard"],
+      "defaultSpecialists": ["pm.intake", "ux.design", "eng.app-delivery", "perf.optimize", "qa.verify"],
+      "constraints": ["Match existing design system before inventing new patterns"],
+      "tags": ["erp", "ui", "dashboard"]
+    },
+    {
+      "projectId": "school-app",
+      "name": "School App",
+      "slug": "school-app",
+      "path": "school-app",
+      "status": "active",
+      "stack": ["fullstack", "laravel", "php"],
+      "defaultSpecialists": ["pm.intake", "ux.design", "eng.app-delivery", "security.review", "qa.verify"],
+      "constraints": [
+        "Owner digital product (future) — prioritize product vision and UX over short client hacks",
+        "Treat student/parent data as sensitive",
+        "Prefer durable architecture and clear roadmap slices over one-off features"
+      ],
+      "tags": ["education", "owner-product", "future", "digital-product"],
+      "qaLocalUrl": "http://school-app.test",
+      "qaTestCommand": "./vendor/bin/phpunit"
+    },
+    {
+      "projectId": "flow-tool-works",
+      "name": "Flow Tool Works",
+      "slug": "flow-tool-works",
+      "path": "flow-tool-works",
+      "status": "active",
+      "stack": ["fullstack", "tooling"],
+      "defaultSpecialists": ["pm.intake", "seo.audit", "eng.app-delivery", "ux.design", "perf.optimize", "qa.verify"],
+      "constraints": ["SEO is an active priority for discovery and landing pages"],
+      "tags": ["tools", "workflow", "seo"],
+      "seoBaseUrl": "https://toolworks.app",
+      "seoLocalUrl": "http://127.0.0.1:5173"
+    },
+    {
+      "projectId": "cursive-generator",
+      "name": "Cursive Generator",
+      "slug": "cursive-generator",
+      "path": "cursive-generator",
+      "status": "active",
+      "stack": ["frontend", "generative-ui"],
+      "defaultSpecialists": ["pm.intake", "seo.audit", "ux.design", "eng.app-delivery", "perf.optimize"],
+      "constraints": ["SEO is an active priority (pages, meta, shareability, CWV)"],
+      "tags": ["generator", "ui", "seo"],
+      "seoBaseUrl": "https://www.cursive-font-generator.com",
+      "seoLocalUrl": "http://127.0.0.1:3000"
+    },
+    {
+      "projectId": "umer-portfolio",
+      "name": "Umer Portfolio",
+      "slug": "umer-portfolio",
+      "path": "umer-portfolio",
+      "status": "active",
+      "stack": ["frontend", "marketing"],
+      "defaultSpecialists": ["pm.intake", "seo.audit", "ux.design", "perf.optimize"],
+      "constraints": [],
+      "tags": ["portfolio", "seo", "marketing"]
+    },
+    {
+      "projectId": "HR-farabi",
+      "name": "HR Farabi",
+      "slug": "HR-farabi",
+      "path": "HR-farabi",
+      "status": "active",
+      "stack": ["fullstack", "hr"],
+      "defaultSpecialists": ["pm.intake", "security.review", "eng.app-delivery", "qa.verify"],
+      "constraints": ["PII and HR records require security review before any public exposure"],
+      "tags": ["hr", "sensitive", "internal"]
+    }
+  ]
+}

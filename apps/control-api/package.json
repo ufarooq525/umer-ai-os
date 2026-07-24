@@ -17,7 +17,8 @@
     "@umer/config": "workspace:*",
     "@umer/control-plane": "workspace:*",
     "@umer/kernel": "workspace:*",
-    "@umer/observability": "workspace:*"
+    "@umer/observability": "workspace:*",
+    "@umer/registry": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

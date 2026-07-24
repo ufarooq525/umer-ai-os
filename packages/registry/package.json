@@ -1,6 +1,6 @@
 {
   "name": "@umer/registry",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -16,11 +16,14 @@
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
   },
-  "dependencies": {},
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
   "devDependencies": {
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }

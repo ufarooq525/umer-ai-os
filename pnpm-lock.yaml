@@ -161,6 +161,9 @@ importers:
       '@umer/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@umer/registry':
+        specifier: workspace:*
+        version: link:../../packages/registry
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -543,10 +546,17 @@ importers:
         version: 5.9.3
 
   packages/registry:
+    dependencies:
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/resilience:
     devDependencies:

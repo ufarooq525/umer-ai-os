@@ -2,10 +2,16 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { healthCheck } from '@umer/kernel';
 import { createControlPlaneService, type ControlPlaneService } from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
+import type { IntakeInstruction } from '@umer/registry';
 import {
   type ControlApiState,
+  applyQaOnGatePass,
+  applySeoOnGatePass,
+  listProjects,
   listRecentAudit,
+  loadProjectRegistry,
   seedDemoState,
+  submitIntake,
 } from './state.js';
 
 const SERVICE_NAME = 'control-api';
@@ -29,10 +35,12 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   return raw ? (JSON.parse(raw) as T) : ({} as T);
 }
 
-export function createControlApiState(): ControlApiState {
+export async function createControlApiState(): Promise<ControlApiState> {
   const state: ControlApiState = {
     workPackages: [],
+    intakes: [],
     auditService: createAuditService(),
+    projectRegistry: await loadProjectRegistry(),
     controlPlane: null as unknown as ControlPlaneService,
   };
   state.controlPlane = createControlPlaneService({
@@ -42,7 +50,7 @@ export function createControlApiState(): ControlApiState {
   return state;
 }
 
-export function createControlApiServer(state: ControlApiState = createControlApiState()) {
+export function createControlApiServer(state: ControlApiState) {
   return createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
       sendJson(res, 204, {});
@@ -60,6 +68,32 @@ export function createControlApiServer(state: ControlApiState = createControlApi
 
     if (path === '/v1/dashboard' && req.method === 'GET') {
       sendJson(res, 200, await state.controlPlane.dashboard());
+      return;
+    }
+
+    if (path === '/v1/projects' && req.method === 'GET') {
+      sendJson(res, 200, {
+        projectsRoot: state.projectRegistry.getProjectsRoot(),
+        projects: listProjects(state),
+      });
+      return;
+    }
+
+    if (path === '/v1/intake' && req.method === 'GET') {
+      sendJson(res, 200, { intakes: state.intakes });
+      return;
+    }
+
+    if (path === '/v1/intake' && req.method === 'POST') {
+      const body = await readJsonBody<Partial<IntakeInstruction>>(req);
+      try {
+        const record = await submitIntake(state, body as IntakeInstruction);
+        sendJson(res, 201, record);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return;
     }
 
@@ -118,7 +152,23 @@ export function createControlApiServer(state: ControlApiState = createControlApi
           },
           `corr-resolve-${waitId}`,
         );
-        sendJson(res, 200, result);
+
+        let applyResult: unknown;
+        if (body.decision === 'Pass') {
+          applyResult =
+            (await applySeoOnGatePass(state, {
+              workPackageId: result.record.workPackageId,
+              gateId: result.record.gateId,
+              rationale: body.rationale,
+            })) ??
+            (await applyQaOnGatePass(state, {
+              workPackageId: result.record.workPackageId,
+              gateId: result.record.gateId,
+              rationale: body.rationale,
+            }));
+        }
+
+        sendJson(res, 200, { ...result, applyResult: applyResult ?? null });
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
