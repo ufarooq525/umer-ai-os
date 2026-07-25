@@ -55,16 +55,20 @@ export type ProjectRecord = {
   path: string;
   absolutePath: string;
   status: string;
+  category: 'client-task' | 'digital-product' | 'seo-project';
   stack: string[];
   defaultSpecialists: string[];
   constraints: string[];
   tags: string[];
+  /** Opt-in digital-product eng auto-apply; always present after catalog parse (default false). */
+  autoApplyEng: boolean;
 };
 
 export type IntakePlan = {
   projectId: string;
   projectName: string;
   absolutePath: string;
+  category: 'client-task' | 'digital-product' | 'seo-project';
   type: string;
   goal: string;
   summary: string;
@@ -105,6 +109,24 @@ export type IntakePlan = {
       check: string;
       howToVerify: string;
     }>;
+    quickWins: string[];
+    nextActions: string[];
+  };
+  engDelivery?: {
+    specialistId: string;
+    runId: string;
+    projectId: string;
+    projectName: string;
+    absolutePath: string;
+    type: string;
+    goal: string;
+    summary: string;
+    status: string;
+    rationale: string;
+    proposedDiff: string;
+    testsRan: boolean;
+    testsPassed: boolean;
+    blockers: string[];
     quickWins: string[];
     nextActions: string[];
   };

@@ -145,6 +145,14 @@ export function evaluateSeoChecks(
             : 'fail',
           evidence: `finalUrl=${signals.finalUrl}`,
         };
+      case 'tech-canonical':
+        return {
+          itemId: item.id,
+          status: signals.canonical ? 'pass' : 'fail',
+          evidence: signals.canonical
+            ? `canonical=${signals.canonical}`
+            : 'No rel=canonical on probed page',
+        };
       case 'onpage-title':
         return {
           itemId: item.id,

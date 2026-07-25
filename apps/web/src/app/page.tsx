@@ -1,10 +1,15 @@
 import { Badge, Card } from '@umer/ui';
-import { getDashboard, getWorkPackages } from '@/lib/control-api';
+import { getDashboard, getProjects, getWorkPackages } from '@/lib/control-api';
+import { QuickTaskForm } from '@/components/QuickTaskForm';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const [summary, workPackages] = await Promise.all([getDashboard(), getWorkPackages()]);
+  const [summary, workPackages, { projects }] = await Promise.all([
+    getDashboard(),
+    getWorkPackages(),
+    getProjects(),
+  ]);
 
   return (
     <>
@@ -14,6 +19,10 @@ export default async function DashboardPage() {
         </p>
         <h1 style={{ fontSize: '2rem', fontWeight: 500, margin: '0.5rem 0 0' }}>Dashboard</h1>
       </header>
+
+      <section style={{ marginBottom: 32 }}>
+        <QuickTaskForm projects={projects} />
+      </section>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
         <Card title="Pending gates">

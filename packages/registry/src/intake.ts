@@ -1,7 +1,8 @@
 import { IntakeInstructionSchema } from './schema.js';
 import { ProjectRegistryError } from './errors.js';
-import { runSeoAudit } from './seo-audit.js';
+import { buildSeoAuditReport } from './seo-audit.js';
 import { runQaAudit } from './qa-audit.js';
+import { runEngDelivery } from './eng-delivery.js';
 import type { IntakeInstruction, IntakePlan, ResolvedProject } from './types.js';
 import type { ProjectRegistry } from './registry.js';
 
@@ -20,6 +21,10 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+/**
+ * Synchronous intake planning (SEO/QA/PM). Does not run eng delivery (async staging).
+ * Prefer {@link planIntakeWithEng} from control-api / feature|bug callers.
+ */
 export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): IntakePlan {
   const parsed = IntakeInstructionSchema.safeParse(raw);
   if (!parsed.success) {
@@ -38,6 +43,7 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
   const acceptanceCriteria = [
     instruction.doneWhen?.trim() || `Goal achieved for ${project.name}: ${instruction.goal}`,
     'Changes reviewed against project constraints',
+    // Generic PM/SEO/QA path — eng feature|bug rewrites this in planIntakeWithEng.
     'Human gate Pass before applying to the Laragon repo',
   ];
 
@@ -46,9 +52,10 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     ...(instruction.constraints ?? []).map((c) => `Extra constraint: ${c}`),
   ];
 
+  // SEO-type intake must never construct eng delivery.
   const seoAudit =
     instruction.type === 'seo'
-      ? runSeoAudit({
+      ? buildSeoAuditReport({
           project,
           goal: instruction.goal,
           doneWhen: instruction.doneWhen,
@@ -98,6 +105,7 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     projectId: project.projectId,
     projectName: project.name,
     absolutePath: project.absolutePath,
+    category: project.category,
     type: instruction.type,
     goal: instruction.goal,
     summary,
@@ -107,5 +115,61 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     nextActions,
     seoAudit,
     qaAudit,
+  };
+}
+
+/**
+ * Attach eng.app-delivery for feature|bug only. Keeps {@link planIntake} sync for SEO/QA.
+ * SEO-type intake never constructs or runs eng delivery / eng gates.
+ */
+export async function planIntakeWithEng(
+  registry: ProjectRegistry,
+  raw: IntakeInstruction,
+): Promise<IntakePlan> {
+  const plan = planIntake(registry, raw);
+  if (plan.type !== 'feature' && plan.type !== 'bug') {
+    return plan;
+  }
+
+  const project = registry.requireActive(plan.projectId);
+  const parsed = IntakeInstructionSchema.parse(raw);
+
+  const engDelivery = await runEngDelivery({
+    project,
+    type: plan.type,
+    goal: plan.goal,
+    doneWhen: parsed.doneWhen,
+    targetFiles: parsed.targetFiles,
+    targetModule: parsed.targetModule,
+    proposedChanges: parsed.proposedChanges,
+  });
+
+  const withoutGenericGate = plan.acceptanceCriteria.filter(
+    (c) => c !== 'Human gate Pass before applying to the Laragon repo',
+  );
+
+  // client-task always needs an explicit human gate; digital-product may auto when eligible.
+  const applyGateWording =
+    project.category === 'client-task'
+      ? 'Explicit human gate Pass required before applying to the Laragon repo (client-task never auto-applies)'
+      : project.category === 'digital-product' && project.autoApplyEng
+        ? 'Apply after human Pass, or via eligible digital-product auto-apply when staged suites are all green'
+        : 'Human gate Pass before applying to the Laragon repo (auto-apply off or ineligible)';
+
+  const acceptanceCriteria = [
+    ...withoutGenericGate,
+    engDelivery.status === 'ready'
+      ? `Review eng work package ${engDelivery.runId} (${engDelivery.editStats.filesChanged} file(s))`
+      : 'Resolve eng manual-scoping blockers before apply',
+    applyGateWording,
+    'Seal eng evidence under .umer/eng/<runId>/ after Pass or eligible auto-apply',
+  ];
+
+  return {
+    ...plan,
+    summary: engDelivery.summary,
+    nextActions: engDelivery.nextActions,
+    acceptanceCriteria,
+    engDelivery,
   };
 }

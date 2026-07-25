@@ -4,10 +4,13 @@ import type { AuditContract } from '@umer/contracts';
 import type { ControlPlaneService } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
 import {
+  applyEngToProject,
   applyQaToProject,
   applySeoToProject,
   createProjectRegistry,
-  planIntake,
+  decideEngGate,
+  planIntakeWithEng,
+  type EngApplyResult,
   type IntakeInstruction,
   type IntakePlan,
   type ProjectRegistry,
@@ -31,7 +34,7 @@ export type IntakeRecord = {
   plan: IntakePlan;
   createdAt: string;
   status: 'planned' | 'approved' | 'rejected';
-  applyResult?: SeoApplyResult | QaApplyResult;
+  applyResult?: SeoApplyResult | QaApplyResult | EngApplyResult;
 };
 
 export type ControlApiState = {
@@ -111,7 +114,8 @@ export async function submitIntake(
   state: ControlApiState,
   instruction: IntakeInstruction,
 ): Promise<IntakeRecord> {
-  const plan = planIntake(state.projectRegistry, instruction);
+  // planIntakeWithEng keeps SEO/QA sync planning and only awaits eng for feature|bug.
+  const plan = await planIntakeWithEng(state.projectRegistry, instruction);
   const intakeId = `intake-${Date.now()}`;
   const record: IntakeRecord = {
     intakeId,
@@ -123,6 +127,118 @@ export async function submitIntake(
 
   const isSeo = instruction.type === 'seo';
   const isQa = instruction.type === 'qa';
+  const isEng =
+    (instruction.type === 'feature' || instruction.type === 'bug') && Boolean(plan.engDelivery);
+
+  if (isEng && plan.engDelivery) {
+    const project = state.projectRegistry.requireActive(plan.projectId);
+    const gateDecision = decideEngGate({
+      category: project.category,
+      autoApplyEng: project.autoApplyEng === true,
+      package: plan.engDelivery,
+    });
+
+    const execId = 'EXEC-9300';
+    const specialistId = 'eng.app-delivery';
+    const stage = 'Eng Delivery';
+    const workPackageId = `wp-${intakeId}`;
+
+    if (gateDecision.autoApply) {
+      // Apply first — only then mark Accepted / approved (do not pre-claim success).
+      const applyResult = await applyEngToProject({
+        project,
+        report: plan.engDelivery,
+        approval: {
+          kind: 'auto',
+          reason: gateDecision.reason,
+        },
+      });
+
+      state.workPackages.unshift({
+        workPackageId,
+        execId,
+        status: 'Accepted',
+        specialistId,
+        stage,
+        projectId: plan.projectId,
+      });
+      record.status = 'approved';
+      record.applyResult = applyResult;
+
+      await state.auditService.append(
+        {
+          action: 'artifact.sealed',
+          actor: specialistId,
+          resourceType: 'project',
+          resourceId: plan.projectId,
+          outcome: 'success',
+          correlationId: `corr-${intakeId}`,
+          detail: {
+            intakeId,
+            type: plan.type,
+            goal: plan.goal,
+            autoApply: true,
+            approval: { kind: 'auto', reason: gateDecision.reason },
+            gateDecision: gateDecision.reason,
+            summary: applyResult.summary,
+            evidenceDir: applyResult.evidenceDir,
+            files: applyResult.files.map((f) => f.path),
+          },
+        },
+        `corr-${intakeId}`,
+      );
+
+      return record;
+    }
+
+    const gateId = `gate-eng-${plan.projectId}`;
+    state.workPackages.unshift({
+      workPackageId,
+      execId,
+      status: 'AwaitingReview',
+      specialistId,
+      stage,
+      projectId: plan.projectId,
+    });
+
+    await state.controlPlane.requestGateReview(
+      {
+        gateId,
+        execId,
+        workPackageId,
+        stageFrom: stage,
+        stageTo: 'Dispatch',
+        requiredApprovers: ['human.approver'],
+        // client-task / ineligible digital-product / seo-project: always human.
+        humanRequired: true,
+      },
+      `corr-${intakeId}`,
+    );
+
+    await state.auditService.append(
+      {
+        action: 'control.approval.requested',
+        actor: specialistId,
+        resourceType: 'project',
+        resourceId: plan.projectId,
+        outcome: 'success',
+        correlationId: `corr-${intakeId}`,
+        detail: {
+          intakeId,
+          type: plan.type,
+          goal: plan.goal,
+          engRunId: plan.engDelivery.runId,
+          engStatus: plan.engDelivery.status,
+          humanRequired: true,
+          gateDecision: gateDecision.reason,
+        },
+      },
+      `corr-${intakeId}`,
+    );
+
+    return record;
+  }
+
   const execId = isSeo ? 'EXEC-9100' : isQa ? 'EXEC-9200' : 'EXEC-9000';
   const specialistId = isSeo ? 'seo.audit' : isQa ? 'qa.verify' : 'pm.intake';
   const stage = isSeo ? 'SEO Audit' : isQa ? 'QA Verify' : 'Intake';
@@ -259,6 +375,63 @@ export async function applyQaOnGatePass(
         files: applyResult.files.map((f) => f.path),
         stillManual: applyResult.stillManual.length,
         recommendedCommand: applyResult.recommendedCommand,
+      },
+    },
+    `corr-apply-${intake.intakeId}`,
+  );
+
+  return applyResult;
+}
+
+export async function applyEngOnGatePass(
+  state: ControlApiState,
+  input: {
+    workPackageId: string;
+    gateId: string;
+    rationale: string;
+    approver: string;
+  },
+): Promise<EngApplyResult | undefined> {
+  if (!input.gateId.startsWith('gate-eng-')) {
+    return undefined;
+  }
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake?.plan.engDelivery) {
+    return undefined;
+  }
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const applyResult = await applyEngToProject({
+    project,
+    report: intake.plan.engDelivery,
+    approval: {
+      kind: 'human-gate',
+      gateId: input.gateId,
+      approver: input.approver,
+      rationale: input.rationale,
+    },
+  });
+  intake.status = 'approved';
+  intake.applyResult = applyResult;
+
+  await state.auditService.append(
+    {
+      action: 'artifact.sealed',
+      actor: 'eng.app-delivery',
+      resourceType: 'project',
+      resourceId: project.projectId,
+      outcome: 'success',
+      correlationId: `corr-apply-${intake.intakeId}`,
+      detail: {
+        intakeId: intake.intakeId,
+        summary: applyResult.summary,
+        evidenceDir: applyResult.evidenceDir,
+        files: applyResult.files.map((f) => f.path),
+        changedFiles: applyResult.changedFiles,
+        approval: {
+          kind: 'human-gate',
+          gateId: input.gateId,
+          approver: input.approver,
+        },
       },
     },
     `corr-apply-${intake.intakeId}`,

@@ -18,6 +18,7 @@ See [`catalog.json`](./catalog.json).
   "slug": "my-new-app",
   "path": "my-new-app",
   "status": "active",
+  "category": "client-task",
   "stack": ["laravel", "php"],
   "defaultSpecialists": ["pm.intake", "eng.app-delivery", "qa.verify"],
   "constraints": [],
@@ -29,6 +30,10 @@ See [`catalog.json`](./catalog.json).
 4. Confirm in UI at `/projects` or `GET /v1/projects`.
 
 `projectId` must be unique. `path` is relative to `UMER_PROJECTS_ROOT` (default `C:/laragon/www`).
+
+`category` is required: `client-task` | `digital-product` | `seo-project` (threaded onto intake plans for downstream branching).
+
+Optional eng field: `autoApplyEng` (boolean, default `false`) — only unlocks digital-product auto-apply when staged suites are green; ignored for client-task (always human gate).
 
 Optional QA fields: `qaLocalUrl`, `qaTestCommand` (used when intake `type=qa` applies `.umer/qa/`).
 Optional SEO fields: `seoBaseUrl`, `seoLocalUrl`.

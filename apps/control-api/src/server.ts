@@ -5,6 +5,7 @@ import { createAuditService } from '@umer/audit';
 import type { IntakeInstruction } from '@umer/registry';
 import {
   type ControlApiState,
+  applyEngOnGatePass,
   applyQaOnGatePass,
   applySeoOnGatePass,
   listProjects,
@@ -165,6 +166,12 @@ export function createControlApiServer(state: ControlApiState) {
               workPackageId: result.record.workPackageId,
               gateId: result.record.gateId,
               rationale: body.rationale,
+            })) ??
+            (await applyEngOnGatePass(state, {
+              workPackageId: result.record.workPackageId,
+              gateId: result.record.gateId,
+              rationale: body.rationale,
+              approver: body.approver,
             }));
         }
 

@@ -4,7 +4,8 @@ export type ProjectRegistryErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'PROJECT_INACTIVE'
   | 'DUPLICATE_PROJECT'
-  | 'INVALID_INTAKE';
+  | 'INVALID_INTAKE'
+  | 'ENG_APPLY_BLOCKED';
 
 export class ProjectRegistryError extends Error {
   readonly code: ProjectRegistryErrorCode;

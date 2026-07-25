@@ -139,12 +139,15 @@ function resolvePlaywrightCommand(
   return null;
 }
 
+const DEFAULT_EVIDENCE_REL_PREFIX = '.umer/qa/evidence';
+
 async function writeLog(
   evidenceDir: string,
+  evidenceRelPrefix: string,
   name: string,
   content: string,
 ): Promise<string> {
-  const rel = join('.umer', 'qa', 'evidence', name).replace(/\\/g, '/');
+  const rel = `${evidenceRelPrefix}/${name}`;
   await writeFile(join(evidenceDir, name), content.slice(0, 500_000), 'utf8');
   return rel;
 }
@@ -154,6 +157,7 @@ async function executeOne(input: {
   command: string;
   cwd: string;
   evidenceDir: string;
+  evidenceRelPrefix: string;
   envExtra?: Record<string, string>;
 }): Promise<{ run: QaCommandRun; files: QaApplyFileChange[] }> {
   const files: QaApplyFileChange[] = [];
@@ -213,11 +217,13 @@ async function executeOne(input: {
     const durationMs = Date.now() - started;
     const stdoutPath = await writeLog(
       input.evidenceDir,
+      input.evidenceRelPrefix,
       `${input.kind}-stdout.txt`,
       result.stdout || '(empty stdout)\n',
     );
     const stderrPath = await writeLog(
       input.evidenceDir,
+      input.evidenceRelPrefix,
       `${input.kind}-stderr.txt`,
       result.stderr || '(empty stderr)\n',
     );
@@ -239,7 +245,7 @@ async function executeOne(input: {
       ? `${input.kind} passed (exit 0, ${durationMs}ms)`
       : `${input.kind} failed (exit ${result.code ?? 'timeout'}, ${durationMs}ms)`;
 
-    const metaRel = join('.umer', 'qa', 'evidence', `${input.kind}-run.json`).replace(/\\/g, '/');
+    const metaRel = `${input.evidenceRelPrefix}/${input.kind}-run.json`;
     await writeFile(
       join(input.evidenceDir, `${input.kind}-run.json`),
       `${JSON.stringify(
@@ -284,13 +290,18 @@ async function executeOne(input: {
 /**
  * Phase A/B: execute allowlisted PHPUnit and/or Playwright suites, seal logs under evidence/.
  * Skip with UMER_QA_SKIP_RUN=1 (unit tests / dry apply).
+ *
+ * `evidenceRelPrefix` only labels the reported paths — callers outside qa.verify
+ * (eng.app-delivery seals under `.umer/eng/<runId>/evidence`) pass their own prefix.
  */
 export async function runQaSuites(input: {
   project: ResolvedProject;
   signals: QaRepoSignals;
   evidenceDir: string;
+  evidenceRelPrefix?: string;
 }): Promise<QaRunBundle> {
   await mkdir(input.evidenceDir, { recursive: true });
+  const evidenceRelPrefix = input.evidenceRelPrefix ?? DEFAULT_EVIDENCE_REL_PREFIX;
 
   if (process.env.UMER_QA_SKIP_RUN === '1') {
     return {
@@ -324,6 +335,7 @@ export async function runQaSuites(input: {
         command: phpunit.command,
         cwd: phpunit.cwd,
         evidenceDir: input.evidenceDir,
+        evidenceRelPrefix,
       });
       runs.push(executed.run);
       files.push(...executed.files);
@@ -356,6 +368,7 @@ export async function runQaSuites(input: {
         command: playwright.command,
         cwd: playwright.cwd,
         evidenceDir: input.evidenceDir,
+        evidenceRelPrefix,
         envExtra: baseURL ? { PLAYWRIGHT_BASE_URL: baseURL } : undefined,
       });
       runs.push(executed.run);

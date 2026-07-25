@@ -13,11 +13,13 @@ function fakeProject(overrides: Partial<ResolvedProject> = {}): ResolvedProject 
     slug: 'demo',
     path: 'demo',
     status: 'active',
+    category: 'client-task',
     stack: ['fullstack'],
     defaultSpecialists: ['qa.verify'],
     constraints: [],
     tags: [],
     absolutePath: '/tmp/demo',
+    autoApplyEng: false,
     ...overrides,
   };
 }

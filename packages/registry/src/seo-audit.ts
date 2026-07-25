@@ -1,4 +1,7 @@
 import type { ResolvedProject } from './types.js';
+import type { EngChangeSetEntry, EngResolvedEdit } from './eng-diff.js';
+import { proposeSeoSafeFixes, type SeoFixProposal } from './seo-diff.js';
+import type { SeoSafeFixId } from './seo-fix-whitelist.js';
 
 export type SeoPriority = 'P0' | 'P1' | 'P2';
 
@@ -29,6 +32,16 @@ export type SeoAuditReport = {
   items: SeoAuditItem[];
   quickWins: string[];
   nextActions: string[];
+  /**
+   * Work-package fields for whitelisted mechanical fixes (eng.app-delivery shape).
+   * Empty proposedDiff when nothing safe to propose. Never auto-applied in v1.
+   */
+  proposedDiff?: string;
+  changeSet?: EngChangeSetEntry[];
+  edits?: EngResolvedEdit[];
+  fixableItemIds?: SeoSafeFixId[];
+  fixSkipped?: SeoFixProposal['skipped'];
+  fixEditStats?: SeoFixProposal['editStats'];
 };
 
 function item(
@@ -69,6 +82,14 @@ function baseChecklist(project: ResolvedProject): SeoAuditItem[] {
       'Inspect live redirects and hosting SSL',
     ),
     item(
+      'tech-canonical',
+      'technical',
+      'Canonical link tag',
+      'P0',
+      'Indexable pages declare a single <link rel="canonical">',
+      'View page source for rel=canonical; safe auto-fix may insert when entirely missing',
+    ),
+    item(
       'onpage-title',
       'on-page',
       'Unique title tags',
@@ -99,6 +120,14 @@ function baseChecklist(project: ResolvedProject): SeoAuditItem[] {
       'P1',
       'og:title, og:description, og:image set for shareable pages',
       'Use social debugger or view meta tags',
+    ),
+    item(
+      'onpage-img-alt',
+      'on-page',
+      'Image alt attributes',
+      'P1',
+      'Every <img> has an alt attribute (decorative images may use empty alt)',
+      'Scan primary HTML shells for <img> without alt; safe fix seeds from filename stem only',
     ),
     item(
       'content-intent',
@@ -200,7 +229,10 @@ function projectExtras(project: ResolvedProject): SeoAuditItem[] {
   return extras;
 }
 
-export function runSeoAudit(input: {
+/**
+ * Sync checklist-only report (no filesystem proposal). Used by {@link planIntake}.
+ */
+export function buildSeoAuditReport(input: {
   project: ResolvedProject;
   goal: string;
   doneWhen?: string;
@@ -227,8 +259,60 @@ export function runSeoAudit(input: {
       `Work in ${input.project.absolutePath}`,
       'Clear P0 checklist items first',
       input.doneWhen?.trim() || 'Re-run Lighthouse + manual meta review when done',
-      'Gate Pass required before treating SEO work as complete',
-      'Handoff code changes to eng.app-delivery after Pass',
+      'Gate Pass required before treating SEO work as complete (no auto-apply in v1)',
+      'Review proposedDiff from runSeoAudit for whitelisted technical fixes',
     ],
+    proposedDiff: '',
+    changeSet: [],
+    edits: [],
+    fixableItemIds: [],
+    fixSkipped: [],
+  };
+}
+
+/**
+ * Full seo.audit runner: checklist + proposedDiff for whitelisted mechanical fixes.
+ *
+ * Does not mutate the Laragon project. Gate/apply wiring (human Pass → apply change-set
+ * into `.umer/seo/PROPOSED_DIFF.patch` evidence) is intentionally separate.
+ */
+export async function runSeoAudit(input: {
+  project: ResolvedProject;
+  goal: string;
+  doneWhen?: string;
+}): Promise<SeoAuditReport> {
+  const base = buildSeoAuditReport(input);
+
+  let proposal: SeoFixProposal | undefined;
+  try {
+    proposal = await proposeSeoSafeFixes({ project: input.project });
+  } catch {
+    proposal = undefined;
+  }
+
+  const fixSummary =
+    proposal && proposal.fixableItemIds.length > 0
+      ? ` Proposed mechanical fixes for: ${proposal.fixableItemIds.join(', ')} (+${proposal.editStats.linesAdded}/-${proposal.editStats.linesRemoved}) — human gate required before apply.`
+      : '';
+
+  return {
+    ...base,
+    summary: `SEO audit for ${input.project.name}: ${input.goal}.${fixSummary}`,
+    nextActions: [
+      `Work in ${input.project.absolutePath}`,
+      'Clear P0 checklist items first',
+      proposal && proposal.proposedDiff
+        ? 'Review proposedDiff (whitelisted technical fixes only) before gate Pass'
+        : 'No safe auto-fixable diff this run — content/judgment items stay manual',
+      input.doneWhen?.trim() || 'Re-run Lighthouse + manual meta review when done',
+      'Gate Pass required before treating SEO work as complete (no auto-apply in v1)',
+      'Handoff remaining content/keyword work after Pass',
+    ],
+    proposedDiff: proposal?.proposedDiff || '',
+    changeSet: proposal?.changeSet ?? [],
+    edits: proposal?.edits ?? [],
+    fixableItemIds: proposal?.fixableItemIds ?? [],
+    fixSkipped: proposal?.skipped ?? [],
+    fixEditStats: proposal?.editStats,
   };
 }
