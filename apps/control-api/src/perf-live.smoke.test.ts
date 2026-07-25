@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAuditService } from '@umer/audit';
 import { createControlPlaneService } from '@umer/control-plane';
-import { loadProjectRegistry, submitIntake, type ControlApiState } from './state.js';
+import { createEventBus } from '@umer/event-bus';
+import { loadProjectRegistry, registerQaBusShim, submitIntake, type ControlApiState } from './state.js';
 
 const live = process.env.UMER_PERF_LIVE === '1';
 
@@ -30,11 +31,13 @@ describe.runIf(live)('live perf intake gate smoke', () => {
         intakes: [],
         auditService: createAuditService(),
         controlPlane: null as unknown as ControlApiState['controlPlane'],
+        bus: createEventBus(),
       };
       state.controlPlane = createControlPlaneService({
         workPackagesAwaitingReview: () =>
           state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
       });
+      registerQaBusShim(state);
 
       const record = await submitIntake(state, {
         projectId: 'cursive-generator',

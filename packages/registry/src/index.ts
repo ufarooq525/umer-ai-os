@@ -31,6 +31,7 @@ export {
   planIntakeWithSeo,
   planIntakeWithSecurity,
   planIntakeWithPerf,
+  planIntakeWithUx,
   planIntakeForControl,
 } from './intake.js';
 export { runSeoAudit, buildSeoAuditReport } from './seo-audit.js';
@@ -172,3 +173,12 @@ export {
   hasElevatedPerfFindings,
 } from './perf-gate-policy.js';
 export type { PerfGateDecision } from './perf-gate-policy.js';
+export { runUxAudit, uxRunId } from './ux-audit.js';
+export type {
+  UxAuditReport,
+  UxAuditItem,
+  UxCategory,
+  UxPriority,
+} from './ux-audit.js';
+export { applyUxToProject } from './ux-apply.js';
+export type { UxApplyResult, UxApplyFileChange } from './ux-apply.js';

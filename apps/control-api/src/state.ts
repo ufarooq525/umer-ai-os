@@ -4,11 +4,18 @@ import type { AuditContract } from '@umer/contracts';
 import type { ControlPlaneService } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
 import {
+  type BusEvent,
+  type BusEventSource,
+  type EventBus,
+  type QaRequestedPayload,
+} from '@umer/event-bus';
+import {
   applyEngToProject,
   applyQaToProject,
   applySeoToProject,
   applySecurityToProject,
   applyPerfToProject,
+  applyUxToProject,
   createProjectRegistry,
   decideEngGate,
   decideSecurityGateByCategory,
@@ -20,11 +27,12 @@ import {
   type IntakeInstruction,
   type IntakePlan,
   type ProjectRegistry,
-  type QaApplyResult,
   type ResolvedProject,
+  type QaApplyResult,
   type SeoApplyResult,
   type SecurityApplyResult,
   type PerfApplyResult,
+  type UxApplyResult,
 } from '@umer/registry';
 
 export type WorkPackageSummary = {
@@ -37,12 +45,26 @@ export type WorkPackageSummary = {
   projectId?: string;
 };
 
+export type IntakeTrigger = {
+  eventId: string;
+  correlationId: string;
+  source: BusEventSource;
+};
+
 export type IntakeRecord = {
   intakeId: string;
   plan: IntakePlan;
   createdAt: string;
   status: 'planned' | 'approved' | 'rejected';
-  applyResult?: SeoApplyResult | QaApplyResult | EngApplyResult | SecurityApplyResult | PerfApplyResult;
+  /** Present when this intake was driven through the shim bus (QA v1). */
+  trigger?: IntakeTrigger;
+  applyResult?:
+    | SeoApplyResult
+    | QaApplyResult
+    | EngApplyResult
+    | SecurityApplyResult
+    | PerfApplyResult
+    | UxApplyResult;
 };
 
 export type ControlApiState = {
@@ -51,6 +73,10 @@ export type ControlApiState = {
   workPackages: WorkPackageSummary[];
   projectRegistry: ProjectRegistry;
   intakes: IntakeRecord[];
+  /** In-process shim bus — QA requests publish here; Fabric remains future substrate. */
+  bus: EventBus;
+  /** Internal: QA shim subscribed once. */
+  qaBusShimRegistered?: boolean;
 };
 
 export function resolveCatalogPath(): string {
@@ -98,6 +124,11 @@ export async function seedDemoState(state: ControlApiState): Promise<void> {
       resourceId: 'wp-e2e-1',
       outcome: 'success',
       correlationId: 'corr-e2e-flow',
+      detail: {
+        demo: true,
+        projectId: 'nitrotickets-new',
+        note: 'Bootstrap sample — not a real intake',
+      },
     },
     'corr-e2e-flow',
   );
@@ -109,6 +140,11 @@ export async function seedDemoState(state: ControlApiState): Promise<void> {
       resourceId: 'art-wp-e2e-1-1',
       outcome: 'success',
       correlationId: 'corr-e2e-flow',
+      detail: {
+        demo: true,
+        projectId: 'nitrotickets-new',
+        note: 'Bootstrap sample — not a real intake',
+      },
     },
     'corr-e2e-flow',
   );
@@ -118,12 +154,160 @@ export function listProjects(state: ControlApiState): ResolvedProject[] {
   return state.projectRegistry.list();
 }
 
+/**
+ * Register the QA shim once per control-api state.
+ * Subscriber executes the same gate path as today's direct QA intake.
+ */
+export function registerQaBusShim(state: ControlApiState): void {
+  if (state.qaBusShimRegistered) return;
+  state.bus.subscribe('specialist.qa.requested', async (event) => {
+    const record = await executeQaIntake(state, event as BusEvent<'specialist.qa.requested'>);
+    return { intakeRecord: record };
+  });
+  state.qaBusShimRegistered = true;
+}
+
+/**
+ * Watchdog / system entry: publish a QA request through the bus.
+ * Human `/v1/intake` type=qa also uses this path via {@link submitIntake}.
+ */
+export async function publishQaViaBus(
+  state: ControlApiState,
+  input: {
+    projectId: string;
+    goal: string;
+    doneWhen?: string;
+    constraints?: string[];
+    source: BusEventSource;
+    correlationId?: string;
+  },
+): Promise<IntakeRecord> {
+  const result = await state.bus.publishNew({
+    type: 'specialist.qa.requested',
+    projectId: input.projectId,
+    source: input.source,
+    correlationId: input.correlationId,
+    payload: {
+      goal: input.goal,
+      doneWhen: input.doneWhen,
+      constraints: input.constraints,
+    } satisfies QaRequestedPayload,
+  });
+
+  if (result.handlerCount < 1) {
+    throw new Error('No subscriber for specialist.qa.requested — QA bus shim not registered');
+  }
+
+  const first = result.results[0] as { intakeRecord?: IntakeRecord } | undefined;
+  if (!first?.intakeRecord) {
+    throw new Error('QA bus shim returned no intake record');
+  }
+  return first.intakeRecord;
+}
+
+/**
+ * QA executor used by the bus shim. Same plan → work package → gate-qa-* behavior
+ * as the pre-bus direct path; carries source onto the intake + audit detail.
+ */
+export async function executeQaIntake(
+  state: ControlApiState,
+  event: BusEvent<'specialist.qa.requested'>,
+): Promise<IntakeRecord> {
+  const instruction: IntakeInstruction = {
+    projectId: event.projectId,
+    type: 'qa',
+    goal: event.payload.goal,
+    doneWhen: event.payload.doneWhen,
+    constraints: event.payload.constraints,
+  };
+
+  const plan = await planIntakeForControl(state.projectRegistry, instruction);
+  const intakeId = `intake-${Date.now()}`;
+  const record: IntakeRecord = {
+    intakeId,
+    plan,
+    createdAt: new Date().toISOString(),
+    status: 'planned',
+    trigger: {
+      eventId: event.eventId,
+      correlationId: event.correlationId,
+      source: event.source,
+    },
+  };
+  state.intakes.unshift(record);
+
+  const execId = 'EXEC-9200';
+  const specialistId = 'qa.verify';
+  const stage = 'QA Verify';
+  const gateId = `gate-qa-${plan.projectId}`;
+  const workPackageId = `wp-${intakeId}`;
+
+  state.workPackages.unshift({
+    workPackageId,
+    execId,
+    status: 'AwaitingReview',
+    specialistId,
+    stage,
+    projectId: plan.projectId,
+  });
+
+  await state.controlPlane.requestGateReview(
+    {
+      gateId,
+      execId,
+      workPackageId,
+      stageFrom: stage,
+      stageTo: 'Dispatch',
+      requiredApprovers: ['human.approver'],
+      humanRequired: true,
+    },
+    event.correlationId,
+  );
+
+  await state.auditService.append(
+    {
+      action: 'control.approval.requested',
+      actor: specialistId,
+      resourceType: 'project',
+      resourceId: plan.projectId,
+      outcome: 'success',
+      correlationId: event.correlationId,
+      detail: {
+        intakeId,
+        type: plan.type,
+        goal: plan.goal,
+        qaItemCount: plan.qaAudit?.items.length ?? 0,
+        triggerEventId: event.eventId,
+        source: event.source,
+      },
+    },
+    event.correlationId,
+  );
+
+  return record;
+}
+
 export async function submitIntake(
   state: ControlApiState,
   instruction: IntakeInstruction,
 ): Promise<IntakeRecord> {
-  // planIntakeForControl: eng / seo / security / perf async; else sync.
-  // SEO/security/perf never auto-apply (autoApplyEng is eng-only).
+  // QA goes through the shim bus so human intake and watchdogs share one executor.
+  if (instruction.type === 'qa') {
+    return publishQaViaBus(state, {
+      projectId: instruction.projectId,
+      goal: instruction.goal,
+      doneWhen: instruction.doneWhen,
+      constraints: instruction.constraints,
+      source: {
+        kind: 'human.intake',
+        actorId: 'human.operator',
+        channel: 'control-api',
+      },
+    });
+  }
+
+  // planIntakeForControl: eng / seo / security / perf / ux async; else sync.
+  // SEO/security/perf/ux never auto-apply (autoApplyEng is eng-only).
   const plan = await planIntakeForControl(state.projectRegistry, instruction);
   const intakeId = `intake-${Date.now()}`;
   const record: IntakeRecord = {
@@ -135,11 +319,69 @@ export async function submitIntake(
   state.intakes.unshift(record);
 
   const isSeo = instruction.type === 'seo';
-  const isQa = instruction.type === 'qa';
   const isSecurity = instruction.type === 'security' && Boolean(plan.securityAudit);
   const isPerf = instruction.type === 'perf' && Boolean(plan.perfAudit);
+  const isUx = instruction.type === 'ux' && Boolean(plan.uxAudit);
   const isEng =
     (instruction.type === 'feature' || instruction.type === 'bug') && Boolean(plan.engDelivery);
+
+  if (isUx && plan.uxAudit) {
+    const execId = 'EXEC-9600';
+    const specialistId = 'ux.design';
+    const stage = 'UX Audit';
+    const workPackageId = `wp-${intakeId}`;
+    const gateId = `gate-ux-${plan.projectId}`;
+    const items = plan.uxAudit.items;
+    const p0 = items.filter((i) => i.priority === 'P0').length;
+    const p1 = items.filter((i) => i.priority === 'P1').length;
+    const p2 = items.filter((i) => i.priority === 'P2').length;
+
+    state.workPackages.unshift({
+      workPackageId,
+      execId,
+      status: 'AwaitingReview',
+      specialistId,
+      stage,
+      projectId: plan.projectId,
+    });
+
+    await state.controlPlane.requestGateReview(
+      {
+        gateId,
+        execId,
+        workPackageId,
+        stageFrom: stage,
+        stageTo: 'Dispatch',
+        requiredApprovers: ['human.approver'],
+        humanRequired: true,
+      },
+      `corr-${intakeId}`,
+    );
+
+    await state.auditService.append(
+      {
+        action: 'control.approval.requested',
+        actor: specialistId,
+        resourceType: 'project',
+        resourceId: plan.projectId,
+        outcome: 'success',
+        correlationId: `corr-${intakeId}`,
+        detail: {
+          intakeId,
+          type: plan.type,
+          goal: plan.goal,
+          uxRunId: plan.uxAudit.runId,
+          uxItemCount: items.length,
+          uxPriorityCounts: { P0: p0, P1: p1, P2: p2 },
+          humanRequired: true,
+          proposedDiff: plan.uxAudit.proposedDiff,
+        },
+      },
+      `corr-${intakeId}`,
+    );
+
+    return record;
+  }
 
   if (isPerf && plan.perfAudit) {
     const project = state.projectRegistry.requireActive(plan.projectId);
@@ -402,14 +644,10 @@ export async function submitIntake(
     return record;
   }
 
-  const execId = isSeo ? 'EXEC-9100' : isQa ? 'EXEC-9200' : 'EXEC-9000';
-  const specialistId = isSeo ? 'seo.audit' : isQa ? 'qa.verify' : 'pm.intake';
-  const stage = isSeo ? 'SEO Audit' : isQa ? 'QA Verify' : 'Intake';
-  const gateId = isSeo
-    ? `gate-seo-${plan.projectId}`
-    : isQa
-      ? `gate-qa-${plan.projectId}`
-      : `gate-intake-${plan.projectId}`;
+  const execId = isSeo ? 'EXEC-9100' : 'EXEC-9000';
+  const specialistId = isSeo ? 'seo.audit' : 'pm.intake';
+  const stage = isSeo ? 'SEO Audit' : 'Intake';
+  const gateId = isSeo ? `gate-seo-${plan.projectId}` : `gate-intake-${plan.projectId}`;
 
   state.workPackages.unshift({
     workPackageId: `wp-${intakeId}`,
@@ -446,7 +684,6 @@ export async function submitIntake(
         type: plan.type,
         goal: plan.goal,
         seoItemCount: plan.seoAudit?.items.length ?? 0,
-        qaItemCount: plan.qaAudit?.items.length ?? 0,
       },
     },
     `corr-${intakeId}`,
@@ -494,6 +731,52 @@ export async function applyPerfOnGatePass(
         files: applyResult.files.map((f) => f.path),
         findingCount: applyResult.findingCount,
         forcesGate: applyResult.forcesGate,
+      },
+    },
+    `corr-apply-${intake.intakeId}`,
+  );
+
+  return applyResult;
+}
+
+export async function applyUxOnGatePass(
+  state: ControlApiState,
+  input: {
+    workPackageId: string;
+    gateId: string;
+    rationale: string;
+  },
+): Promise<UxApplyResult | undefined> {
+  if (!input.gateId.startsWith('gate-ux-')) {
+    return undefined;
+  }
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake?.plan.uxAudit) {
+    return undefined;
+  }
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const applyResult = await applyUxToProject({
+    project,
+    report: intake.plan.uxAudit,
+    rationale: input.rationale,
+  });
+  intake.status = 'approved';
+  intake.applyResult = applyResult;
+
+  await state.auditService.append(
+    {
+      action: 'artifact.sealed',
+      actor: 'ux.design',
+      resourceType: 'project',
+      resourceId: project.projectId,
+      outcome: 'success',
+      correlationId: `corr-apply-${intake.intakeId}`,
+      detail: {
+        intakeId: intake.intakeId,
+        summary: applyResult.summary,
+        evidenceDir: applyResult.evidenceDir,
+        files: applyResult.files.map((f) => f.path),
+        itemCount: applyResult.itemCount,
       },
     },
     `corr-apply-${intake.intakeId}`,

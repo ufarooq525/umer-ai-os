@@ -1,6 +1,7 @@
-import { Badge, Card } from '@umer/ui';
+import { Badge, Card, colors, fonts } from '@umer/ui';
 import { getDashboard, getProjects, getWorkPackages } from '@/lib/control-api';
 import { QuickTaskForm } from '@/components/QuickTaskForm';
+import { WatchdogFindingsBanner } from '@/components/WatchdogFindingsBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,39 +12,75 @@ export default async function DashboardPage() {
     getProjects(),
   ]);
 
+  const watchdogFindings = summary.watchdogFindings ?? [];
+
   return (
     <>
-      <header style={{ marginBottom: 32 }}>
-        <p style={{ letterSpacing: '0.12em', textTransform: 'uppercase', opacity: 0.7, fontSize: 12 }}>
+      <header style={{ marginBottom: 28 }}>
+        <p
+          style={{
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: colors.muted,
+            fontSize: 11,
+            fontWeight: 600,
+            margin: 0,
+          }}
+        >
           Control plane
         </p>
-        <h1 style={{ fontSize: '2rem', fontWeight: 500, margin: '0.5rem 0 0' }}>Dashboard</h1>
+        <h1
+          style={{
+            fontSize: 'clamp(1.75rem, 3vw, 2.25rem)',
+            fontWeight: 650,
+            margin: '8px 0 0',
+            letterSpacing: '-0.03em',
+          }}
+        >
+          Dashboard
+        </h1>
+        <p style={{ margin: '10px 0 0', color: colors.muted, fontSize: 14, maxWidth: 560, lineHeight: 1.5 }}>
+          You give an order → PM routes it → the specialist team executes → you approve at a gate →
+          evidence lands on the project.
+        </p>
       </header>
 
-      <section style={{ marginBottom: 32 }}>
+      <WatchdogFindingsBanner findings={watchdogFindings} />
+
+      <section style={{ marginBottom: 28 }}>
         <QuickTaskForm projects={projects} />
       </section>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: 14,
+        }}
+      >
         <Card title="Pending gates">
-          <p style={{ fontSize: 32, margin: 0, fontWeight: 600 }}>{summary.pendingGates}</p>
+          <p style={{ fontSize: 36, margin: 0, fontWeight: 650, letterSpacing: '-0.04em' }}>
+            {summary.pendingGates}
+          </p>
         </Card>
         <Card title="Awaiting review">
-          <p style={{ fontSize: 32, margin: 0, fontWeight: 600 }}>
+          <p style={{ fontSize: 36, margin: 0, fontWeight: 650, letterSpacing: '-0.04em' }}>
             {summary.workPackagesAwaitingReview}
           </p>
         </Card>
         <Card title="Resolved today">
-          <p style={{ fontSize: 32, margin: 0, fontWeight: 600 }}>{summary.resolvedToday}</p>
+          <p style={{ fontSize: 36, margin: 0, fontWeight: 650, letterSpacing: '-0.04em' }}>
+            {summary.resolvedToday}
+          </p>
         </Card>
       </div>
 
-      <section style={{ marginTop: 32 }}>
+      <section style={{ marginTop: 28 }}>
         <Card title="Work packages">
           {workPackages.length === 0 ? (
-            <p style={{ margin: 0, opacity: 0.7 }}>No work packages in the demo state.</p>
+            <p style={{ margin: 0, color: colors.muted }}>No open work packages.</p>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
               {workPackages.map((wp) => (
                 <li
                   key={wp.workPackageId}
@@ -51,13 +88,14 @@ export default async function DashboardPage() {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    padding: '12px 0',
-                    borderBottom: '1px solid #2d3a4d',
+                    gap: 12,
+                    padding: '14px 4px',
+                    borderBottom: `1px solid ${colors.border}`,
                   }}
                 >
                   <div>
-                    <strong>{wp.workPackageId}</strong>
-                    <p style={{ margin: '4px 0 0', fontSize: 14, opacity: 0.8 }}>
+                    <strong style={{ fontFamily: fonts.mono, fontSize: 13 }}>{wp.workPackageId}</strong>
+                    <p style={{ margin: '4px 0 0', fontSize: 13, color: colors.muted }}>
                       {wp.specialistId} · {wp.stage}
                     </p>
                   </div>

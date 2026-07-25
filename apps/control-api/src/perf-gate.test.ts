@@ -5,9 +5,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAuditService } from '@umer/audit';
 import { createControlPlaneService } from '@umer/control-plane';
+import { createEventBus } from '@umer/event-bus';
 import { createProjectRegistry } from '@umer/registry';
 import { createControlApiServer } from './server.js';
-import { submitIntake, type ControlApiState } from './state.js';
+import { registerQaBusShim, submitIntake, type ControlApiState } from './state.js';
 
 /** Matches the live cursive-generator lab run shape (score high + FID critical). */
 const LIVE_LIKE_METRICS = {
@@ -84,11 +85,13 @@ async function createPerfFixture(): Promise<{
     auditService: createAuditService(),
     projectRegistry,
     controlPlane: null as unknown as ControlApiState['controlPlane'],
+    bus: createEventBus(),
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
   });
+  registerQaBusShim(state);
 
   return {
     state,

@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { colors, spacing } from './theme.js';
+import { colors, fonts, radii, spacing } from './theme.js';
 
 export type BadgeTone = 'default' | 'success' | 'warning' | 'danger';
 
@@ -9,10 +9,10 @@ export type BadgeProps = {
 };
 
 const toneStyles: Record<BadgeTone, CSSProperties> = {
-  default: { background: colors.border, color: colors.text },
-  success: { background: '#1e3d2f', color: colors.success },
-  warning: { background: '#3d3018', color: colors.warning },
-  danger: { background: '#3d1e1e', color: colors.danger },
+  default: { background: colors.surfaceRaised, color: colors.muted, border: `1px solid ${colors.border}` },
+  success: { background: 'rgba(93, 206, 160, 0.12)', color: colors.success, border: '1px solid rgba(93, 206, 160, 0.28)' },
+  warning: { background: 'rgba(232, 184, 74, 0.12)', color: colors.warning, border: '1px solid rgba(232, 184, 74, 0.28)' },
+  danger: { background: 'rgba(240, 113, 120, 0.12)', color: colors.danger, border: '1px solid rgba(240, 113, 120, 0.28)' },
 };
 
 export function Badge({ tone = 'default', children }: BadgeProps) {
@@ -20,12 +20,13 @@ export function Badge({ tone = 'default', children }: BadgeProps) {
     <span
       style={{
         display: 'inline-block',
-        padding: `${spacing.xs}px ${spacing.sm}px`,
-        borderRadius: 4,
-        fontSize: 12,
+        padding: `${spacing.xs}px 10px`,
+        borderRadius: radii.sm,
+        fontSize: 11,
         fontWeight: 600,
         letterSpacing: '0.04em',
         textTransform: 'uppercase',
+        fontFamily: fonts.sans,
         ...toneStyles[tone],
       }}
     >

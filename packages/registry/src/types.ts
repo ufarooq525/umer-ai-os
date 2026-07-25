@@ -4,6 +4,7 @@ import type { EngDeliveryReport } from './eng-delivery.js';
 import type { EngChangeSetEntry } from './eng-diff.js';
 import type { SecurityAuditReport } from './security-audit.js';
 import type { PerfAuditReport } from './perf-audit.js';
+import type { UxAuditReport } from './ux-audit.js';
 
 export const packageName = '@umer/registry' as const;
 
@@ -81,6 +82,8 @@ export type IntakePlan = {
   securityAudit?: SecurityAuditReport;
   /** Present when type is perf — full perf.optimize Lighthouse audit. */
   perfAudit?: PerfAuditReport;
+  /** Present when type is ux — full ux.design checklist audit. */
+  uxAudit?: UxAuditReport;
   /**
    * Present when type is feature|bug — eng.app-delivery work package.
    * Never set for seo intake (seo-project category may still receive feature|bug eng).
@@ -100,6 +103,12 @@ export type {
   PerfFinding,
   PerfSeverity,
 } from './perf-audit.js';
+export type {
+  UxAuditReport,
+  UxAuditItem,
+  UxCategory,
+  UxPriority,
+} from './ux-audit.js';
 export type {
   EngDeliveryReport,
   EngDeliveryType,

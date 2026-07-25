@@ -6,6 +6,7 @@ import {
   createControlApiServer,
   createControlApiState,
 } from './server.js';
+import { startQaNightlyWatchdogCron } from './qa-nightly-scheduler.js';
 
 const serviceName = 'control-api';
 const log = createLogger(serviceName);
@@ -17,12 +18,37 @@ await bootstrapDemoState(state);
 
 const server = createControlApiServer(state);
 
+const qaNightly = startQaNightlyWatchdogCron(state, {
+  onTick: (result) => {
+    log.info(
+      {
+        projectId: result.projectId,
+        tickId: result.tickId,
+        intakeId: result.intake.intakeId,
+        scheduleId: result.scheduleId,
+      },
+      'qa nightly watchdog tick completed',
+    );
+  },
+  onError: (err) => {
+    log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      'qa nightly watchdog tick failed',
+    );
+  },
+});
+
 server.listen(env.CONTROL_API_PORT, () => {
   log.info(
     {
       port: env.CONTROL_API_PORT,
       projects: state.projectRegistry.list().length,
       projectsRoot: state.projectRegistry.getProjectsRoot(),
+      qaNightlyWatchdog: {
+        enabled: qaNightly.enabled,
+        cron: qaNightly.expression,
+        projectId: 'school-app',
+      },
     },
     'control-api listening',
   );

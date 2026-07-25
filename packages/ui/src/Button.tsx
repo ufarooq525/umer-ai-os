@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react';
-import { colors, spacing } from './theme.js';
+import { colors, fonts, radii, spacing } from './theme.js';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
@@ -11,17 +11,17 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 const variantStyles: Record<ButtonVariant, CSSProperties> = {
   primary: {
     background: colors.accent,
-    color: colors.bg,
+    color: colors.accentText,
     border: `1px solid ${colors.accent}`,
   },
   secondary: {
-    background: 'transparent',
+    background: colors.surfaceRaised,
     color: colors.text,
-    border: `1px solid ${colors.border}`,
+    border: `1px solid ${colors.borderStrong}`,
   },
   danger: {
-    background: colors.danger,
-    color: '#fff',
+    background: 'transparent',
+    color: colors.danger,
     border: `1px solid ${colors.danger}`,
   },
 };
@@ -31,12 +31,14 @@ export function Button({ variant = 'primary', style, children, ...props }: Butto
     <button
       type="button"
       style={{
-        padding: `${spacing.sm}px ${spacing.md}px`,
-        borderRadius: 6,
+        padding: `10px ${spacing.md}px`,
+        borderRadius: radii.md,
         fontSize: 14,
-        fontWeight: 500,
+        fontWeight: 600,
+        fontFamily: fonts.sans,
         cursor: props.disabled ? 'not-allowed' : 'pointer',
-        opacity: props.disabled ? 0.6 : 1,
+        opacity: props.disabled ? 0.55 : 1,
+        letterSpacing: '-0.01em',
         ...variantStyles[variant],
         ...style,
       }}

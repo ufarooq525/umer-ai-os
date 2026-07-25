@@ -8,6 +8,16 @@ export type DashboardSummary = {
   pendingGates: number;
   workPackagesAwaitingReview: number;
   resolvedToday: number;
+  watchdogFindingsAwaitingReview?: number;
+  watchdogFindings?: Array<{
+    waitId: string;
+    gateId: string;
+    workPackageId: string;
+    projectId?: string;
+    cadence?: string;
+    watchdogId?: string;
+    intakeId: string;
+  }>;
 };
 
 export type GateWaitRecord = {
@@ -46,6 +56,7 @@ export type AuditRecord = {
   outcome: string;
   correlationId?: string;
   occurredAt: string;
+  detail?: Record<string, unknown>;
 };
 
 export type ProjectRecord = {
@@ -158,6 +169,26 @@ export type IntakePlan = {
     absolutePath: string;
     goal: string;
     summary: string;
+    items: Array<{
+      id: string;
+      category: string;
+      title: string;
+      priority: string;
+      check: string;
+      howToVerify: string;
+    }>;
+    quickWins: string[];
+    nextActions: string[];
+  };
+  uxAudit?: {
+    specialistId: string;
+    runId: string;
+    projectId: string;
+    projectName: string;
+    absolutePath: string;
+    goal: string;
+    summary: string;
+    proposedDiff: string;
     items: Array<{
       id: string;
       category: string;

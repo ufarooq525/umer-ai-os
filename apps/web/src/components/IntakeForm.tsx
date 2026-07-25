@@ -54,14 +54,17 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
 
   const seo = last?.plan.seoAudit;
   const qa = last?.plan.qaAudit;
+  const ux = last?.plan.uxAudit;
   const security = last?.plan.securityAudit;
   const perf = last?.plan.perfAudit;
-  const checklist = seo ?? qa;
+  const checklist = seo ?? qa ?? ux;
   const checklistTitle = seo
     ? `seo.audit — ${seo.projectName}`
     : qa
       ? `qa.verify — ${qa.projectName}`
-      : '';
+      : ux
+        ? `ux.design — ${ux.projectName}`
+        : '';
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
@@ -117,7 +120,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
             />
           </label>
           {error ? <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p> : null}
-          {last && !checklist && !security && !perf ? (
+          {last && !checklist && !security && !perf && !ux ? (
             <p style={{ color: '#3ecf8e', margin: 0, fontSize: 14 }}>{last.plan.summary}</p>
           ) : null}
           <Button type="submit" disabled={busy}>
@@ -255,8 +258,13 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
             ))}
           </ul>
           <p style={{ marginTop: 16, fontSize: 14, opacity: 0.8 }}>
-            Approve on <a href="/gates">Gates</a> before applying{' '}
-            {qa ? 'the QA evidence package' : 'fixes'} in the repo.
+            Approve on <a href="/gates">Gates</a> before{' '}
+            {ux
+              ? 'sealing UX findings under .umer/ux/ (report-only — handoff UI fixes to eng)'
+              : qa
+                ? 'applying the QA evidence package'
+                : 'applying fixes'}{' '}
+            in the repo.
           </p>
         </Card>
       ) : null}

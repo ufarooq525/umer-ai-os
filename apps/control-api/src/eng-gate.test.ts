@@ -6,9 +6,11 @@ import { tmpdir } from 'node:os';
 import { createAuditService } from '@umer/audit';
 import { createControlPlaneService } from '@umer/control-plane';
 import { createProjectRegistry, contentHash } from '@umer/registry';
+import { createEventBus } from '@umer/event-bus';
 import { createControlApiServer } from './server.js';
 import {
   applyEngOnGatePass,
+  registerQaBusShim,
   submitIntake,
   type ControlApiState,
 } from './state.js';
@@ -108,11 +110,13 @@ async function createIsolatedFixture(): Promise<{
     auditService: createAuditService(),
     projectRegistry,
     controlPlane: null as unknown as ControlApiState['controlPlane'],
+    bus: createEventBus(),
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
   });
+  registerQaBusShim(state);
 
   return {
     state,

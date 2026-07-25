@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { healthCheck } from '@umer/kernel';
 import { createControlPlaneService, type ControlPlaneService } from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
+import { createEventBus } from '@umer/event-bus';
 import type { IntakeInstruction } from '@umer/registry';
 import {
   type ControlApiState,
@@ -9,13 +10,17 @@ import {
   applyQaOnGatePass,
   applySecurityOnGatePass,
   applyPerfOnGatePass,
+  applyUxOnGatePass,
   applySeoOnGatePass,
   listProjects,
   listRecentAudit,
   loadProjectRegistry,
+  registerQaBusShim,
   seedDemoState,
   submitIntake,
 } from './state.js';
+import { runQaNightlyWatchdog } from './qa-nightly-watchdog.js';
+import { filterWatchdogPendingFindings } from './watchdog-findings.js';
 
 const SERVICE_NAME = 'control-api';
 
@@ -45,11 +50,13 @@ export async function createControlApiState(): Promise<ControlApiState> {
     auditService: createAuditService(),
     projectRegistry: await loadProjectRegistry(),
     controlPlane: null as unknown as ControlPlaneService,
+    bus: createEventBus(),
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
   });
+  registerQaBusShim(state);
   return state;
 }
 
@@ -70,7 +77,36 @@ export function createControlApiServer(state: ControlApiState) {
     }
 
     if (path === '/v1/dashboard' && req.method === 'GET') {
-      sendJson(res, 200, await state.controlPlane.dashboard());
+      const summary = await state.controlPlane.dashboard();
+      const pending = await state.controlPlane.listPending();
+      const watchdogFindings = filterWatchdogPendingFindings({
+        pendingGates: pending,
+        intakes: state.intakes,
+      });
+      sendJson(res, 200, {
+        ...summary,
+        watchdogFindingsAwaitingReview: watchdogFindings.length,
+        watchdogFindings,
+      });
+      return;
+    }
+
+    if (path === '/v1/watchdogs/qa-nightly/run' && req.method === 'POST') {
+      try {
+        const result = await runQaNightlyWatchdog(state);
+        sendJson(res, 201, {
+          projectId: result.projectId,
+          tickId: result.tickId,
+          scheduleId: result.scheduleId,
+          intakeId: result.intake.intakeId,
+          trigger: result.intake.trigger,
+          gateId: `gate-qa-${result.projectId}`,
+        });
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       return;
     }
 
@@ -175,6 +211,11 @@ export function createControlApiServer(state: ControlApiState) {
               rationale: body.rationale,
             })) ??
             (await applyPerfOnGatePass(state, {
+              workPackageId: result.record.workPackageId,
+              gateId: result.record.gateId,
+              rationale: body.rationale,
+            })) ??
+            (await applyUxOnGatePass(state, {
               workPackageId: result.record.workPackageId,
               gateId: result.record.gateId,
               rationale: body.rationale,

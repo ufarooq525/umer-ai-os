@@ -10,19 +10,23 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0",
     "test": "vitest run",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "watchdog:qa-nightly": "tsx src/scripts/run-qa-nightly-watchdog.ts"
   },
   "dependencies": {
     "@umer/audit": "workspace:*",
     "@umer/config": "workspace:*",
     "@umer/control-plane": "workspace:*",
+    "@umer/event-bus": "workspace:*",
     "@umer/kernel": "workspace:*",
     "@umer/observability": "workspace:*",
-    "@umer/registry": "workspace:*"
+    "@umer/registry": "workspace:*",
+    "node-cron": "^4.6.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
+    "@types/node-cron": "^3.0.11",
     "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
 }

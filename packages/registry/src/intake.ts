@@ -5,6 +5,7 @@ import { runQaAudit } from './qa-audit.js';
 import { runEngDelivery } from './eng-delivery.js';
 import { runSecurityAudit } from './security-audit.js';
 import { runPerfAudit } from './perf-audit.js';
+import { runUxAudit } from './ux-audit.js';
 import type { IntakeInstruction, IntakePlan, ResolvedProject } from './types.js';
 import type { ProjectRegistry } from './registry.js';
 
@@ -73,6 +74,15 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
         })
       : undefined;
 
+  const uxAudit =
+    instruction.type === 'ux'
+      ? runUxAudit({
+          project,
+          goal: instruction.goal,
+          doneWhen: instruction.doneWhen,
+        })
+      : undefined;
+
   if (seoAudit) {
     acceptanceCriteria.push(
       `Clear all P0 SEO audit items (${seoAudit.items.filter((i) => i.priority === 'P0').length} items)`,
@@ -86,22 +96,33 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     );
   }
 
+  if (uxAudit) {
+    acceptanceCriteria.push(
+      `Clear all P0 UX design items (${uxAudit.items.filter((i) => i.priority === 'P0').length} items)`,
+      'Seal UX findings under .umer/ux/<runId>/ after gate Pass (report-only)',
+    );
+  }
+
   const summary = seoAudit
     ? seoAudit.summary
     : qaAudit
       ? qaAudit.summary
-      : `PM intake for ${project.name} (${instruction.type}): ${instruction.goal}`;
+      : uxAudit
+        ? uxAudit.summary
+        : `PM intake for ${project.name} (${instruction.type}): ${instruction.goal}`;
 
   const nextActions = seoAudit
     ? seoAudit.nextActions
     : qaAudit
       ? qaAudit.nextActions
-      : [
-          `Open project at ${project.absolutePath}`,
-          `Dispatch work to: ${recommendedSpecialists.join(', ')}`,
-          'Produce sealed artifact(s), then request gate review',
-          'Apply only after gate Pass',
-        ];
+      : uxAudit
+        ? uxAudit.nextActions
+        : [
+            `Open project at ${project.absolutePath}`,
+            `Dispatch work to: ${recommendedSpecialists.join(', ')}`,
+            'Produce sealed artifact(s), then request gate review',
+            'Apply only after gate Pass',
+          ];
 
   return {
     projectId: project.projectId,
@@ -117,6 +138,7 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     nextActions,
     seoAudit,
     qaAudit,
+    uxAudit,
   };
 }
 
@@ -318,7 +340,51 @@ export async function planIntakeWithPerf(
 }
 
 /**
- * Control-api entry: eng for feature|bug, SEO/security/perf async audits, else sync.
+ * Enrich UX intake with runUxAudit (checklist, report-only).
+ * Never auto-applies product UI; always requires an explicit human gate.
+ */
+export async function planIntakeWithUx(
+  registry: ProjectRegistry,
+  raw: IntakeInstruction,
+): Promise<IntakePlan> {
+  const plan = planIntake(registry, raw);
+  if (plan.type !== 'ux') {
+    return plan;
+  }
+
+  const project = registry.requireActive(plan.projectId);
+  const uxAudit = runUxAudit({
+    project,
+    goal: plan.goal,
+    doneWhen: IntakeInstructionSchema.parse(raw).doneWhen,
+  });
+
+  const withoutGenericGate = plan.acceptanceCriteria.filter(
+    (c) =>
+      c !== 'Human gate Pass before applying to the Laragon repo' &&
+      !c.startsWith('Clear all P0 UX design items') &&
+      !c.startsWith('Seal UX findings under'),
+  );
+
+  const acceptanceCriteria = [
+    ...withoutGenericGate,
+    `Clear all P0 UX design items (${uxAudit.items.filter((i) => i.priority === 'P0').length} items)`,
+    'Explicit human gate Pass required before sealing UX package (UX never auto-applies in v1)',
+    'No proposedDiff / auto-apply of product UI in UX v1 — improvements hand off to eng.app-delivery',
+    `Seal UX findings under .umer/ux/${uxAudit.runId}/ after Pass`,
+  ];
+
+  return {
+    ...plan,
+    summary: uxAudit.summary,
+    nextActions: uxAudit.nextActions,
+    acceptanceCriteria,
+    uxAudit,
+  };
+}
+
+/**
+ * Control-api entry: eng for feature|bug, SEO/security/perf/ux audits, else sync.
  */
 export async function planIntakeForControl(
   registry: ProjectRegistry,
@@ -339,6 +405,9 @@ export async function planIntakeForControl(
   }
   if (parsed.data.type === 'perf') {
     return planIntakeWithPerf(registry, raw);
+  }
+  if (parsed.data.type === 'ux') {
+    return planIntakeWithUx(registry, raw);
   }
   if (parsed.data.type === 'feature' || parsed.data.type === 'bug') {
     return planIntakeWithEng(registry, raw);

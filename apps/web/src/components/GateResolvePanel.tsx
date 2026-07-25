@@ -51,6 +51,7 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
   }
 
   return (
+    <div id={gate.waitId}>
     <Card title={`${gate.gateId} — ${gate.workPackageId}`}>
       <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
         <div>
@@ -86,6 +87,13 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
             Approve will apply a QA evidence package into the Laragon project (
             <code>.umer/qa/</code>
             ) — scan, TEST_PLAN, and suite runs (PHPUnit / Playwright when available).
+          </p>
+        ) : null}
+        {gate.gateId.startsWith('gate-ux-') ? (
+          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
+            Approve will seal a UX findings package into the Laragon project (
+            <code>.umer/ux/&lt;runId&gt;/</code>
+            ) — report-only checklist, no product UI auto-apply.
           </p>
         ) : null}
         <textarea
@@ -129,5 +137,6 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
         </Button>
       </div>
     </Card>
+    </div>
   );
 }

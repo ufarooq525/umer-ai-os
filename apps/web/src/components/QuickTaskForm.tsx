@@ -10,7 +10,7 @@ import {
 } from '@/lib/control-api';
 
 /** Slimmer than Projects intake — dashboard convenience only. */
-const QUICK_TYPES = ['feature', 'bug', 'seo', 'security', 'perf'] as const;
+const QUICK_TYPES = ['feature', 'bug', 'seo', 'security', 'perf', 'ux', 'qa'] as const;
 type QuickType = (typeof QUICK_TYPES)[number];
 
 type Props = {
@@ -30,6 +30,7 @@ export function gateIdFromIntake(record: IntakeRecord): {
   if (type === 'security') return { gateId: `gate-security-${projectId}`, autoApplied: false };
   if (type === 'perf') return { gateId: `gate-perf-${projectId}`, autoApplied: false };
   if (type === 'qa') return { gateId: `gate-qa-${projectId}`, autoApplied: false };
+  if (type === 'ux') return { gateId: `gate-ux-${projectId}`, autoApplied: false };
   if ((type === 'feature' || type === 'bug') && engDelivery) {
     return { gateId: `gate-eng-${projectId}`, autoApplied: false };
   }
@@ -52,7 +53,9 @@ function inferTypeHint(goal: string): QuickType | null {
   if (/\b(seo|ranking|sitemap|meta title|lighthouse)\b/.test(g)) return 'seo';
   if (/\b(bug|fix|regression|broken|crash|error)\b/.test(g)) return 'bug';
   if (/\b(security|idor|authz|xss|csrf)\b/.test(g)) return 'security';
-  if (/\b(perf|slow|latency|performance)\b/.test(g)) return 'perf';
+  if (/\b(ui\s*\/?\s*ux|ux|ui design|usability|wireframe|design system)\b/.test(g)) return 'ux';
+  if (/\b(qa|test plan|regression suite|verify)\b/.test(g)) return 'qa';
+  if (/\b(perf|slow|latency|performance|core web vitals|lcp|cls)\b/.test(g)) return 'perf';
   return null;
 }
 
@@ -198,7 +201,9 @@ export function QuickTaskForm({ projects }: Props) {
             {busy ? 'Submitting…' : 'Submit task'}
           </Button>
           <span style={{ fontSize: 13, opacity: 0.65 }}>
-            Uses the same intake path as Projects — stays on this page after submit.
+            PM routes the type to the right team. Type <code>ux</code> = audit findings; actual UI
+            code changes need a follow-up <code>feature</code> / <code>bug</code> eng task after you
+            approve.
           </span>
         </div>
       </form>

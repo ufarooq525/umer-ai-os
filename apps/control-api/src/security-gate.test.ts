@@ -7,8 +7,9 @@ import { spawn } from 'node:child_process';
 import { createAuditService } from '@umer/audit';
 import { createControlPlaneService } from '@umer/control-plane';
 import { createProjectRegistry } from '@umer/registry';
+import { createEventBus } from '@umer/event-bus';
 import { createControlApiServer } from './server.js';
-import { submitIntake, type ControlApiState } from './state.js';
+import { registerQaBusShim, submitIntake, type ControlApiState } from './state.js';
 
 async function request(
   server: Server,
@@ -111,11 +112,13 @@ async function createSecurityFixture(): Promise<{
     auditService: createAuditService(),
     projectRegistry,
     controlPlane: null as unknown as ControlApiState['controlPlane'],
+    bus: createEventBus(),
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
   });
+  registerQaBusShim(state);
 
   return {
     state,
