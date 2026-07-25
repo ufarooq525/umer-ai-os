@@ -3,6 +3,7 @@ import { ProjectRegistryError } from './errors.js';
 import { buildSeoAuditReport, runSeoAudit } from './seo-audit.js';
 import { runQaAudit } from './qa-audit.js';
 import { runEngDelivery } from './eng-delivery.js';
+import { runSecurityAudit } from './security-audit.js';
 import type { IntakeInstruction, IntakePlan, ResolvedProject } from './types.js';
 import type { ProjectRegistry } from './registry.js';
 
@@ -223,7 +224,51 @@ export async function planIntakeWithSeo(
 }
 
 /**
- * Control-api entry: eng for feature|bug, SEO proposedDiff for seo, else sync planIntake.
+ * Enrich security intake with runSecurityAudit (static, report-only).
+ * Never auto-applies; critical/high force human gate regardless of category.
+ */
+export async function planIntakeWithSecurity(
+  registry: ProjectRegistry,
+  raw: IntakeInstruction,
+): Promise<IntakePlan> {
+  const plan = planIntake(registry, raw);
+  if (plan.type !== 'security') {
+    return plan;
+  }
+
+  const project = registry.requireActive(plan.projectId);
+  const securityAudit = await runSecurityAudit({
+    project,
+    goal: plan.goal,
+    doneWhen: IntakeInstructionSchema.parse(raw).doneWhen,
+  });
+
+  const withoutGenericGate = plan.acceptanceCriteria.filter(
+    (c) => c !== 'Human gate Pass before applying to the Laragon repo',
+  );
+
+  const { severityCounts, forcesGate, gateDecision } = securityAudit;
+  const acceptanceCriteria = [
+    ...withoutGenericGate,
+    `Review security findings (critical=${severityCounts.critical} high=${severityCounts.high} medium=${severityCounts.medium} low=${severityCounts.low})`,
+    forcesGate
+      ? 'Critical/high findings present — explicit human gate required (severity checked before category; autoApplyEng cannot skip)'
+      : gateDecision.reason,
+    'No proposedDiff / auto-fix in security v1 — remediations are separate eng intakes',
+    'Seal security evidence under .umer/security/<runId>/ after Pass',
+  ];
+
+  return {
+    ...plan,
+    summary: securityAudit.summary,
+    nextActions: securityAudit.nextActions,
+    acceptanceCriteria,
+    securityAudit,
+  };
+}
+
+/**
+ * Control-api entry: eng for feature|bug, SEO for seo, security for security, else sync.
  */
 export async function planIntakeForControl(
   registry: ProjectRegistry,
@@ -238,6 +283,9 @@ export async function planIntakeForControl(
   }
   if (parsed.data.type === 'seo') {
     return planIntakeWithSeo(registry, raw);
+  }
+  if (parsed.data.type === 'security') {
+    return planIntakeWithSecurity(registry, raw);
   }
   if (parsed.data.type === 'feature' || parsed.data.type === 'bug') {
     return planIntakeWithEng(registry, raw);

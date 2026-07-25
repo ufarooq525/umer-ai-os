@@ -25,7 +25,13 @@ export {
 } from './schema.js';
 export { resolveProjectsRoot, loadCatalogFromFile, resolveProjectPath } from './catalog.js';
 export { ProjectRegistry, createProjectRegistry } from './registry.js';
-export { planIntake, planIntakeWithEng, planIntakeWithSeo, planIntakeForControl } from './intake.js';
+export {
+  planIntake,
+  planIntakeWithEng,
+  planIntakeWithSeo,
+  planIntakeWithSecurity,
+  planIntakeForControl,
+} from './intake.js';
 export { runSeoAudit, buildSeoAuditReport } from './seo-audit.js';
 export type {
   SeoAuditReport,
@@ -119,3 +125,26 @@ export type {
   EngAutoEligibility,
   EngApplyApproval,
 } from './eng-gate-policy.js';
+export { runSecurityAudit, securityRunId } from './security-audit.js';
+export type {
+  SecurityAuditReport,
+  SecurityFinding,
+  SecurityFindingCategory,
+  SecuritySeverity,
+} from './security-audit.js';
+export { applySecurityToProject } from './security-apply.js';
+export type { SecurityApplyResult, SecurityApplyFileChange } from './security-apply.js';
+export {
+  runSecurityScans,
+  scanDependencyVulnerabilities,
+  scanExposedSecrets,
+  scanAuthPermissionGaps,
+  isAllowedSecurityAuditCommand,
+} from './security-scan.js';
+export type { SecurityScanBundle } from './security-scan.js';
+export {
+  decideSecurityGate,
+  decideSecurityGateByCategory,
+  hasElevatedSecurityFindings,
+} from './security-gate-policy.js';
+export type { SecurityGateDecision } from './security-gate-policy.js';

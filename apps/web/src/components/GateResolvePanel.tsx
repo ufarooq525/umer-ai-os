@@ -67,6 +67,13 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
             ).
           </p>
         ) : null}
+        {gate.gateId.startsWith('gate-security-') ? (
+          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
+            Approve will seal a security findings package into the Laragon project (
+            <code>.umer/security/&lt;runId&gt;/</code>
+            ) — report-only, no auto-fix of product code.
+          </p>
+        ) : null}
         {gate.gateId.startsWith('gate-qa-') ? (
           <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
             Approve will apply a QA evidence package into the Laragon project (

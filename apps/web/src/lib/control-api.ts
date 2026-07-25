@@ -94,6 +94,30 @@ export type IntakePlan = {
     quickWins: string[];
     nextActions: string[];
   };
+  securityAudit?: {
+    specialistId: string;
+    runId: string;
+    projectId: string;
+    projectName: string;
+    absolutePath: string;
+    goal: string;
+    summary: string;
+    forcesGate: boolean;
+    proposedDiff: string;
+    findings: Array<{
+      id: string;
+      category: string;
+      severity: string;
+      title: string;
+      detail: string;
+      evidence: string;
+      path?: string;
+      remediation: string;
+    }>;
+    severityCounts: Record<string, number>;
+    quickWins: string[];
+    nextActions: string[];
+  };
   qaAudit?: {
     specialistId: string;
     projectId: string;

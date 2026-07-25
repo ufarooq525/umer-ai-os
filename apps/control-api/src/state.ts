@@ -7,8 +7,11 @@ import {
   applyEngToProject,
   applyQaToProject,
   applySeoToProject,
+  applySecurityToProject,
   createProjectRegistry,
   decideEngGate,
+  decideSecurityGateByCategory,
+  hasElevatedSecurityFindings,
   planIntakeForControl,
   type EngApplyResult,
   type IntakeInstruction,
@@ -17,6 +20,7 @@ import {
   type QaApplyResult,
   type ResolvedProject,
   type SeoApplyResult,
+  type SecurityApplyResult,
 } from '@umer/registry';
 
 export type WorkPackageSummary = {
@@ -34,7 +38,7 @@ export type IntakeRecord = {
   plan: IntakePlan;
   createdAt: string;
   status: 'planned' | 'approved' | 'rejected';
-  applyResult?: SeoApplyResult | QaApplyResult | EngApplyResult;
+  applyResult?: SeoApplyResult | QaApplyResult | EngApplyResult | SecurityApplyResult;
 };
 
 export type ControlApiState = {
@@ -114,8 +118,8 @@ export async function submitIntake(
   state: ControlApiState,
   instruction: IntakeInstruction,
 ): Promise<IntakeRecord> {
-  // planIntakeForControl: eng for feature|bug, SEO proposedDiff for seo, sync otherwise.
-  // SEO never auto-applies (autoApplyEng is eng-only).
+  // planIntakeForControl: eng for feature|bug, SEO for seo, security for security, sync otherwise.
+  // SEO/security never auto-apply (autoApplyEng is eng-only).
   const plan = await planIntakeForControl(state.projectRegistry, instruction);
   const intakeId = `intake-${Date.now()}`;
   const record: IntakeRecord = {
@@ -128,8 +132,84 @@ export async function submitIntake(
 
   const isSeo = instruction.type === 'seo';
   const isQa = instruction.type === 'qa';
+  const isSecurity = instruction.type === 'security' && Boolean(plan.securityAudit);
   const isEng =
     (instruction.type === 'feature' || instruction.type === 'bug') && Boolean(plan.engDelivery);
+
+  if (isSecurity && plan.securityAudit) {
+    const project = state.projectRegistry.requireActive(plan.projectId);
+    const findings = plan.securityAudit.findings;
+    const execId = 'EXEC-9400';
+    const specialistId = 'security.review';
+    const stage = 'Security Review';
+    const workPackageId = `wp-${intakeId}`;
+    const gateId = `gate-security-${plan.projectId}`;
+
+    // Severity BEFORE category — never consult category / autoApplyEng when elevated.
+    let humanRequired: boolean;
+    let gateReason: string;
+    let forcedBySeverity: boolean;
+    if (hasElevatedSecurityFindings(findings)) {
+      humanRequired = true;
+      forcedBySeverity = true;
+      gateReason =
+        'critical/high security findings force an explicit human gate (never skipped by category or autoApplyEng)';
+    } else {
+      const byCategory = decideSecurityGateByCategory(project.category);
+      humanRequired = byCategory.humanRequired;
+      forcedBySeverity = false;
+      gateReason = byCategory.reason;
+    }
+
+    // Security never auto-applies — always create a gate (like SEO).
+    state.workPackages.unshift({
+      workPackageId,
+      execId,
+      status: 'AwaitingReview',
+      specialistId,
+      stage,
+      projectId: plan.projectId,
+    });
+
+    await state.controlPlane.requestGateReview(
+      {
+        gateId,
+        execId,
+        workPackageId,
+        stageFrom: stage,
+        stageTo: 'Dispatch',
+        requiredApprovers: ['human.approver'],
+        humanRequired,
+      },
+      `corr-${intakeId}`,
+    );
+
+    await state.auditService.append(
+      {
+        action: 'control.approval.requested',
+        actor: specialistId,
+        resourceType: 'project',
+        resourceId: plan.projectId,
+        outcome: 'success',
+        correlationId: `corr-${intakeId}`,
+        detail: {
+          intakeId,
+          type: plan.type,
+          goal: plan.goal,
+          securityRunId: plan.securityAudit.runId,
+          findingCount: findings.length,
+          severityCounts: plan.securityAudit.severityCounts,
+          forcesGate: plan.securityAudit.forcesGate,
+          forcedBySeverity,
+          humanRequired,
+          gateDecision: gateReason,
+        },
+      },
+      `corr-${intakeId}`,
+    );
+
+    return record;
+  }
 
   if (isEng && plan.engDelivery) {
     const project = state.projectRegistry.requireActive(plan.projectId);
@@ -291,6 +371,53 @@ export async function submitIntake(
   );
 
   return record;
+}
+
+export async function applySecurityOnGatePass(
+  state: ControlApiState,
+  input: {
+    workPackageId: string;
+    gateId: string;
+    rationale: string;
+  },
+): Promise<SecurityApplyResult | undefined> {
+  if (!input.gateId.startsWith('gate-security-')) {
+    return undefined;
+  }
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake?.plan.securityAudit) {
+    return undefined;
+  }
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const applyResult = await applySecurityToProject({
+    project,
+    report: intake.plan.securityAudit,
+    rationale: input.rationale,
+  });
+  intake.status = 'approved';
+  intake.applyResult = applyResult;
+
+  await state.auditService.append(
+    {
+      action: 'artifact.sealed',
+      actor: 'security.review',
+      resourceType: 'project',
+      resourceId: project.projectId,
+      outcome: 'success',
+      correlationId: `corr-apply-${intake.intakeId}`,
+      detail: {
+        intakeId: intake.intakeId,
+        summary: applyResult.summary,
+        evidenceDir: applyResult.evidenceDir,
+        files: applyResult.files.map((f) => f.path),
+        findingCount: applyResult.findingCount,
+        forcesGate: applyResult.forcesGate,
+      },
+    },
+    `corr-apply-${intake.intakeId}`,
+  );
+
+  return applyResult;
 }
 
 export async function applySeoOnGatePass(

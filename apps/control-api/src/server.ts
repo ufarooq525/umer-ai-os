@@ -7,6 +7,7 @@ import {
   type ControlApiState,
   applyEngOnGatePass,
   applyQaOnGatePass,
+  applySecurityOnGatePass,
   applySeoOnGatePass,
   listProjects,
   listRecentAudit,
@@ -163,6 +164,11 @@ export function createControlApiServer(state: ControlApiState) {
               rationale: body.rationale,
             })) ??
             (await applyQaOnGatePass(state, {
+              workPackageId: result.record.workPackageId,
+              gateId: result.record.gateId,
+              rationale: body.rationale,
+            })) ??
+            (await applySecurityOnGatePass(state, {
               workPackageId: result.record.workPackageId,
               gateId: result.record.gateId,
               rationale: body.rationale,

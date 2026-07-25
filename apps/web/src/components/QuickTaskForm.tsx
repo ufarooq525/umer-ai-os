@@ -27,6 +27,7 @@ export function gateIdFromIntake(record: IntakeRecord): {
   }
   const { type, projectId, engDelivery } = record.plan;
   if (type === 'seo') return { gateId: `gate-seo-${projectId}`, autoApplied: false };
+  if (type === 'security') return { gateId: `gate-security-${projectId}`, autoApplied: false };
   if (type === 'qa') return { gateId: `gate-qa-${projectId}`, autoApplied: false };
   if ((type === 'feature' || type === 'bug') && engDelivery) {
     return { gateId: `gate-eng-${projectId}`, autoApplied: false };

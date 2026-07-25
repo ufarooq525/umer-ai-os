@@ -54,6 +54,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
 
   const seo = last?.plan.seoAudit;
   const qa = last?.plan.qaAudit;
+  const security = last?.plan.securityAudit;
   const checklist = seo ?? qa;
   const checklistTitle = seo
     ? `seo.audit — ${seo.projectName}`
@@ -115,7 +116,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
             />
           </label>
           {error ? <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p> : null}
-          {last && !checklist ? (
+          {last && !checklist && !security ? (
             <p style={{ color: '#3ecf8e', margin: 0, fontSize: 14 }}>{last.plan.summary}</p>
           ) : null}
           <Button type="submit" disabled={busy}>
@@ -123,6 +124,49 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
           </Button>
         </form>
       </Card>
+
+      {security ? (
+        <Card title={`security.review — ${security.projectName}`}>
+          <p style={{ marginTop: 0, opacity: 0.85 }}>{security.summary}</p>
+          <p style={{ fontSize: 14, opacity: 0.8 }}>
+            Path: <code>{security.absolutePath}</code>
+            {security.forcesGate ? ' · human gate forced (critical/high)' : ''}
+          </p>
+          <h3 style={{ fontSize: 15, marginBottom: 8 }}>Findings</h3>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 12 }}>
+            {security.findings.map((f) => (
+              <li
+                key={f.id}
+                style={{
+                  borderBottom: '1px solid #2d3a4d',
+                  paddingBottom: 12,
+                  fontSize: 14,
+                }}
+              >
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Badge
+                    tone={
+                      f.severity === 'critical' || f.severity === 'high' ? 'danger' : 'warning'
+                    }
+                  >
+                    {f.severity}
+                  </Badge>
+                  <Badge>{f.category}</Badge>
+                  <strong>{f.title}</strong>
+                </div>
+                <p style={{ margin: '6px 0 0', opacity: 0.85 }}>{f.detail}</p>
+                <p style={{ margin: '4px 0 0', opacity: 0.65, fontSize: 13 }}>
+                  Evidence: {f.evidence}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p style={{ marginTop: 16, fontSize: 14, opacity: 0.8 }}>
+            Approve on <a href="/gates">Gates</a> to seal evidence under{' '}
+            <code>.umer/security/</code> (report-only — no auto-fix).
+          </p>
+        </Card>
+      ) : null}
 
       {checklist ? (
         <Card title={checklistTitle}>

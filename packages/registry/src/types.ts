@@ -2,6 +2,7 @@ import type { SeoAuditReport } from './seo-audit.js';
 import type { QaAuditReport } from './qa-audit.js';
 import type { EngDeliveryReport } from './eng-delivery.js';
 import type { EngChangeSetEntry } from './eng-diff.js';
+import type { SecurityAuditReport } from './security-audit.js';
 
 export const packageName = '@umer/registry' as const;
 
@@ -75,6 +76,8 @@ export type IntakePlan = {
   seoAudit?: SeoAuditReport;
   /** Present when type is qa — full qa.verify checklist. */
   qaAudit?: QaAuditReport;
+  /** Present when type is security — full security.review static audit. */
+  securityAudit?: SecurityAuditReport;
   /**
    * Present when type is feature|bug — eng.app-delivery work package.
    * Never set for seo intake (seo-project category may still receive feature|bug eng).
@@ -84,6 +87,11 @@ export type IntakePlan = {
 
 export type { SeoAuditReport, SeoAuditItem, SeoCategory, SeoPriority } from './seo-audit.js';
 export type { QaAuditReport, QaAuditItem, QaCategory, QaPriority } from './qa-audit.js';
+export type {
+  SecurityAuditReport,
+  SecurityFinding,
+  SecuritySeverity,
+} from './security-audit.js';
 export type {
   EngDeliveryReport,
   EngDeliveryType,
