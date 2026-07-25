@@ -25,7 +25,7 @@ export {
 } from './schema.js';
 export { resolveProjectsRoot, loadCatalogFromFile, resolveProjectPath } from './catalog.js';
 export { ProjectRegistry, createProjectRegistry } from './registry.js';
-export { planIntake, planIntakeWithEng } from './intake.js';
+export { planIntake, planIntakeWithEng, planIntakeWithSeo, planIntakeForControl } from './intake.js';
 export { runSeoAudit, buildSeoAuditReport } from './seo-audit.js';
 export type {
   SeoAuditReport,
@@ -53,6 +53,8 @@ export {
   listSeoSafeFixIds,
 } from './seo-fix-whitelist.js';
 export type { SeoSafeFixId } from './seo-fix-whitelist.js';
+export { applyScopedEdits } from './apply-scoped-edits.js';
+export type { ScopedEditApplyResult, ScopedEditFileAction } from './apply-scoped-edits.js';
 export { resolveSeoProbeUrls, pickReachableSeoUrl } from './seo-urls.js';
 export { runQaAudit } from './qa-audit.js';
 export type {

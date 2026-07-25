@@ -1,13 +1,8 @@
 import { access, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import type { ResolvedProject } from './types.js';
 import type { EngDeliveryReport, EngTestPlanItem } from './eng-delivery.js';
-import { assertEditsStillFresh } from './eng-diff.js';
-import {
-  assertNoSymlinkInProjectPath,
-  assertSafeEngRunId,
-  isSafeProjectRelativePath,
-} from './eng-scope.js';
+import { assertSafeEngRunId } from './eng-scope.js';
 import {
   assertEngApplyAllowed,
   engApprovalMode,
@@ -15,6 +10,7 @@ import {
   type EngApplyApproval,
 } from './eng-gate-policy.js';
 import { ProjectRegistryError } from './errors.js';
+import { applyScopedEdits } from './apply-scoped-edits.js';
 import type { EngApplyFileChange, EngApplyResult } from './eng-result-types.js';
 
 export type { EngApplyFileChange, EngApplyResult } from './eng-result-types.js';
@@ -170,45 +166,18 @@ export async function applyEngToProject(input: {
     throw new ProjectRegistryError('ENG_APPLY_BLOCKED', `Project path does not exist: ${root}`);
   }
 
-  if (input.report.edits.length === 0) {
-    throw new ProjectRegistryError('ENG_APPLY_BLOCKED', 'Work package has no resolved edits');
-  }
-
-  for (const edit of input.report.edits) {
-    if (!isSafeProjectRelativePath(root, edit.path)) {
-      throw new ProjectRegistryError(
-        'ENG_APPLY_BLOCKED',
-        `Path traversal rejected at apply: ${edit.path}`,
-      );
-    }
-    await assertNoSymlinkInProjectPath(root, edit.path);
-  }
-
-  const stale = await assertEditsStillFresh({ root, edits: input.report.edits });
-  if (stale.length > 0) {
-    throw new ProjectRegistryError('ENG_APPLY_BLOCKED', stale.join('; '));
-  }
+  const scoped = await applyScopedEdits({
+    root,
+    edits: input.report.edits,
+    blockCode: 'ENG_APPLY_BLOCKED',
+  });
 
   const outDir = umerEngRunDir(root, runId);
   const evidenceDir = join(outDir, 'evidence');
   await mkdir(evidenceDir, { recursive: true });
 
-  const files: EngApplyFileChange[] = [];
-  const changedFiles: string[] = [];
-
-  for (const edit of input.report.edits) {
-    const full = join(root, edit.path);
-    await mkdir(dirname(full), { recursive: true });
-    // Re-check after mkdir in case a parent became a link (race / hostile FS).
-    await assertNoSymlinkInProjectPath(root, edit.path);
-    await writeFile(full, edit.after, 'utf8');
-    changedFiles.push(edit.path);
-    files.push({
-      path: edit.path,
-      action: edit.action === 'create' ? 'created' : 'updated',
-      note: edit.note,
-    });
-  }
+  const files: EngApplyFileChange[] = [...scoped.files];
+  const changedFiles = scoped.changedFiles;
 
   // Seal captured staging suite evidence into the real project evidence dir.
   for (const artifact of input.report.stagedEvidence) {

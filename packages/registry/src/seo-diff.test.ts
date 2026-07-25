@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { proposeSeoSafeFixes, SEO_FIX_EVIDENCE_PATHS } from './seo-diff.js';
 import { SEO_SAFE_FIX_IDS, SEO_REPORT_ONLY_IDS, isSeoSafeFixId } from './seo-fix-whitelist.js';
 import { runSeoAudit, buildSeoAuditReport } from './seo-audit.js';
+import { applySeoToProject } from './seo-apply.js';
 import type { ResolvedProject } from './types.js';
 
 function fakeProject(overrides: Partial<ResolvedProject> = {}): ResolvedProject {
@@ -180,5 +181,99 @@ describe('runSeoAudit', () => {
     expect(report.proposedDiff).toBe('');
     expect(report.changeSet).toEqual([]);
     expect(report.items.some((i) => i.id === 'content-intent')).toBe(true);
+  });
+});
+
+describe('applySeoToProject change-set path', () => {
+  it('applies the work-package change-set via shared scoped-apply and seals .umer/seo/', async () => {
+    process.env.UMER_SEO_SKIP_LIGHTHOUSE = '1';
+    const dir = await mkdtemp(join(tmpdir(), 'umer-seo-apply-cs-'));
+    try {
+      await mkdir(join(dir, 'public'), { recursive: true });
+      await writeFile(
+        join(dir, 'public', 'robots.txt'),
+        'User-agent: *\nAllow: /\n',
+        'utf8',
+      );
+      await writeFile(
+        join(dir, 'index.html'),
+        [
+          '<!doctype html><html><head>',
+          '<title>Flow Tools Home Page</title>',
+          '</head><body>',
+          '<h1>Tools</h1>',
+          '<img src="/assets/hero-banner.png">',
+          '</body></html>',
+        ].join('\n'),
+        'utf8',
+      );
+
+      const project = fakeProject({ absolutePath: dir, seoLocalUrl: undefined });
+      const audit = await runSeoAudit({
+        project,
+        goal: 'Apply mechanical SEO fixes from proposedDiff',
+      });
+      expect(audit.edits?.length).toBeGreaterThan(0);
+
+      // Proposal must not have touched disk yet.
+      expect(await readFile(join(dir, 'public', 'robots.txt'), 'utf8')).not.toContain('Sitemap:');
+
+      const result = await applySeoToProject({
+        project,
+        audit,
+        rationale: 'human gate Pass — change-set path',
+      });
+
+      expect(result.changeSetApplied).toBe(true);
+      expect(result.patchedItemIds?.length).toBeGreaterThan(0);
+      expect(await readFile(join(dir, 'public', 'robots.txt'), 'utf8')).toContain(
+        'Sitemap: https://example.com/sitemap.xml',
+      );
+      expect(await readFile(join(dir, 'index.html'), 'utf8')).toContain('rel="canonical"');
+      expect(await readFile(join(dir, 'index.html'), 'utf8')).toContain('name="description"');
+      expect(await readFile(join(dir, '.umer', 'seo', 'PROPOSED_DIFF.patch'), 'utf8')).toContain(
+        'diff --git',
+      );
+      expect(
+        await readFile(join(dir, '.umer', 'seo', 'evidence', 'fix-change-set.json'), 'utf8'),
+      ).toContain('public/robots.txt');
+      const report = await readFile(join(dir, '.umer', 'seo', 'APPLY_REPORT.md'), 'utf8');
+      expect(report).toContain('work-package change-set');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a stale change-set the same way eng scoped-apply does', async () => {
+    process.env.UMER_SEO_SKIP_LIGHTHOUSE = '1';
+    const dir = await mkdtemp(join(tmpdir(), 'umer-seo-stale-'));
+    try {
+      await mkdir(join(dir, 'public'), { recursive: true });
+      await writeFile(join(dir, 'public', 'robots.txt'), 'User-agent: *\nAllow: /\n', 'utf8');
+      await writeFile(
+        join(dir, 'index.html'),
+        '<!doctype html><html><head><title>Demo Site</title></head><body><h1>Hi</h1></body></html>',
+        'utf8',
+      );
+
+      const project = fakeProject({ absolutePath: dir });
+      const audit = await runSeoAudit({
+        project,
+        goal: 'Stale base must block apply',
+      });
+      expect(audit.edits?.length).toBeGreaterThan(0);
+
+      await writeFile(
+        join(dir, 'index.html'),
+        '<!doctype html><html><head><title>Changed</title></head><body></body></html>',
+        'utf8',
+      );
+
+      await expect(
+        applySeoToProject({ project, audit, rationale: 'should fail stale' }),
+      ).rejects.toThrow(/Stale|changed since/i);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

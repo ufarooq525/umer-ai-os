@@ -9,7 +9,7 @@ import {
   applySeoToProject,
   createProjectRegistry,
   decideEngGate,
-  planIntakeWithEng,
+  planIntakeForControl,
   type EngApplyResult,
   type IntakeInstruction,
   type IntakePlan,
@@ -114,8 +114,9 @@ export async function submitIntake(
   state: ControlApiState,
   instruction: IntakeInstruction,
 ): Promise<IntakeRecord> {
-  // planIntakeWithEng keeps SEO/QA sync planning and only awaits eng for feature|bug.
-  const plan = await planIntakeWithEng(state.projectRegistry, instruction);
+  // planIntakeForControl: eng for feature|bug, SEO proposedDiff for seo, sync otherwise.
+  // SEO never auto-applies (autoApplyEng is eng-only).
+  const plan = await planIntakeForControl(state.projectRegistry, instruction);
   const intakeId = `intake-${Date.now()}`;
   const record: IntakeRecord = {
     intakeId,

@@ -20,4 +20,6 @@ export type SeoApplyResult = {
   checks?: SeoCheckResult[];
   lighthouse?: LighthouseEvidence;
   patchedItemIds?: string[];
+  /** True when the work-package change-set was applied via shared scoped-apply. */
+  changeSetApplied?: boolean;
 };

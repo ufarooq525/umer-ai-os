@@ -1,6 +1,6 @@
 import { IntakeInstructionSchema } from './schema.js';
 import { ProjectRegistryError } from './errors.js';
-import { buildSeoAuditReport } from './seo-audit.js';
+import { buildSeoAuditReport, runSeoAudit } from './seo-audit.js';
 import { runQaAudit } from './qa-audit.js';
 import { runEngDelivery } from './eng-delivery.js';
 import type { IntakeInstruction, IntakePlan, ResolvedProject } from './types.js';
@@ -172,4 +172,75 @@ export async function planIntakeWithEng(
     acceptanceCriteria,
     engDelivery,
   };
+}
+
+/**
+ * Enrich SEO intake with runSeoAudit proposedDiff / change-set.
+ * Always requires an explicit human gate — never inherits autoApplyEng.
+ */
+export async function planIntakeWithSeo(
+  registry: ProjectRegistry,
+  raw: IntakeInstruction,
+): Promise<IntakePlan> {
+  const plan = planIntake(registry, raw);
+  if (plan.type !== 'seo') {
+    return plan;
+  }
+
+  const project = registry.requireActive(plan.projectId);
+  const seoAudit = await runSeoAudit({
+    project,
+    goal: plan.goal,
+    doneWhen: IntakeInstructionSchema.parse(raw).doneWhen,
+  });
+
+  const withoutGenericGate = plan.acceptanceCriteria.filter(
+    (c) =>
+      c !== 'Human gate Pass before applying to the Laragon repo' &&
+      !c.startsWith('Clear all P0 SEO audit items'),
+  );
+
+  const acceptanceCriteria = [
+    ...withoutGenericGate,
+    `Clear all P0 SEO audit items (${seoAudit.items.filter((i) => i.priority === 'P0').length} items)`,
+    seoAudit.fixableItemIds && seoAudit.fixableItemIds.length > 0
+      ? `Review proposedDiff for mechanical fixes: ${seoAudit.fixableItemIds.join(', ')}`
+      : 'No mechanical proposedDiff this run — content/judgment items stay manual',
+    // SEO never auto-applies in v1 (autoApplyEng is eng-only).
+    project.category === 'client-task'
+      ? 'Explicit human gate Pass required before applying SEO package (client-task; SEO never auto-applies)'
+      : 'Explicit human gate Pass required before applying SEO package (SEO never auto-applies in v1)',
+    'Seal SEO evidence under .umer/seo/ after Pass',
+  ];
+
+  return {
+    ...plan,
+    summary: seoAudit.summary,
+    nextActions: seoAudit.nextActions,
+    acceptanceCriteria,
+    seoAudit,
+  };
+}
+
+/**
+ * Control-api entry: eng for feature|bug, SEO proposedDiff for seo, else sync planIntake.
+ */
+export async function planIntakeForControl(
+  registry: ProjectRegistry,
+  raw: IntakeInstruction,
+): Promise<IntakePlan> {
+  const parsed = IntakeInstructionSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ProjectRegistryError(
+      'INVALID_INTAKE',
+      parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    );
+  }
+  if (parsed.data.type === 'seo') {
+    return planIntakeWithSeo(registry, raw);
+  }
+  if (parsed.data.type === 'feature' || parsed.data.type === 'bug') {
+    return planIntakeWithEng(registry, raw);
+  }
+  return planIntake(registry, raw);
 }
