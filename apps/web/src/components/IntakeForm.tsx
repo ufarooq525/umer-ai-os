@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type CSSProperties, type FormEvent } from 'react';
-import { Badge, Button, Card } from '@umer/ui';
+import { Badge, Button, Card, colors } from '@umer/ui';
 import { submitIntake, type IntakeRecord, type ProjectRecord } from '@/lib/control-api';
 
 const TYPES = ['feature', 'bug', 'seo', 'security', 'ux', 'qa', 'perf', 'brainstorm'] as const;
@@ -119,9 +119,9 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
               style={fieldStyle}
             />
           </label>
-          {error ? <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p> : null}
+          {error ? <p style={{ color: colors.danger, margin: 0, fontSize: 14 }}>{error}</p> : null}
           {last && !checklist && !security && !perf && !ux ? (
-            <p style={{ color: '#3ecf8e', margin: 0, fontSize: 14 }}>{last.plan.summary}</p>
+            <p style={{ color: colors.success, margin: 0, fontSize: 14 }}>{last.plan.summary}</p>
           ) : null}
           <Button type="submit" disabled={busy}>
             {busy ? 'Planning…' : 'Submit to PM intake'}
@@ -142,7 +142,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
               <li
                 key={f.id}
                 style={{
-                  borderBottom: '1px solid #2d3a4d',
+                  borderBottom: `1px solid ${colors.border}`,
                   paddingBottom: 12,
                   fontSize: 14,
                 }}
@@ -188,7 +188,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
               <li
                 key={f.id}
                 style={{
-                  borderBottom: '1px solid #2d3a4d',
+                  borderBottom: `1px solid ${colors.border}`,
                   paddingBottom: 12,
                   fontSize: 14,
                 }}
@@ -238,7 +238,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
               <li
                 key={item.id}
                 style={{
-                  borderBottom: '1px solid #2d3a4d',
+                  borderBottom: `1px solid ${colors.border}`,
                   paddingBottom: 12,
                   fontSize: 14,
                 }}
@@ -276,8 +276,8 @@ const fieldStyle: CSSProperties = {
   width: '100%',
   padding: 10,
   borderRadius: 6,
-  border: '1px solid #2d3a4d',
-  background: '#0f1419',
-  color: '#e8eef4',
+  border: `1px solid ${colors.border}`,
+  background: colors.bg,
+  color: colors.text,
   fontFamily: 'inherit',
 };

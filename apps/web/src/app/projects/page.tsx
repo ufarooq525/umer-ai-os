@@ -1,4 +1,4 @@
-import { Badge, Card } from '@umer/ui';
+import { Badge, Card, colors } from '@umer/ui';
 import { getProjects } from '@/lib/control-api';
 import { IntakeForm } from '@/components/IntakeForm';
 
@@ -28,7 +28,7 @@ export default async function ProjectsPage() {
               key={project.projectId}
               style={{
                 paddingBottom: 16,
-                borderBottom: '1px solid #2d3a4d',
+                borderBottom: `1px solid ${colors.border}`,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>

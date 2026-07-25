@@ -1,17 +1,21 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, type CSSProperties, type FormEvent } from 'react';
-import { Badge, Button, Card } from '@umer/ui';
+import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react';
+import { Badge, Button, Card, colors, radii } from '@umer/ui';
 import {
+  routeIntakeGoal,
   submitIntake,
   type IntakeRecord,
+  type IntakeRouting,
   type ProjectRecord,
 } from '@/lib/control-api';
 
 /** Slimmer than Projects intake — dashboard convenience only. */
 const QUICK_TYPES = ['feature', 'bug', 'seo', 'security', 'perf', 'ux', 'qa'] as const;
 type QuickType = (typeof QUICK_TYPES)[number];
+
+const ROUTE_DEBOUNCE_MS = 450;
 
 type Props = {
   projects: ProjectRecord[];
@@ -48,19 +52,15 @@ function pickDefaultProject(projects: ProjectRecord[]): string {
   );
 }
 
-function inferTypeHint(goal: string): QuickType | null {
-  const g = goal.toLowerCase();
-  if (/\b(seo|ranking|sitemap|meta title|lighthouse)\b/.test(g)) return 'seo';
-  if (/\b(bug|fix|regression|broken|crash|error)\b/.test(g)) return 'bug';
-  if (/\b(security|idor|authz|xss|csrf)\b/.test(g)) return 'security';
-  if (/\b(ui\s*\/?\s*ux|ux|ui design|usability|wireframe|design system)\b/.test(g)) return 'ux';
-  if (/\b(qa|test plan|regression suite|verify)\b/.test(g)) return 'qa';
-  if (/\b(perf|slow|latency|performance|core web vitals|lcp|cls)\b/.test(g)) return 'perf';
-  return null;
+function isQuickType(value: string): value is QuickType {
+  return (QUICK_TYPES as readonly string[]).includes(value);
 }
 
 /**
  * Lightweight dashboard entry point over the existing `/v1/intake` flow.
+ *
+ * PM (control-api) reads the wording and suggests a desk while you type. The suggestion
+ * never overrides the dropdown — you stay the router of last resort.
  */
 export function QuickTaskForm({ projects }: Props) {
   const router = useRouter();
@@ -74,6 +74,7 @@ export function QuickTaskForm({ projects }: Props) {
   const [type, setType] = useState<QuickType>('feature');
   const [typeTouched, setTypeTouched] = useState(false);
   const [goal, setGoal] = useState('');
+  const [routing, setRouting] = useState<IntakeRouting | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{
@@ -85,18 +86,38 @@ export function QuickTaskForm({ projects }: Props) {
     type: QuickType;
   } | null>(null);
 
-  function onGoalChange(value: string) {
-    setGoal(value);
-    if (!typeTouched) {
-      const hinted = inferTypeHint(value);
-      if (hinted) setType(hinted);
+  const trimmedGoal = goal.trim();
+
+  // Ask PM which desk this wording belongs to, then apply it only if the operator
+  // has not taken over the dropdown themselves.
+  useEffect(() => {
+    if (trimmedGoal.length < 8) {
+      setRouting(null);
+      return;
     }
-  }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void routeIntakeGoal({ goal: trimmedGoal })
+        .then((result) => {
+          if (cancelled) return;
+          setRouting(result.routing);
+          if (!typeTouched && isQuickType(result.routing.suggestedType)) {
+            setType(result.routing.suggestedType);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setRouting(null);
+        });
+    }, ROUTE_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [trimmedGoal, typeTouched]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const trimmed = goal.trim();
-    if (!projectId || trimmed.length < 8) {
+    if (!projectId || trimmedGoal.length < 8) {
       setError('Pick a project and describe the task (at least 8 characters).');
       return;
     }
@@ -107,7 +128,7 @@ export function QuickTaskForm({ projects }: Props) {
       const record = await submitIntake({
         projectId,
         type,
-        goal: trimmed,
+        goal: trimmedGoal,
       });
       const { gateId, autoApplied } = gateIdFromIntake(record);
       const project = options.find((p) => p.projectId === projectId);
@@ -120,6 +141,7 @@ export function QuickTaskForm({ projects }: Props) {
         type,
       });
       setGoal('');
+      setRouting(null);
       setTypeTouched(false);
       setType('feature');
       router.refresh();
@@ -130,6 +152,8 @@ export function QuickTaskForm({ projects }: Props) {
     }
   }
 
+  const suggestionMatches = routing?.suggestedType === type;
+
   return (
     <Card title="Quick Task">
       <form onSubmit={(e) => void handleSubmit(e)} style={{ display: 'grid', gap: 12 }}>
@@ -137,8 +161,8 @@ export function QuickTaskForm({ projects }: Props) {
           Task
           <input
             value={goal}
-            onChange={(e) => onGoalChange(e.target.value)}
-            placeholder="e.g. Fix fee validation rejecting zero amounts"
+            onChange={(e) => setGoal(e.target.value)}
+            placeholder="Describe it in your own words — e.g. the dashboard layout feels cramped on mobile"
             style={fieldStyle}
             disabled={busy}
             autoComplete="off"
@@ -178,7 +202,7 @@ export function QuickTaskForm({ projects }: Props) {
               value={type}
               onChange={(e) => {
                 setTypeTouched(true);
-                setType(e.target.value as QuickType);
+                if (isQuickType(e.target.value)) setType(e.target.value);
               }}
               style={fieldStyle}
               disabled={busy}
@@ -192,18 +216,63 @@ export function QuickTaskForm({ projects }: Props) {
           </label>
         </div>
 
+        {routing ? (
+          <div
+            role="status"
+            style={{
+              display: 'grid',
+              gap: 6,
+              padding: '10px 12px',
+              border: `1px solid ${suggestionMatches ? colors.border : colors.borderStrong}`,
+              borderRadius: radii.md,
+              background: suggestionMatches ? 'transparent' : colors.accentSoft,
+              fontSize: 13,
+            }}
+          >
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Badge tone={suggestionMatches ? 'success' : 'warning'}>
+                PM suggests {routing.suggestedType}
+              </Badge>
+              <span style={{ color: colors.muted }}>
+                confidence {routing.confidence} · {routing.specialists.join(' → ')}
+              </span>
+              {!suggestionMatches && isQuickType(routing.suggestedType) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTypeTouched(true);
+                    if (isQuickType(routing.suggestedType)) setType(routing.suggestedType);
+                  }}
+                  style={linkButtonStyle}
+                >
+                  Use {routing.suggestedType}
+                </button>
+              ) : null}
+            </div>
+            <p style={{ margin: 0, color: colors.text }}>{routing.reason}</p>
+            {routing.followUp ? (
+              <p style={{ margin: 0, color: colors.muted }}>{routing.followUp}</p>
+            ) : null}
+            {!suggestionMatches ? (
+              <p style={{ margin: 0, color: colors.muted }}>
+                You have <code>{type}</code> selected — that is what will be submitted.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {error ? (
-          <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p>
+          <p style={{ color: colors.danger, margin: 0, fontSize: 14 }}>{error}</p>
         ) : null}
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <Button type="submit" disabled={busy || options.length === 0}>
             {busy ? 'Submitting…' : 'Submit task'}
           </Button>
-          <span style={{ fontSize: 13, opacity: 0.65 }}>
-            PM routes the type to the right team. Type <code>ux</code> = audit findings; actual UI
-            code changes need a follow-up <code>feature</code> / <code>bug</code> eng task after you
-            approve.
+          <span style={{ fontSize: 13, color: colors.muted }}>
+            Audit desks (<code>ux</code>, <code>seo</code>, <code>security</code>, <code>perf</code>
+            , <code>qa</code>) report findings. Only <code>feature</code> and <code>bug</code> change
+            code, and only after you approve the gate.
           </span>
         </div>
       </form>
@@ -213,7 +282,7 @@ export function QuickTaskForm({ projects }: Props) {
           style={{
             marginTop: 16,
             paddingTop: 16,
-            borderTop: '1px solid #2d3a4d',
+            borderTop: `1px solid ${colors.border}`,
             display: 'grid',
             gap: 8,
           }}
@@ -223,23 +292,23 @@ export function QuickTaskForm({ projects }: Props) {
             <Badge>{confirm.type}</Badge>
             <strong style={{ fontSize: 14 }}>{confirm.projectName}</strong>
           </div>
-          <p style={{ margin: 0, fontSize: 14, opacity: 0.85 }}>{confirm.summary}</p>
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.7 }}>
+          <p style={{ margin: 0, fontSize: 14, color: colors.text }}>{confirm.summary}</p>
+          <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>
             Intake <code>{confirm.intakeId}</code>
             {confirm.autoApplied ? ' · applied automatically' : null}
           </p>
           {confirm.gateId ? (
             <p style={{ margin: 0, fontSize: 14 }}>
               Review on{' '}
-              <a href="/gates" style={{ color: '#7eb6ff' }}>
+              <a href="/gates" style={{ color: colors.accent }}>
                 Gates
               </a>{' '}
               (<code>{confirm.gateId}</code>).
             </p>
           ) : confirm.autoApplied ? (
-            <p style={{ margin: 0, fontSize: 14, opacity: 0.8 }}>
+            <p style={{ margin: 0, fontSize: 14, color: colors.muted }}>
               No gate — change was auto-applied. Check{' '}
-              <a href="/audit" style={{ color: '#7eb6ff' }}>
+              <a href="/audit" style={{ color: colors.accent }}>
                 Audit
               </a>{' '}
               for the seal record.
@@ -247,7 +316,7 @@ export function QuickTaskForm({ projects }: Props) {
           ) : (
             <p style={{ margin: 0, fontSize: 14 }}>
               Open{' '}
-              <a href="/gates" style={{ color: '#7eb6ff' }}>
+              <a href="/gates" style={{ color: colors.accent }}>
                 Gates
               </a>{' '}
               to approve when ready.
@@ -268,9 +337,20 @@ const labelStyle: CSSProperties = {
 const fieldStyle: CSSProperties = {
   width: '100%',
   padding: 10,
-  borderRadius: 6,
-  border: '1px solid #2d3a4d',
-  background: '#0f1419',
-  color: '#e8eef4',
+  borderRadius: radii.sm,
+  border: `1px solid ${colors.border}`,
+  background: colors.bg,
+  color: colors.text,
   fontFamily: 'inherit',
+};
+
+const linkButtonStyle: CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: colors.accent,
+  font: 'inherit',
+  fontWeight: 600,
+  textDecoration: 'underline',
+  cursor: 'pointer',
 };

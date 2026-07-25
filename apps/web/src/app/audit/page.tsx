@@ -1,4 +1,4 @@
-import { Badge, Card } from '@umer/ui';
+import { Badge, Card, colors } from '@umer/ui';
 import { getRecentAudit } from '@/lib/control-api';
 import { describeAuditRecord, partitionAuditRecords } from '@/lib/audit-story';
 
@@ -47,7 +47,7 @@ export default async function AuditPage() {
                   key={record.auditId}
                   style={{
                     padding: '14px 0',
-                    borderBottom: '1px solid #2d3a4d',
+                    borderBottom: `1px solid ${colors.border}`,
                     fontSize: 14,
                   }}
                 >
@@ -87,7 +87,7 @@ export default async function AuditPage() {
                     key={record.auditId}
                     style={{
                       padding: '10px 0',
-                      borderBottom: '1px solid #2d3a4d',
+                      borderBottom: `1px solid ${colors.border}`,
                       fontSize: 13,
                       opacity: 0.75,
                     }}

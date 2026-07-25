@@ -5,6 +5,7 @@ import type { EngChangeSetEntry } from './eng-diff.js';
 import type { SecurityAuditReport } from './security-audit.js';
 import type { PerfAuditReport } from './perf-audit.js';
 import type { UxAuditReport } from './ux-audit.js';
+import type { IntakeRoutingDecision } from './pm-routing.js';
 
 export const packageName = '@umer/registry' as const;
 
@@ -74,6 +75,8 @@ export type IntakePlan = {
   acceptanceCriteria: string[];
   risks: string[];
   nextActions: string[];
+  /** PM's read of the goal wording next to the type the operator submitted. */
+  routing?: IntakeRoutingDecision;
   /** Present when type is seo — full seo.audit checklist. */
   seoAudit?: SeoAuditReport;
   /** Present when type is qa — full qa.verify checklist. */
@@ -116,3 +119,17 @@ export type {
   EngTestPlanItem,
 } from './eng-delivery.js';
 export type { EngChangeSetEntry, EngResolvedEdit } from './eng-diff.js';
+export type {
+  IntakeRouting,
+  IntakeRoutingDecision,
+  IntakeTaskType,
+  RoutingCandidate,
+  RoutingConfidence,
+} from './pm-routing.js';
+export type {
+  CodeProducer,
+  CodeProductionRequest,
+  CodeProductionOutcome,
+  EngChangeSetDraft,
+  EngProductionRecord,
+} from './code-producer.js';

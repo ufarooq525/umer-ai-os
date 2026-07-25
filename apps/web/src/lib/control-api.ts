@@ -227,6 +227,76 @@ export type IntakeRecord = {
   status: string;
 };
 
+export type IntakeRouting = {
+  suggestedType: string;
+  confidence: 'high' | 'medium' | 'low';
+  reason: string;
+  specialists: string[];
+  writesCode: boolean;
+  followUp?: string;
+  alternatives: Array<{ type: string; reason: string }>;
+  signals: string[];
+};
+
+export type ReviewFileChange = {
+  path: string;
+  action: 'create' | 'modify';
+  linesAdded: number;
+  linesRemoved: number;
+  note: string;
+  diff: string;
+};
+
+export type GateReview = {
+  waitId: string;
+  gateId: string;
+  workPackageId: string;
+  intakeId: string;
+  projectId: string;
+  projectName: string;
+  kind: 'code' | 'findings';
+  headline: string;
+  onApprove: string;
+  goal: string;
+  requestedType: string;
+  routing?: {
+    suggestedType: string;
+    agreed: boolean;
+    note: string;
+    confidence: string;
+  };
+  code?: {
+    runId: string;
+    status: string;
+    rationale: string;
+    author: string;
+    authorStatus: string;
+    filesChanged: number;
+    linesAdded: number;
+    linesRemoved: number;
+    files: ReviewFileChange[];
+    testsRan: boolean;
+    testsPassed: boolean;
+    testCommand?: string;
+    runs: Array<{
+      kind: string;
+      command: string;
+      outcome: 'passed' | 'failed' | 'skipped';
+      summary: string;
+    }>;
+    blockers: string[];
+  };
+  findings?: {
+    runId?: string;
+    summary: string;
+    counts: Record<string, number>;
+    items: Array<{ id: string; title: string; severity: string; detail: string; path?: string }>;
+  };
+  acceptanceCriteria: string[];
+  risks: string[];
+  nextActions: string[];
+};
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${controlApiBaseUrl()}${path}`, {
     ...init,
@@ -300,6 +370,27 @@ export async function resolveGate(
 
 export async function getProjects(): Promise<{ projectsRoot: string; projects: ProjectRecord[] }> {
   return fetchJson('/v1/projects');
+}
+
+/** PM's read of a goal before anything is submitted. Suggestion only. */
+export async function routeIntakeGoal(input: {
+  goal: string;
+  doneWhen?: string;
+}): Promise<{ routing: IntakeRouting; activeCodeProducer: string | null }> {
+  return fetchJson('/v1/intake/route', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getGateReview(waitId: string): Promise<GateReview | null> {
+  try {
+    const body = await fetchJson<{ review: GateReview }>(`/v1/gates/${waitId}/review`);
+    return body.review;
+  } catch {
+    // Gates without an intake behind them (demo seed) have nothing to review.
+    return null;
+  }
 }
 
 export async function submitIntake(input: {

@@ -6,18 +6,15 @@ import { runEngDelivery } from './eng-delivery.js';
 import { runSecurityAudit } from './security-audit.js';
 import { runPerfAudit } from './perf-audit.js';
 import { runUxAudit } from './ux-audit.js';
+import { TYPE_SPECIALISTS, decideIntakeRouting } from './pm-routing.js';
+import type { CodeProducer } from './code-producer.js';
 import type { IntakeInstruction, IntakePlan, ResolvedProject } from './types.js';
 import type { ProjectRegistry } from './registry.js';
 
-const TYPE_SPECIALISTS: Record<IntakeInstruction['type'], string[]> = {
-  feature: ['pm.intake', 'eng.app-delivery', 'qa.verify'],
-  bug: ['pm.intake', 'eng.app-delivery', 'qa.verify'],
-  seo: ['pm.intake', 'seo.audit', 'perf.optimize'],
-  security: ['pm.intake', 'security.review', 'qa.verify'],
-  ux: ['pm.intake', 'ux.design', 'eng.app-delivery'],
-  qa: ['pm.intake', 'qa.verify'],
-  perf: ['pm.intake', 'perf.optimize', 'eng.app-delivery'],
-  brainstorm: ['pm.intake', 'ux.design'],
+/** Options threaded from the control boundary (never from catalog data). */
+export type IntakePlanOptions = {
+  /** Authors the eng change-set when intake did not supply one. */
+  codeProducer?: CodeProducer;
 };
 
 function unique(values: string[]): string[] {
@@ -42,6 +39,14 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     ...TYPE_SPECIALISTS[instruction.type],
     ...project.defaultSpecialists,
   ]);
+
+  // PM's read of the wording, recorded next to the operator's explicit choice.
+  const routing = decideIntakeRouting({
+    requestedType: instruction.type,
+    goal: instruction.goal,
+    doneWhen: instruction.doneWhen,
+    constraints: instruction.constraints,
+  });
 
   const acceptanceCriteria = [
     instruction.doneWhen?.trim() || `Goal achieved for ${project.name}: ${instruction.goal}`,
@@ -136,6 +141,7 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
     acceptanceCriteria,
     risks,
     nextActions,
+    routing,
     seoAudit,
     qaAudit,
     uxAudit,
@@ -149,6 +155,7 @@ export function planIntake(registry: ProjectRegistry, raw: IntakeInstruction): I
 export async function planIntakeWithEng(
   registry: ProjectRegistry,
   raw: IntakeInstruction,
+  options: IntakePlanOptions = {},
 ): Promise<IntakePlan> {
   const plan = planIntake(registry, raw);
   if (plan.type !== 'feature' && plan.type !== 'bug') {
@@ -166,6 +173,7 @@ export async function planIntakeWithEng(
     targetFiles: parsed.targetFiles,
     targetModule: parsed.targetModule,
     proposedChanges: parsed.proposedChanges,
+    codeProducer: options.codeProducer,
   });
 
   const withoutGenericGate = plan.acceptanceCriteria.filter(
@@ -185,6 +193,15 @@ export async function planIntakeWithEng(
     engDelivery.status === 'ready'
       ? `Review eng work package ${engDelivery.runId} (${engDelivery.editStats.filesChanged} file(s))`
       : 'Resolve eng manual-scoping blockers before apply',
+    ...(engDelivery.production
+      ? [
+          engDelivery.production.status === 'produced'
+            ? `Change-set authored by ${engDelivery.production.producerId} — review it as untrusted input`
+            : engDelivery.production.status === 'declined'
+              ? `No code was authored (${engDelivery.production.producerId} declined) — supply a change-set or configure a producer`
+              : 'Change-set came from intake, not from a code producer',
+        ]
+      : []),
     applyGateWording,
     'Seal eng evidence under .umer/eng/<runId>/ after Pass or eligible auto-apply',
   ];
@@ -389,6 +406,7 @@ export async function planIntakeWithUx(
 export async function planIntakeForControl(
   registry: ProjectRegistry,
   raw: IntakeInstruction,
+  options: IntakePlanOptions = {},
 ): Promise<IntakePlan> {
   const parsed = IntakeInstructionSchema.safeParse(raw);
   if (!parsed.success) {
@@ -410,7 +428,7 @@ export async function planIntakeForControl(
     return planIntakeWithUx(registry, raw);
   }
   if (parsed.data.type === 'feature' || parsed.data.type === 'bug') {
-    return planIntakeWithEng(registry, raw);
+    return planIntakeWithEng(registry, raw, options);
   }
   return planIntake(registry, raw);
 }

@@ -34,6 +34,29 @@ export {
   planIntakeWithUx,
   planIntakeForControl,
 } from './intake.js';
+export type { IntakePlanOptions } from './intake.js';
+export { routeIntakeGoal, decideIntakeRouting, TYPE_SPECIALISTS } from './pm-routing.js';
+export type {
+  IntakeRouting,
+  IntakeRoutingDecision,
+  IntakeTaskType,
+  RoutingCandidate,
+  RoutingConfidence,
+} from './pm-routing.js';
+export {
+  createManualCodeProducer,
+  createScriptedCodeProducer,
+  createProjectFileReader,
+  buildChangeSetDraft,
+  validateProducedChangeSet,
+} from './code-producer.js';
+export type {
+  CodeProducer,
+  CodeProductionRequest,
+  CodeProductionOutcome,
+  EngChangeSetDraft,
+  EngProductionRecord,
+} from './code-producer.js';
 export { runSeoAudit, buildSeoAuditReport } from './seo-audit.js';
 export type {
   SeoAuditReport,

@@ -26,6 +26,7 @@ import {
   type EngApplyResult,
   type IntakeInstruction,
   type IntakePlan,
+  type CodeProducer,
   type ProjectRegistry,
   type ResolvedProject,
   type QaApplyResult,
@@ -75,6 +76,8 @@ export type ControlApiState = {
   intakes: IntakeRecord[];
   /** In-process shim bus — QA requests publish here; Fabric remains future substrate. */
   bus: EventBus;
+  /** Authors eng change-sets when intake did not supply one. */
+  codeProducer?: CodeProducer;
   /** Internal: QA shim subscribed once. */
   qaBusShimRegistered?: boolean;
 };
@@ -308,7 +311,9 @@ export async function submitIntake(
 
   // planIntakeForControl: eng / seo / security / perf / ux async; else sync.
   // SEO/security/perf/ux never auto-apply (autoApplyEng is eng-only).
-  const plan = await planIntakeForControl(state.projectRegistry, instruction);
+  const plan = await planIntakeForControl(state.projectRegistry, instruction, {
+    codeProducer: state.codeProducer,
+  });
   const intakeId = `intake-${Date.now()}`;
   const record: IntakeRecord = {
     intakeId,
@@ -636,6 +641,9 @@ export async function submitIntake(
           engStatus: plan.engDelivery.status,
           humanRequired: true,
           gateDecision: gateDecision.reason,
+          codeProducer: plan.engDelivery.production?.producerId,
+          codeProducerStatus: plan.engDelivery.production?.status,
+          routingNote: plan.routing?.note,
         },
       },
       `corr-${intakeId}`,

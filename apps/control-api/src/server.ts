@@ -3,7 +3,7 @@ import { healthCheck } from '@umer/kernel';
 import { createControlPlaneService, type ControlPlaneService } from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
 import { createEventBus } from '@umer/event-bus';
-import type { IntakeInstruction } from '@umer/registry';
+import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
 import {
   type ControlApiState,
   applyEngOnGatePass,
@@ -21,6 +21,8 @@ import {
 } from './state.js';
 import { runQaNightlyWatchdog } from './qa-nightly-watchdog.js';
 import { filterWatchdogPendingFindings } from './watchdog-findings.js';
+import { buildGateReview } from './gate-review.js';
+import { listCodeProducers, resolveCodeProducer } from './code-producer.js';
 
 const SERVICE_NAME = 'control-api';
 
@@ -44,6 +46,11 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
 }
 
 export async function createControlApiState(): Promise<ControlApiState> {
+  const { producer, fallbackReason } = resolveCodeProducer();
+  if (fallbackReason) {
+    // Surface a misconfigured producer instead of silently writing nothing forever.
+    console.warn(`[control-api] ${fallbackReason}`);
+  }
   const state: ControlApiState = {
     workPackages: [],
     intakes: [],
@@ -51,6 +58,7 @@ export async function createControlApiState(): Promise<ControlApiState> {
     projectRegistry: await loadProjectRegistry(),
     controlPlane: null as unknown as ControlPlaneService,
     bus: createEventBus(),
+    codeProducer: producer,
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
@@ -136,6 +144,30 @@ export function createControlApiServer(state: ControlApiState) {
       return;
     }
 
+    // PM's read of a goal, before anything is submitted. Suggestion only.
+    if (path === '/v1/intake/route' && req.method === 'POST') {
+      const body = await readJsonBody<{
+        goal?: string;
+        doneWhen?: string;
+        constraints?: string[];
+      }>(req);
+      const goal = body.goal?.trim() ?? '';
+      if (goal.length < 8) {
+        sendJson(res, 400, { error: 'goal must be at least 8 characters' });
+        return;
+      }
+      sendJson(res, 200, {
+        routing: routeIntakeGoal({
+          goal,
+          doneWhen: body.doneWhen,
+          constraints: body.constraints,
+        }),
+        codeProducers: listCodeProducers(),
+        activeCodeProducer: state.codeProducer?.id ?? null,
+      });
+      return;
+    }
+
     if (path === '/v1/work-packages' && req.method === 'GET') {
       sendJson(res, 200, { workPackages: state.workPackages });
       return;
@@ -148,6 +180,26 @@ export function createControlApiServer(state: ControlApiState) {
 
     if (path === '/v1/audit/recent' && req.method === 'GET') {
       sendJson(res, 200, { records: await listRecentAudit(state) });
+      return;
+    }
+
+    // What am I approving? Per-file diff, who authored it, and what Pass will do.
+    const reviewMatch = path.match(/^\/v1\/gates\/([^/]+)\/review$/);
+    if (reviewMatch && req.method === 'GET') {
+      const waitId = reviewMatch[1]!;
+      const gate = (await state.controlPlane.listPending()).find(
+        (item) => item.waitId === waitId,
+      );
+      if (!gate) {
+        sendJson(res, 404, { error: 'gate_not_pending', waitId });
+        return;
+      }
+      const review = buildGateReview({ gate, intakes: state.intakes });
+      if (!review) {
+        sendJson(res, 404, { error: 'no_intake_for_gate', waitId });
+        return;
+      }
+      sendJson(res, 200, { review });
       return;
     }
 

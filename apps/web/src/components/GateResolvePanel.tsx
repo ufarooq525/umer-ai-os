@@ -2,10 +2,45 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Card } from '@umer/ui';
-import { resolveGate, type GateWaitRecord } from '@/lib/control-api';
+import { Badge, Button, Card, colors, radii } from '@umer/ui';
+import { resolveGate, type GateReview, type GateWaitRecord } from '@/lib/control-api';
+import { GateReviewPanel } from '@/components/GateReviewPanel';
 
-export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
+/** Fallback copy for gates with no review payload (e.g. the demo seed row). */
+const GATE_NOTES: Array<{ prefix: string; note: string }> = [
+  {
+    prefix: 'gate-seo-',
+    note: 'Approve applies an SEO package into the project under .umer/seo/.',
+  },
+  {
+    prefix: 'gate-security-',
+    note: 'Approve seals a security findings package under .umer/security/<runId>/ — report only, no auto-fix.',
+  },
+  {
+    prefix: 'gate-perf-',
+    note: 'Approve seals lab Lighthouse evidence under .umer/perf/<runId>/ — no auto-fix.',
+  },
+  {
+    prefix: 'gate-qa-',
+    note: 'Approve applies a QA evidence package under .umer/qa/ — scan, test plan, and suite runs.',
+  },
+  {
+    prefix: 'gate-ux-',
+    note: 'Approve seals a UX findings package under .umer/ux/<runId>/ — no product UI is changed.',
+  },
+  {
+    prefix: 'gate-eng-',
+    note: 'Approve writes the reviewed change-set into the project and seals evidence under .umer/eng/<runId>/.',
+  },
+];
+
+export function GateResolvePanel({
+  gate,
+  review,
+}: {
+  gate: GateWaitRecord;
+  review?: GateReview | null;
+}) {
   const router = useRouter();
   const [rationale, setRationale] = useState('');
   const [busy, setBusy] = useState(false);
@@ -15,7 +50,7 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
 
   async function decide(decision: 'Pass' | 'Fail') {
     if (!rationale.trim()) {
-      setError('Rationale is required');
+      setError('Say why — the decision is recorded in the audit trail.');
       return;
     }
     setBusy(true);
@@ -37,8 +72,7 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
           .slice(0, 8)
           .map((c) => `${c.status}: ${c.itemId}`);
         const runLines = (result.applyResult.runs ?? []).map(
-          (r) =>
-            `${r.skipped ? 'skip' : r.exitCode === 0 ? 'pass' : 'fail'}: ${r.kind}`,
+          (r) => `${r.skipped ? 'skip' : r.exitCode === 0 ? 'pass' : 'fail'}: ${r.kind}`,
         );
         setApplyFiles([...fileLines, ...runLines, ...checkLines]);
       }
@@ -50,93 +84,71 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
     }
   }
 
+  const fallbackNote = GATE_NOTES.find((n) => gate.gateId.startsWith(n.prefix))?.note;
+
   return (
     <div id={gate.waitId}>
-    <Card title={`${gate.gateId} — ${gate.workPackageId}`}>
-      <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
-        <div>
-          <Badge tone="warning">Awaiting review</Badge>
-        </div>
-        <p style={{ margin: 0, opacity: 0.85, fontSize: 14 }}>
-          Stage {gate.stageFrom} → {gate.stageTo} · Exec {gate.execId}
-          {gate.artifactId ? ` · Artifact ${gate.artifactId}` : ''}
-        </p>
-        {gate.gateId.startsWith('gate-seo-') ? (
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
-            Approve will apply an SEO package into the Laragon project (
-            <code>.umer/seo/</code>
-            ).
-          </p>
-        ) : null}
-        {gate.gateId.startsWith('gate-security-') ? (
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
-            Approve will seal a security findings package into the Laragon project (
-            <code>.umer/security/&lt;runId&gt;/</code>
-            ) — report-only, no auto-fix of product code.
-          </p>
-        ) : null}
-        {gate.gateId.startsWith('gate-perf-') ? (
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
-            Approve will seal a performance findings package into the Laragon project (
-            <code>.umer/perf/&lt;runId&gt;/</code>
-            ) — lab Lighthouse evidence only, no auto-fix.
-          </p>
-        ) : null}
-        {gate.gateId.startsWith('gate-qa-') ? (
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
-            Approve will apply a QA evidence package into the Laragon project (
-            <code>.umer/qa/</code>
-            ) — scan, TEST_PLAN, and suite runs (PHPUnit / Playwright when available).
-          </p>
-        ) : null}
-        {gate.gateId.startsWith('gate-ux-') ? (
-          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
-            Approve will seal a UX findings package into the Laragon project (
-            <code>.umer/ux/&lt;runId&gt;/</code>
-            ) — report-only checklist, no product UI auto-apply.
-          </p>
-        ) : null}
-        <textarea
-          value={rationale}
-          onChange={(e) => setRationale(e.target.value)}
-          placeholder="Approval rationale"
-          rows={3}
-          style={{
-            width: '100%',
-            padding: 12,
-            borderRadius: 6,
-            border: '1px solid #2d3a4d',
-            background: '#0f1419',
-            color: '#e8eef4',
-            fontFamily: 'inherit',
-            resize: 'vertical',
-          }}
-        />
-        {error ? <p style={{ color: '#ff5c5c', margin: 0, fontSize: 14 }}>{error}</p> : null}
-        {applySummary ? (
-          <div style={{ fontSize: 14 }}>
-            <p style={{ color: '#3ecf8e', margin: '0 0 8px' }}>{applySummary}</p>
-            {applyFiles.length > 0 ? (
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {applyFiles.map((f) => (
-                  <li key={f}>
-                    <code>{f}</code>
-                  </li>
-                ))}
-              </ul>
+      <Card title={`${gate.gateId} — ${gate.workPackageId}`}>
+        {review ? (
+          <GateReviewPanel review={review} />
+        ) : (
+          <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+            <Badge tone="warning">Awaiting review</Badge>
+            {fallbackNote ? (
+              <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>{fallbackNote}</p>
             ) : null}
           </div>
-        ) : null}
-      </div>
-      <div style={{ display: 'flex', gap: 12 }}>
-        <Button disabled={busy} onClick={() => void decide('Pass')}>
-          Approve
-        </Button>
-        <Button variant="danger" disabled={busy} onClick={() => void decide('Fail')}>
-          Reject
-        </Button>
-      </div>
-    </Card>
+        )}
+
+        <div style={{ display: 'grid', gap: 12, marginBottom: 16 }}>
+          <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
+            Stage {gate.stageFrom} → {gate.stageTo} · Exec {gate.execId}
+            {gate.artifactId ? ` · Artifact ${gate.artifactId}` : ''}
+          </p>
+          <textarea
+            value={rationale}
+            onChange={(e) => setRationale(e.target.value)}
+            placeholder="Why are you approving or rejecting this?"
+            rows={3}
+            style={{
+              width: '100%',
+              padding: 12,
+              borderRadius: radii.sm,
+              border: `1px solid ${colors.border}`,
+              background: colors.bg,
+              color: colors.text,
+              fontFamily: 'inherit',
+              resize: 'vertical',
+            }}
+          />
+          {error ? (
+            <p style={{ color: colors.danger, margin: 0, fontSize: 14 }}>{error}</p>
+          ) : null}
+          {applySummary ? (
+            <div style={{ fontSize: 14 }}>
+              <p style={{ color: colors.success, margin: '0 0 8px' }}>{applySummary}</p>
+              {applyFiles.length > 0 ? (
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {applyFiles.map((f) => (
+                    <li key={f}>
+                      <code>{f}</code>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <Button disabled={busy} onClick={() => void decide('Pass')}>
+            {review?.kind === 'code' ? 'Approve & apply' : 'Approve'}
+          </Button>
+          <Button variant="danger" disabled={busy} onClick={() => void decide('Fail')}>
+            Reject
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -17,6 +17,13 @@ import {
   type EngChangeSetEntry,
   type EngResolvedEdit,
 } from './eng-diff.js';
+import {
+  buildChangeSetDraft,
+  createProjectFileReader,
+  validateProducedChangeSet,
+  type CodeProducer,
+  type EngProductionRecord,
+} from './code-producer.js';
 import type { ResolvedProject } from './types.js';
 
 export type EngDeliveryType = 'feature' | 'bug';
@@ -84,6 +91,8 @@ export type EngDeliveryReport = {
   runBundle?: QaRunBundle;
   /** Suite logs captured from staging before cleanup (bounded). */
   stagedEvidence: EngStagedEvidenceFile[];
+  /** Who authored the change-set (producer adapter), when one was consulted. */
+  production?: EngProductionRecord;
   quickWins: string[];
   nextActions: string[];
   /** Non-empty when the package needs a human before it can be applied. */
@@ -313,8 +322,10 @@ export function evaluateStagedRuns(bundle: QaRunBundle): {
  * Tests run only against an isolated staging copy — the real Laragon tree is read-only
  * until applyEngToProject after approval / eligible auto-apply.
  *
- * There is no code generator here: supply `proposedChanges` (path + expected base +
- * replacement content). The runner validates paths/hashes and renders a review diff.
+ * The runner never writes code itself. Either intake supplies `proposedChanges`
+ * (path + expected base + replacement content), or an injected `codeProducer` authors
+ * one. Both paths are validated for path safety, scope, and base freshness before a
+ * review diff is rendered.
  */
 export async function runEngDelivery(input: {
   project: ResolvedProject;
@@ -325,6 +336,8 @@ export async function runEngDelivery(input: {
   targetModule?: string;
   /** Explicit change-set from intake (required for a ready package). */
   proposedChanges?: EngChangeSetEntry[];
+  /** Authors the change-set when intake did not supply one. */
+  codeProducer?: CodeProducer;
   /** Override for deterministic evidence paths in tests. */
   runId?: string;
 }): Promise<EngDeliveryReport> {
@@ -343,14 +356,88 @@ export async function runEngDelivery(input: {
   });
 
   const blockers: string[] = [];
-  const proposedChanges = input.proposedChanges ?? [];
+  let proposedChanges = input.proposedChanges ?? [];
   let resolved: EngResolvedEdit[] = [];
   let changeSet: EngChangeSetEntry[] = [];
+  let production: EngProductionRecord | undefined;
+
+  if (input.codeProducer) {
+    const producer = input.codeProducer;
+    const draft = await buildChangeSetDraft({
+      root,
+      scopeFiles: scope.files,
+      maxFiles: scope.maxFiles,
+    });
+
+    if (proposedChanges.length > 0) {
+      production = {
+        producerId: producer.id,
+        producerDescription: producer.describe(),
+        status: 'skipped',
+        reason: 'Intake supplied an explicit change-set, so no producer was consulted',
+        notes: [],
+        changeCount: proposedChanges.length,
+        problems: [],
+        draft,
+      };
+    } else {
+      const outcome = await producer.produce({
+        projectId: input.project.projectId,
+        projectName: input.project.name,
+        absolutePath: root,
+        category: input.project.category,
+        type: input.type,
+        goal: input.goal,
+        doneWhen: input.doneWhen,
+        scopeFiles: scope.files.map((f) => ({ path: f.path, exists: f.exists })),
+        targetModule: input.targetModule,
+        maxFiles: scope.maxFiles,
+        readProjectFile: createProjectFileReader(root),
+      });
+
+      if (outcome.status === 'produced') {
+        const problems = validateProducedChangeSet({
+          root,
+          changes: outcome.changes,
+          maxFiles: scope.maxFiles,
+          allowedPaths: explicitTargets ? scope.files.map((f) => f.path) : undefined,
+        });
+        production = {
+          producerId: producer.id,
+          producerDescription: producer.describe(),
+          status: 'produced',
+          notes: outcome.notes ?? [],
+          changeCount: outcome.changes.length,
+          problems,
+          draft,
+        };
+        if (problems.length > 0) {
+          blockers.push(...problems.map((p) => `Code producer ${producer.id}: ${p}`));
+        } else {
+          proposedChanges = outcome.changes;
+        }
+      } else {
+        production = {
+          producerId: producer.id,
+          producerDescription: producer.describe(),
+          status: 'declined',
+          reason: outcome.reason,
+          notes: outcome.notes ?? [],
+          changeCount: 0,
+          problems: [],
+          draft,
+        };
+        blockers.push(`Code producer ${producer.id} declined: ${outcome.reason}`);
+      }
+    }
+  }
 
   if (proposedChanges.length === 0) {
-    blockers.push(
-      'No proposedChanges supplied — eng.app-delivery does not invent code; pass an explicit change-set.',
-    );
+    if (!production || production.status === 'produced') {
+      blockers.push(
+        'No proposedChanges supplied — eng.app-delivery does not invent code; pass an explicit change-set.',
+      );
+    }
   } else {
     // Derive target scope from change paths when the caller omitted targetFiles.
     if (!explicitTargets) {
@@ -481,6 +568,7 @@ export async function runEngDelivery(input: {
     runs,
     runBundle,
     stagedEvidence: status === 'ready' ? stagedEvidence : [],
+    production,
     quickWins:
       status === 'ready'
         ? [
