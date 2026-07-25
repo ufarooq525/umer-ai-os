@@ -118,6 +118,39 @@ export type IntakePlan = {
     quickWins: string[];
     nextActions: string[];
   };
+  perfAudit?: {
+    specialistId: string;
+    runId: string;
+    projectId: string;
+    projectName: string;
+    absolutePath: string;
+    goal: string;
+    summary: string;
+    forcesGate: boolean;
+    proposedDiff: string;
+    targetUrl: string | null;
+    findings: Array<{
+      id: string;
+      category: string;
+      metric: string;
+      severity: string;
+      title: string;
+      detail: string;
+      evidence: string;
+      remediation: string;
+    }>;
+    severityCounts: Record<string, number>;
+    metrics: {
+      performanceScore: number | null;
+      lcpMs: number | null;
+      cls: number | null;
+      inpMs: number | null;
+      fidMs: number | null;
+      tbtMs: number | null;
+    };
+    quickWins: string[];
+    nextActions: string[];
+  };
   qaAudit?: {
     specialistId: string;
     projectId: string;

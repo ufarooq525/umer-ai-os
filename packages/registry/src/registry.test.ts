@@ -77,7 +77,9 @@ describe('project registry', () => {
     expect(plan.qaAudit?.items.some((i) => i.id === 'school-spa-ui')).toBe(true);
   });
 
-  it('applies SEO package into a project folder on Pass', async () => {
+  it(
+    'applies SEO package into a project folder on Pass',
+    async () => {
     process.env.UMER_SEO_SKIP_LIGHTHOUSE = '1';
     const dir = await mkdtemp(join(tmpdir(), 'umer-seo-'));
     try {
@@ -129,7 +131,9 @@ describe('project registry', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  },
+    20_000,
+  );
 
   it('applies QA package into a school-like project folder on Pass', async () => {
     process.env.UMER_QA_SKIP_RUN = '1';

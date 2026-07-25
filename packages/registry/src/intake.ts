@@ -4,6 +4,7 @@ import { buildSeoAuditReport, runSeoAudit } from './seo-audit.js';
 import { runQaAudit } from './qa-audit.js';
 import { runEngDelivery } from './eng-delivery.js';
 import { runSecurityAudit } from './security-audit.js';
+import { runPerfAudit } from './perf-audit.js';
 import type { IntakeInstruction, IntakePlan, ResolvedProject } from './types.js';
 import type { ProjectRegistry } from './registry.js';
 
@@ -268,7 +269,56 @@ export async function planIntakeWithSecurity(
 }
 
 /**
- * Control-api entry: eng for feature|bug, SEO for seo, security for security, else sync.
+ * Enrich perf intake with runPerfAudit (Lighthouse lab, report-only).
+ * Never auto-applies; critical/high force human gate regardless of category.
+ */
+export async function planIntakeWithPerf(
+  registry: ProjectRegistry,
+  raw: IntakeInstruction,
+): Promise<IntakePlan> {
+  const plan = planIntake(registry, raw);
+  if (plan.type !== 'perf') {
+    return plan;
+  }
+
+  const project = registry.requireActive(plan.projectId);
+  const perfAudit = await runPerfAudit({
+    project,
+    goal: plan.goal,
+    doneWhen: IntakeInstructionSchema.parse(raw).doneWhen,
+  });
+
+  const withoutGenericGate = plan.acceptanceCriteria.filter(
+    (c) => c !== 'Human gate Pass before applying to the Laragon repo',
+  );
+
+  const { severityCounts, forcesGate, gateDecision, metrics } = perfAudit;
+  const scoreLabel =
+    metrics.performanceScore === null
+      ? 'n/a'
+      : `${Math.round(metrics.performanceScore * 100)}/100`;
+  const acceptanceCriteria = [
+    ...withoutGenericGate,
+    `Review performance findings (score=${scoreLabel}; critical=${severityCounts.critical} high=${severityCounts.high} medium=${severityCounts.medium} low=${severityCounts.low})`,
+    forcesGate
+      ? 'Critical/high findings present — explicit human gate required (severity checked before category; autoApplyEng cannot skip)'
+      : gateDecision.reason,
+    'Lab-only Lighthouse metrics — do not treat as field Core Web Vitals (CrUX/RUM)',
+    'No proposedDiff / auto-fix in perf v1 — remediations are separate eng intakes',
+    'Seal performance evidence under .umer/perf/<runId>/ after Pass',
+  ];
+
+  return {
+    ...plan,
+    summary: perfAudit.summary,
+    nextActions: perfAudit.nextActions,
+    acceptanceCriteria,
+    perfAudit,
+  };
+}
+
+/**
+ * Control-api entry: eng for feature|bug, SEO/security/perf async audits, else sync.
  */
 export async function planIntakeForControl(
   registry: ProjectRegistry,
@@ -286,6 +336,9 @@ export async function planIntakeForControl(
   }
   if (parsed.data.type === 'security') {
     return planIntakeWithSecurity(registry, raw);
+  }
+  if (parsed.data.type === 'perf') {
+    return planIntakeWithPerf(registry, raw);
   }
   if (parsed.data.type === 'feature' || parsed.data.type === 'bug') {
     return planIntakeWithEng(registry, raw);

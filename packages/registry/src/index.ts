@@ -30,6 +30,7 @@ export {
   planIntakeWithEng,
   planIntakeWithSeo,
   planIntakeWithSecurity,
+  planIntakeWithPerf,
   planIntakeForControl,
 } from './intake.js';
 export { runSeoAudit, buildSeoAuditReport } from './seo-audit.js';
@@ -148,3 +149,26 @@ export {
   hasElevatedSecurityFindings,
 } from './security-gate-policy.js';
 export type { SecurityGateDecision } from './security-gate-policy.js';
+export {
+  runPerfAudit,
+  perfRunId,
+  resolvePerfTargetUrl,
+  buildPerfFindings,
+  PERF_THRESHOLDS,
+} from './perf-audit.js';
+export type {
+  PerfAuditReport,
+  PerfFinding,
+  PerfFindingCategory,
+  PerfMetricName,
+  PerfMetrics,
+  PerfSeverity,
+} from './perf-audit.js';
+export { applyPerfToProject } from './perf-apply.js';
+export type { PerfApplyResult, PerfApplyFileChange } from './perf-apply.js';
+export {
+  decidePerfGate,
+  decidePerfGateByCategory,
+  hasElevatedPerfFindings,
+} from './perf-gate-policy.js';
+export type { PerfGateDecision } from './perf-gate-policy.js';

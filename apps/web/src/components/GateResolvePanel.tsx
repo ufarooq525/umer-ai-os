@@ -74,6 +74,13 @@ export function GateResolvePanel({ gate }: { gate: GateWaitRecord }) {
             ) — report-only, no auto-fix of product code.
           </p>
         ) : null}
+        {gate.gateId.startsWith('gate-perf-') ? (
+          <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
+            Approve will seal a performance findings package into the Laragon project (
+            <code>.umer/perf/&lt;runId&gt;/</code>
+            ) — lab Lighthouse evidence only, no auto-fix.
+          </p>
+        ) : null}
         {gate.gateId.startsWith('gate-qa-') ? (
           <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
             Approve will apply a QA evidence package into the Laragon project (

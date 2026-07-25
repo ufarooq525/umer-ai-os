@@ -3,6 +3,7 @@ import type { QaAuditReport } from './qa-audit.js';
 import type { EngDeliveryReport } from './eng-delivery.js';
 import type { EngChangeSetEntry } from './eng-diff.js';
 import type { SecurityAuditReport } from './security-audit.js';
+import type { PerfAuditReport } from './perf-audit.js';
 
 export const packageName = '@umer/registry' as const;
 
@@ -78,6 +79,8 @@ export type IntakePlan = {
   qaAudit?: QaAuditReport;
   /** Present when type is security — full security.review static audit. */
   securityAudit?: SecurityAuditReport;
+  /** Present when type is perf — full perf.optimize Lighthouse audit. */
+  perfAudit?: PerfAuditReport;
   /**
    * Present when type is feature|bug — eng.app-delivery work package.
    * Never set for seo intake (seo-project category may still receive feature|bug eng).
@@ -92,6 +95,11 @@ export type {
   SecurityFinding,
   SecuritySeverity,
 } from './security-audit.js';
+export type {
+  PerfAuditReport,
+  PerfFinding,
+  PerfSeverity,
+} from './perf-audit.js';
 export type {
   EngDeliveryReport,
   EngDeliveryType,

@@ -8,10 +8,13 @@ import {
   applyQaToProject,
   applySeoToProject,
   applySecurityToProject,
+  applyPerfToProject,
   createProjectRegistry,
   decideEngGate,
   decideSecurityGateByCategory,
+  decidePerfGateByCategory,
   hasElevatedSecurityFindings,
+  hasElevatedPerfFindings,
   planIntakeForControl,
   type EngApplyResult,
   type IntakeInstruction,
@@ -21,6 +24,7 @@ import {
   type ResolvedProject,
   type SeoApplyResult,
   type SecurityApplyResult,
+  type PerfApplyResult,
 } from '@umer/registry';
 
 export type WorkPackageSummary = {
@@ -38,7 +42,7 @@ export type IntakeRecord = {
   plan: IntakePlan;
   createdAt: string;
   status: 'planned' | 'approved' | 'rejected';
-  applyResult?: SeoApplyResult | QaApplyResult | EngApplyResult | SecurityApplyResult;
+  applyResult?: SeoApplyResult | QaApplyResult | EngApplyResult | SecurityApplyResult | PerfApplyResult;
 };
 
 export type ControlApiState = {
@@ -118,8 +122,8 @@ export async function submitIntake(
   state: ControlApiState,
   instruction: IntakeInstruction,
 ): Promise<IntakeRecord> {
-  // planIntakeForControl: eng for feature|bug, SEO for seo, security for security, sync otherwise.
-  // SEO/security never auto-apply (autoApplyEng is eng-only).
+  // planIntakeForControl: eng / seo / security / perf async; else sync.
+  // SEO/security/perf never auto-apply (autoApplyEng is eng-only).
   const plan = await planIntakeForControl(state.projectRegistry, instruction);
   const intakeId = `intake-${Date.now()}`;
   const record: IntakeRecord = {
@@ -133,8 +137,86 @@ export async function submitIntake(
   const isSeo = instruction.type === 'seo';
   const isQa = instruction.type === 'qa';
   const isSecurity = instruction.type === 'security' && Boolean(plan.securityAudit);
+  const isPerf = instruction.type === 'perf' && Boolean(plan.perfAudit);
   const isEng =
     (instruction.type === 'feature' || instruction.type === 'bug') && Boolean(plan.engDelivery);
+
+  if (isPerf && plan.perfAudit) {
+    const project = state.projectRegistry.requireActive(plan.projectId);
+    const findings = plan.perfAudit.findings;
+    const execId = 'EXEC-9500';
+    const specialistId = 'perf.optimize';
+    const stage = 'Perf Optimize';
+    const workPackageId = `wp-${intakeId}`;
+    const gateId = `gate-perf-${plan.projectId}`;
+
+    // Severity BEFORE category — never consult category / autoApplyEng when elevated.
+    let humanRequired: boolean;
+    let gateReason: string;
+    let forcedBySeverity: boolean;
+    if (hasElevatedPerfFindings(findings)) {
+      humanRequired = true;
+      forcedBySeverity = true;
+      gateReason =
+        'critical/high performance findings force an explicit human gate (never skipped by category or autoApplyEng)';
+    } else {
+      const byCategory = decidePerfGateByCategory(project.category);
+      humanRequired = byCategory.humanRequired;
+      forcedBySeverity = false;
+      gateReason = byCategory.reason;
+    }
+
+    // Perf never auto-applies — always create a gate (like security/SEO).
+    state.workPackages.unshift({
+      workPackageId,
+      execId,
+      status: 'AwaitingReview',
+      specialistId,
+      stage,
+      projectId: plan.projectId,
+    });
+
+    await state.controlPlane.requestGateReview(
+      {
+        gateId,
+        execId,
+        workPackageId,
+        stageFrom: stage,
+        stageTo: 'Dispatch',
+        requiredApprovers: ['human.approver'],
+        humanRequired,
+      },
+      `corr-${intakeId}`,
+    );
+
+    await state.auditService.append(
+      {
+        action: 'control.approval.requested',
+        actor: specialistId,
+        resourceType: 'project',
+        resourceId: plan.projectId,
+        outcome: 'success',
+        correlationId: `corr-${intakeId}`,
+        detail: {
+          intakeId,
+          type: plan.type,
+          goal: plan.goal,
+          perfRunId: plan.perfAudit.runId,
+          targetUrl: plan.perfAudit.targetUrl,
+          findingCount: findings.length,
+          severityCounts: plan.perfAudit.severityCounts,
+          metrics: plan.perfAudit.metrics,
+          forcesGate: plan.perfAudit.forcesGate,
+          forcedBySeverity,
+          humanRequired,
+          gateDecision: gateReason,
+        },
+      },
+      `corr-${intakeId}`,
+    );
+
+    return record;
+  }
 
   if (isSecurity && plan.securityAudit) {
     const project = state.projectRegistry.requireActive(plan.projectId);
@@ -371,6 +453,53 @@ export async function submitIntake(
   );
 
   return record;
+}
+
+export async function applyPerfOnGatePass(
+  state: ControlApiState,
+  input: {
+    workPackageId: string;
+    gateId: string;
+    rationale: string;
+  },
+): Promise<PerfApplyResult | undefined> {
+  if (!input.gateId.startsWith('gate-perf-')) {
+    return undefined;
+  }
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake?.plan.perfAudit) {
+    return undefined;
+  }
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const applyResult = await applyPerfToProject({
+    project,
+    report: intake.plan.perfAudit,
+    rationale: input.rationale,
+  });
+  intake.status = 'approved';
+  intake.applyResult = applyResult;
+
+  await state.auditService.append(
+    {
+      action: 'artifact.sealed',
+      actor: 'perf.optimize',
+      resourceType: 'project',
+      resourceId: project.projectId,
+      outcome: 'success',
+      correlationId: `corr-apply-${intake.intakeId}`,
+      detail: {
+        intakeId: intake.intakeId,
+        summary: applyResult.summary,
+        evidenceDir: applyResult.evidenceDir,
+        files: applyResult.files.map((f) => f.path),
+        findingCount: applyResult.findingCount,
+        forcesGate: applyResult.forcesGate,
+      },
+    },
+    `corr-apply-${intake.intakeId}`,
+  );
+
+  return applyResult;
 }
 
 export async function applySecurityOnGatePass(
