@@ -29,6 +29,18 @@ export {
 } from './discovery.js';
 
 export {
+  DiscoveryOrchestrator,
+  type DiscoveryOrchestratorOptions,
+  type DiscoveryRunResult,
+} from './discovery-orchestrator.js';
+
+export {
+  ResearchOrchestrator,
+  type ResearchOrchestratorOptions,
+  type ResearchResult,
+} from './research-orchestrator.js';
+
+export {
   DefaultOpportunityPipeline,
   type BusinessAudit,
   type DiscoveryAdapter,
