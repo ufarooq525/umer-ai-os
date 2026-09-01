@@ -60,6 +60,8 @@ export {
   type OpportunityPersistence,
 } from './persistence.js';
 
+export { createMySqlOpportunityPersistence } from './mysql.js';
+
 export {
   OpportunityRunService,
   defaultOpportunityRunClock,
