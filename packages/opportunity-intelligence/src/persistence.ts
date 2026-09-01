@@ -60,6 +60,51 @@ export type MySqlOpportunityPersistenceOptions = {
   db: MySqlExecutor;
 };
 
+type BusinessRow = {
+  id: string;
+  name: string;
+  website: string | null;
+  geography: string;
+  industry: string | null;
+  niche_id: string | null;
+  source_refs: string | string[];
+  discovered_at: string;
+  last_researched_at: string | null;
+};
+
+type EvidenceRow = {
+  id: string;
+  type: EvidenceRecord['type'];
+  title: string;
+  source_url: string;
+  observed_at: string;
+  excerpt: string | null;
+  observation: string;
+  strength: EvidenceRecord['strength'];
+  supports_json: string | string[];
+  contradicts_json: string | string[];
+};
+
+type OpportunityRow = {
+  id: string;
+  type: Opportunity['type'];
+  title: string;
+  geography: string;
+  market: string;
+  niche_id: string | null;
+  business_id: string | null;
+  problem_ids_json: string | string[];
+  score_json: string | Opportunity['score'];
+  estimated_value_min: number | string | null;
+  estimated_value_max: number | string | null;
+  currency: string | null;
+  time_to_revenue_days: number | string | null;
+  evidence_refs_json: string | string[];
+  status: Opportunity['status'];
+  created_at: string;
+  updated_at: string;
+};
+
 export class MySqlOpportunityPersistence implements OpportunityPersistence {
   constructor(private readonly options: MySqlOpportunityPersistenceOptions) {}
 
@@ -117,18 +162,91 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
     );
   }
 
-  async getBusiness(id: string): Promise<BusinessProspect | undefined> { return this.queryOne<BusinessProspect>('SELECT * FROM opportunity_businesses WHERE id = ?', [id]); }
-  async getEvidence(id: string): Promise<EvidenceRecord | undefined> { return this.queryOne<EvidenceRecord>('SELECT * FROM opportunity_evidence WHERE id = ?', [id]); }
-  async getOpportunity(id: string): Promise<Opportunity | undefined> { return this.queryOne<Opportunity>('SELECT * FROM opportunity_opportunities WHERE id = ?', [id]); }
-  async listOpportunities(nicheId?: string): Promise<Opportunity[]> {
-    return nicheId
-      ? this.queryMany<Opportunity>('SELECT * FROM opportunity_opportunities WHERE niche_id = ? ORDER BY created_at DESC', [nicheId])
-      : this.queryMany<Opportunity>('SELECT * FROM opportunity_opportunities ORDER BY created_at DESC');
+  async getBusiness(id: string): Promise<BusinessProspect | undefined> {
+    const row = await this.queryOne<BusinessRow>('SELECT * FROM opportunity_businesses WHERE id = ?', [id]);
+    return row ? this.mapBusiness(row) : undefined;
   }
+
+  async getEvidence(id: string): Promise<EvidenceRecord | undefined> {
+    const row = await this.queryOne<EvidenceRow>('SELECT * FROM opportunity_evidence WHERE id = ?', [id]);
+    return row ? this.mapEvidence(row) : undefined;
+  }
+
+  async getOpportunity(id: string): Promise<Opportunity | undefined> {
+    const row = await this.queryOne<OpportunityRow>('SELECT * FROM opportunity_opportunities WHERE id = ?', [id]);
+    return row ? this.mapOpportunity(row) : undefined;
+  }
+
+  async listOpportunities(nicheId?: string): Promise<Opportunity[]> {
+    const rows = nicheId
+      ? await this.queryMany<OpportunityRow>('SELECT * FROM opportunity_opportunities WHERE niche_id = ? ORDER BY created_at DESC', [nicheId])
+      : await this.queryMany<OpportunityRow>('SELECT * FROM opportunity_opportunities ORDER BY created_at DESC');
+    return rows.map((row) => this.mapOpportunity(row));
+  }
+
   async listEvidence(ids?: string[]): Promise<EvidenceRecord[]> {
-    if (!ids?.length) return this.queryMany<EvidenceRecord>('SELECT * FROM opportunity_evidence ORDER BY observed_at DESC');
-    const placeholders = ids.map(() => '?').join(', ');
-    return this.queryMany<EvidenceRecord>(`SELECT * FROM opportunity_evidence WHERE id IN (${placeholders})`, ids);
+    const rows = !ids?.length
+      ? await this.queryMany<EvidenceRow>('SELECT * FROM opportunity_evidence ORDER BY observed_at DESC')
+      : await this.queryMany<EvidenceRow>(
+          `SELECT * FROM opportunity_evidence WHERE id IN (${ids.map(() => '?').join(', ')})`,
+          ids,
+        );
+    return rows.map((row) => this.mapEvidence(row));
+  }
+
+  private mapBusiness(row: BusinessRow): BusinessProspect {
+    return {
+      id: row.id,
+      name: row.name,
+      ...(row.website ? { website: row.website } : {}),
+      geography: row.geography,
+      ...(row.industry ? { industry: row.industry } : {}),
+      ...(row.niche_id ? { nicheId: row.niche_id } : {}),
+      sourceRefs: this.parseJson<string[]>(row.source_refs),
+      discoveredAt: row.discovered_at,
+      ...(row.last_researched_at ? { lastResearchedAt: row.last_researched_at } : {}),
+    };
+  }
+
+  private mapEvidence(row: EvidenceRow): EvidenceRecord {
+    return {
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      sourceUrl: row.source_url,
+      observedAt: row.observed_at,
+      ...(row.excerpt ? { excerpt: row.excerpt } : {}),
+      observation: row.observation,
+      strength: row.strength,
+      supports: this.parseJson<string[]>(row.supports_json),
+      contradicts: this.parseJson<string[]>(row.contradicts_json),
+    };
+  }
+
+  private mapOpportunity(row: OpportunityRow): Opportunity {
+    return {
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      geography: row.geography,
+      market: row.market,
+      ...(row.niche_id ? { nicheId: row.niche_id } : {}),
+      ...(row.business_id ? { businessId: row.business_id } : {}),
+      problemIds: this.parseJson<string[]>(row.problem_ids_json),
+      score: this.parseJson<Opportunity['score']>(row.score_json),
+      ...(row.estimated_value_min !== null ? { estimatedValueMin: Number(row.estimated_value_min) } : {}),
+      ...(row.estimated_value_max !== null ? { estimatedValueMax: Number(row.estimated_value_max) } : {}),
+      ...(row.currency ? { currency: row.currency } : {}),
+      ...(row.time_to_revenue_days !== null ? { timeToRevenueDays: Number(row.time_to_revenue_days) } : {}),
+      evidenceRefs: this.parseJson<string[]>(row.evidence_refs_json),
+      status: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private parseJson<T>(value: string | T): T {
+    return typeof value === 'string' ? JSON.parse(value) as T : value;
   }
 
   private async queryOne<T>(sql: string, params: readonly unknown[]): Promise<T | undefined> {
