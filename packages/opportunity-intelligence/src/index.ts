@@ -12,3 +12,11 @@ export {
 } from './scoring.js';
 
 export { InMemoryNicheRegistry, type NicheRegistry } from './niche-registry.js';
+
+export {
+  discoverBusinesses,
+  type BusinessCandidate,
+  type BusinessDiscoveryProvider,
+  type DiscoveryQuery,
+  type DiscoveryResult,
+} from './discovery.js';
