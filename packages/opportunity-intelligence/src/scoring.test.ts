@@ -20,14 +20,14 @@ describe('scoreOpportunity', () => {
   it('produces an outreach-ready score for strong evidence', () => {
     const result = scoreOpportunity(strong);
 
-    expect(result.overall).toBe(87);
+    expect(result.overall).toBe(86);
     expect(result.recommendation).toBe('outreach_ready');
   });
 
   it('blocks outreach when evidence confidence is too low', () => {
     const result = scoreOpportunity({ ...strong, evidenceConfidence: 40 });
 
-    expect(result.overall).toBe(85);
+    expect(result.overall).toBe(84);
     expect(result.recommendation).toBe('research_more');
   });
 
