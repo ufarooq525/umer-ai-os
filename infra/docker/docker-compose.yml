@@ -15,6 +15,23 @@ services:
       timeout: 5s
       retries: 10
 
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: umer_root
+      MYSQL_DATABASE: umer_revenue_os
+      MYSQL_USER: umer_revenue
+      MYSQL_PASSWORD: umer_revenue
+    ports:
+      - '3306:3306'
+    volumes:
+      - umer_mysql:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uumer_revenue -pumer_revenue --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   redis:
     image: redis:7-alpine
     ports:
@@ -75,6 +92,7 @@ services:
       NODE_ENV: production
       LOG_LEVEL: info
       DATABASE_URL: postgres://umer:umer@postgres:5432/umer_ai_os
+      OPPORTUNITY_DATABASE_URL: mysql://umer_revenue:umer_revenue@mysql:3306/umer_revenue_os
       REDIS_URL: redis://redis:6379
       NATS_URL: nats://nats:4222
       S3_ENDPOINT: http://minio:9000
@@ -89,6 +107,8 @@ services:
       - '4000:4000'
     depends_on:
       postgres:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -227,4 +247,5 @@ services:
 
 volumes:
   umer_pg:
+  umer_mysql:
   umer_minio:
