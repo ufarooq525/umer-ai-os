@@ -13,7 +13,7 @@ export type MySqlMigration = {
 export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
   {
     id: '001_opportunity_intelligence',
-    checksum: 'f4b0b6c1b2bb4f3e8a4fbe1e4d3f0a7f4c2a6d8e9b1c3d5e7f9a1b2c4d6e8f0a',
+    checksum: 'bd63f27c6add2bb8d3d5c6f3daba28eead9358153bf0f440e2998c2cdaa23c3c',
     statements: [
       `CREATE TABLE IF NOT EXISTS opportunity_niches (
         id VARCHAR(191) PRIMARY KEY,
