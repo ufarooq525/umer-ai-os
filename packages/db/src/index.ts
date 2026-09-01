@@ -57,7 +57,8 @@ export function createMySqlClient(connectionString?: string): MySqlClient {
     return mysqlPool;
   }
   const env = loadEnv();
-  mysqlPool = mysql.createPool(connectionString ?? env.OPPORTUNITY_DATABASE_URL, {
+  mysqlPool = mysql.createPool({
+    uri: connectionString ?? env.OPPORTUNITY_DATABASE_URL,
     waitForConnections: true,
     connectionLimit: 10,
     maxIdle: 10,
@@ -73,7 +74,7 @@ export function createMySqlClient(connectionString?: string): MySqlClient {
 export function createMySqlExecutor(pool: MySqlClient = createMySqlClient()): MySqlExecutor {
   return {
     async execute<T = unknown>(sql: string, params: readonly unknown[] = []): Promise<T> {
-      const [rows] = await pool.execute(sql, params as unknown[]);
+      const [rows] = await pool.execute(sql, params as never);
       return rows as T;
     },
   };

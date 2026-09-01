@@ -20,11 +20,25 @@ export function evaluateRefusal(
     .toLowerCase()
     .trim();
 
+  const STOP_WORDS = new Set([
+    'must',
+    'refuse',
+    'silent',
+    'under',
+    'single',
+    'package',
+    'project',
+    'without',
+    'apply',
+    'applying',
+    'explicit',
+  ]);
+
   for (const nonGoal of mandate.nonGoals) {
     const keywords = nonGoal
       .toLowerCase()
       .split(/[^a-z0-9]+/)
-      .filter((word) => word.length >= 5 && !['must', 'refuse', 'silent'].includes(word));
+      .filter((word) => word.length >= 5 && !STOP_WORDS.has(word));
 
     const matched = keywords.find((keyword) => haystack.includes(keyword));
     if (matched) {

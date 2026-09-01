@@ -99,7 +99,7 @@ describe('OpportunityRunService', () => {
       clock: { nowIso: () => '2026-09-02T10:03:00.000Z' },
     });
 
-    const result = await service.execute(niche, 'run-1');
+    const result = await service.execute(niche, '00000000-0000-0000-0000-000000000001');
 
     expect(result.metrics.businessesDiscovered).toBe(4);
     expect(result.metrics.businessesResearched).toBe(2);
@@ -129,7 +129,7 @@ describe('OpportunityRunService', () => {
       clock: { nowIso: () => '2026-09-02T10:03:00.000Z' },
     });
 
-    const result = await service.execute(niche, 'run-2');
+    const result = await service.execute(niche, '00000000-0000-0000-0000-000000000002');
 
     expect(result.metrics.businessesResearched).toBe(1);
     expect(result.metrics.errors).toBe(1);

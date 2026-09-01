@@ -3,7 +3,7 @@ import { MySqlOpportunityPersistence, type MySqlExecutor } from './persistence.j
 
 describe('MySqlOpportunityPersistence', () => {
   it('maps MySQL JSON and decimal fields back to domain types', async () => {
-    const execute = vi.fn<MySqlExecutor['execute']>();
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => [] as never);
     execute.mockResolvedValueOnce([
       {
         id: 'opp_1',
@@ -35,9 +35,9 @@ describe('MySqlOpportunityPersistence', () => {
         created_at: '2026-09-02T00:00:00.000Z',
         updated_at: '2026-09-02T00:00:00.000Z',
       },
-    ]);
+    ] as never);
 
-    const persistence = new MySqlOpportunityPersistence({ db: { execute } });
+    const persistence = new MySqlOpportunityPersistence({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
     const result = await persistence.getOpportunity('opp_1');
 
     expect(result).toMatchObject({

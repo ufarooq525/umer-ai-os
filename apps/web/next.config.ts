@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  output: process.env.NEXT_OUTPUT_STANDALONE === 'true' || process.platform !== 'win32' ? 'standalone' : undefined,
   transpilePackages: ['@umer/config', '@umer/ui'],
 };
 

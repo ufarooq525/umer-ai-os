@@ -33,10 +33,13 @@ const candidate = (name: string): DiscoveryCandidate => ({
 const evidence = (name: string): EvidenceRecord => ({
   id: `evidence:${name}`,
   sourceUrl: `https://example.com/${name}`,
-  sourceType: 'website',
-  capturedAt: '2026-09-02T00:00:00.000Z',
-  claim: 'Public evidence',
-  confidence: 80,
+  type: 'website',
+  observedAt: '2026-09-02T00:00:00.000Z',
+  observation: 'Public evidence',
+  strength: 'strong',
+  title: `Public evidence for ${name}`,
+  supports: [],
+  contradicts: [],
 });
 
 describe('DefaultOpportunityPipeline', () => {

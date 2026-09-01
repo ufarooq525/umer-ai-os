@@ -94,9 +94,10 @@ describe('control-api', () => {
       doneWhen: 'Apply report written',
     });
     expect(intake.status).toBe(201);
+    const intakeId = (intake.json as { intakeId: string }).intakeId;
     const pending = await request(server, 'GET', '/v1/gates/pending');
-    const seoGate = (pending.json.gates as { waitId: string; gateId: string }[]).find((g) =>
-      g.gateId.startsWith('gate-seo-'),
+    const seoGate = (pending.json.gates as { waitId: string; gateId: string; workPackageId?: string }[]).find((g) =>
+      g.gateId.startsWith('gate-seo-') && g.workPackageId === `wp-${intakeId}`,
     );
     expect(seoGate).toBeTruthy();
     const { status, json } = await request(server, 'POST', `/v1/gates/${seoGate!.waitId}/resolve`, {

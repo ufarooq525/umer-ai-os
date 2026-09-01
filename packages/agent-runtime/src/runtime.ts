@@ -92,9 +92,11 @@ export class AgentRuntime {
       }
     }
 
+    const toolName =
+      workPackage.toolAllowlist[0] ?? resolved.mandate.contract.toolAllowlist[0];
     const refusal = evaluateRefusal(resolved.mandate, {
       action: `execute work package ${workPackage.workPackageId}`,
-      toolName: 'git.diff',
+      toolName,
     });
     if (refusal.refused) {
       throw new AgentRuntimeError('MANDATE_REFUSED', refusal.reason ?? 'mandate refused');

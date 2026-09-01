@@ -52,7 +52,7 @@ export function createDemoWorkPackage(
     taskIds: ['task-e2e-1'],
     capabilityIds: ['cap.app.delivery'],
     contextHandle: 'ctx-e2e-1',
-    toolAllowlist: ['git.diff'],
+    toolAllowlist: ['catalog.read'],
     resourceEnvelope: { parallelism: 1, maxDurationMs: 3_600_000 },
     attempt: 1,
     correlationId: 'corr-e2e-1',

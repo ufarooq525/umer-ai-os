@@ -90,7 +90,7 @@ describe('agent-runtime', () => {
       taskIds: ['task-1'],
       capabilityIds: ['cap.app.delivery'],
       contextHandle: 'ctx-1',
-      toolAllowlist: ['git.diff'],
+      toolAllowlist: loaded.mandate.contract.toolAllowlist,
       resourceEnvelope: { parallelism: 1 },
       attempt: 1,
     });
@@ -142,7 +142,7 @@ describe('agent-runtime', () => {
       taskIds: ['task-1'],
       capabilityIds: ['cap.app.delivery'],
       contextHandle: 'ctx-1',
-      toolAllowlist: ['git.diff'],
+      toolAllowlist: loaded.mandate.contract.toolAllowlist,
       resourceEnvelope: { parallelism: 1 },
       attempt: 1,
     });
