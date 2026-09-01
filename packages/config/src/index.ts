@@ -12,6 +12,10 @@ export const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   DATABASE_URL: z.string().default('postgres://umer:umer@localhost:5432/umer_ai_os'),
+  /** Dedicated MySQL persistence for Opportunity Intelligence / Revenue OS. */
+  OPPORTUNITY_DATABASE_URL: z
+    .string()
+    .default('mysql://umer_revenue:umer_revenue@localhost:3306/umer_revenue_os'),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   NATS_URL: z.string().default('nats://localhost:4222'),
 
