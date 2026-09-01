@@ -5,27 +5,13 @@ import type { BusinessDiscoveryProvider, DiscoveryQuery } from './discovery.js';
 import type { DiscoveryCandidate } from './pipeline.js';
 import type { OpportunityPersistence } from './persistence.js';
 
-export type DiscoveryOrchestratorOptions = {
-  provider: BusinessDiscoveryProvider;
-  persistence: OpportunityPersistence;
-  now?: () => string;
-};
-
+export type DiscoveryOrchestratorOptions = { provider: BusinessDiscoveryProvider; persistence: OpportunityPersistence; now?: () => string };
 export type DiscoveryRunResult = {
-  provider: string;
-  queries: number;
-  rawCandidates: number;
-  uniqueCandidates: number;
-  businessesSaved: number;
+  provider: string; queries: number; rawCandidates: number; uniqueCandidates: number; businessesSaved: number;
   errors: Array<{ query: string; geography: string; message: string }>;
   deduplication: DeduplicationResult;
 };
 
-/**
- * Executes discovery across every configured geography, canonicalizes identities,
- * deduplicates cross-query results, and persists business prospects.
- * Providers remain injected adapters; no search vendor is hard-coded.
- */
 export class DiscoveryOrchestrator {
   constructor(private readonly options: DiscoveryOrchestratorOptions) {}
 
@@ -36,14 +22,8 @@ export class DiscoveryOrchestrator {
     let queries = 0;
 
     for (const geography of niche.geographies) {
-      const query: DiscoveryQuery = {
-        niche,
-        geography,
-        query: this.queryText(niche, geography),
-        limit: niche.targetBusinessesPerRun,
-      };
+      const query: DiscoveryQuery = { niche, geography, query: `${niche.name} ${geography}`, limit: niche.targetBusinessesPerRun };
       queries += 1;
-
       try {
         const results = await this.options.provider.discover(query);
         candidates.push(...results.slice(0, query.limit).map((candidate) => ({
@@ -52,7 +32,7 @@ export class DiscoveryOrchestrator {
           geography: candidate.geography || geography,
           ...(candidate.industry ? { industry: candidate.industry } : {}),
           ...(candidate.website ? { websiteUrl: candidate.website } : {}),
-          sourceRefs: candidate.sourceRefs,
+          sourceRefs: [...new Set(candidate.sourceRefs)],
         })));
       } catch (error) {
         errors.push({ query: query.query, geography, message: this.message(error) });
@@ -62,16 +42,11 @@ export class DiscoveryOrchestrator {
     const deduplication = deduplicateCandidates(candidates);
     let businessesSaved = 0;
     for (const candidate of deduplication.unique) {
-      const identity = buildBusinessIdentity({
-        externalId: candidate.externalId,
-        name: candidate.name,
-        website: candidate.websiteUrl,
-        geography: candidate.geography,
-      });
+      const identity = buildBusinessIdentity({ externalId: candidate.externalId, name: candidate.name, websiteUrl: candidate.websiteUrl, geography: candidate.geography });
       const business: BusinessProspect = {
-        id: identity.businessId,
+        id: identity.id,
         name: candidate.name,
-        ...(identity.website ? { website: identity.website } : {}),
+        ...(identity.canonicalWebsite ? { website: identity.canonicalWebsite } : {}),
         geography: candidate.geography,
         ...(candidate.industry ? { industry: candidate.industry } : {}),
         nicheId: niche.id,
@@ -82,22 +57,8 @@ export class DiscoveryOrchestrator {
       businessesSaved += 1;
     }
 
-    return {
-      provider: this.options.provider.name,
-      queries,
-      rawCandidates: candidates.length,
-      uniqueCandidates: deduplication.unique.length,
-      businessesSaved,
-      errors,
-      deduplication,
-    };
+    return { provider: this.options.provider.name, queries, rawCandidates: candidates.length, uniqueCandidates: deduplication.unique.length, businessesSaved, errors, deduplication };
   }
 
-  private queryText(niche: NicheDefinition, geography: string): string {
-    return `${niche.name} ${geography}`;
-  }
-
-  private message(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-  }
+  private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 }

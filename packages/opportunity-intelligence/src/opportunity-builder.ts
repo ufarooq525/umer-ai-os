@@ -1,11 +1,10 @@
 import type { NicheDefinition, Opportunity, Problem } from '@umer/contracts';
 import { createHash } from 'node:crypto';
 import { scoreOpportunity } from './scoring.js';
+import { buildBusinessIdentity } from './identity.js';
 import type { DiscoveryCandidate, OpportunityBuilder } from './pipeline.js';
 
-function id(input: string): string {
-  return createHash('sha256').update(input).digest('hex');
-}
+function id(input: string): string { return createHash('sha256').update(input).digest('hex'); }
 
 function evidenceConfidence(problems: Problem[]): number {
   if (problems.length === 0) return 0;
@@ -23,6 +22,12 @@ export class DefaultOpportunityBuilder implements OpportunityBuilder {
     if (problems.length === 0 || evidence.length === 0) return [];
 
     const confidence = evidenceConfidence(problems);
+    const businessId = buildBusinessIdentity({
+      externalId: candidate.externalId,
+      name: candidate.name,
+      websiteUrl: candidate.websiteUrl,
+      geography: candidate.geography,
+    }).id;
     const opportunities: Opportunity[] = [];
     const now = new Date().toISOString();
 
@@ -43,7 +48,7 @@ export class DefaultOpportunityBuilder implements OpportunityBuilder {
 
       if (score.overall < niche.minimumOpportunityScore) continue;
 
-      const opportunityId = id(`${niche.id}|${candidate.externalId ?? candidate.name}|${problem.id}`);
+      const opportunityId = id(`${niche.id}|${businessId}|${problem.id}`);
       opportunities.push({
         id: opportunityId,
         type: 'repeatable_service',
@@ -51,7 +56,7 @@ export class DefaultOpportunityBuilder implements OpportunityBuilder {
         geography: candidate.geography,
         market: niche.name,
         nicheId: niche.id,
-        ...(candidate.externalId ? { businessId: candidate.externalId } : {}),
+        businessId,
         problemIds: [problem.id],
         score,
         estimatedValueMin: 500,
@@ -64,7 +69,6 @@ export class DefaultOpportunityBuilder implements OpportunityBuilder {
         updatedAt: now,
       });
     }
-
     return opportunities;
   }
 }
