@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { BusinessProspect, EvidenceRecord, NicheDefinition, NicheRunMetrics, Opportunity } from '@umer/contracts';
 import type { DiscoveryCandidate, DiscoveryAdapter, OpportunityBuilder, ProblemDetector, ResearchAdapter } from './pipeline.js';
 import { deduplicateCandidates } from './dedup.js';
+import { normalizeCandidate } from './normalization.js';
 import type { OpportunityPersistence } from './persistence.js';
 
 export type OpportunityRunClock = { nowIso(): string };
@@ -53,7 +54,9 @@ export class OpportunityRunService {
 
     for (const candidate of candidates) {
       try {
-        const businessId = candidate.externalId ?? this.businessId(candidate);
+        const businessId = candidate.externalId?.trim()
+          ? this.businessId(`external:${candidate.externalId.trim()}`)
+          : this.businessId(candidate);
         const evidence = await this.options.research.research(candidate);
         allEvidence.push(...evidence);
         for (const item of evidence) await this.options.persistence.saveEvidence(item);
@@ -105,9 +108,17 @@ export class OpportunityRunService {
     return { runId, nicheId: niche.id, metrics, opportunities, evidence: allEvidence, errors };
   }
 
-  private businessId(candidate: DiscoveryCandidate): string {
-    const source = candidate.websiteUrl ?? `${candidate.name}|${candidate.geography}`;
-    return `biz_${Buffer.from(source.toLowerCase()).toString('base64url').slice(0, 40)}`;
+  private businessId(candidate: DiscoveryCandidate | string): string {
+    const identity = typeof candidate === 'string'
+      ? candidate
+      : (() => {
+          const normalized = normalizeCandidate(candidate);
+          return normalized.normalizedWebsite
+            ? `website:${normalized.normalizedWebsite}`
+            : `name:${normalized.normalizedName}|geo:${candidate.geography.trim().toLocaleLowerCase().normalize('NFKC')}`;
+        })();
+
+    return `biz_${createHash('sha256').update(identity, 'utf8').digest('hex')}`;
   }
 
   private message(error: unknown): string {
