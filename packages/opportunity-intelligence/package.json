@@ -18,7 +18,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@umer/contracts": "workspace:*"
+    "@umer/contracts": "workspace:*",
+    "@umer/db": "workspace:*"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.8",
