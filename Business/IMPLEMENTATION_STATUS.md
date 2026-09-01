@@ -1,8 +1,8 @@
 # Autonomous Revenue OS — Implementation Status
 
-Branch: `feat/autonomous-revenue-os`
+Branch: `main`
 
-## Current milestone: Opportunity Intelligence foundation
+## Current milestone: Opportunity Intelligence foundation — Priority 3
 
 Implemented:
 
@@ -13,19 +13,21 @@ Implemented:
 - Provider-neutral business discovery interface.
 - Configurable opportunity scoring with evidence-confidence gating.
 - In-memory niche registry for early tests and orchestration.
-- Unit tests covering score outcomes and invalid weighting.
+- Persistent MySQL repositories for niches, prospects, evidence, opportunities, research cases and run metrics.
+- Global business identity resolution, multilingual normalization and deterministic deduplication.
+- Generic niche profiles with the Saudi Umrah profile as the first seed.
+- Provider-neutral discovery orchestration across configured geographies.
+- Traceable research orchestration that persists evidence and closes research cases as completed or blocked.
+- Unit tests covering scoring, persistence, identity, deduplication, discovery orchestration and research orchestration.
 
 ## Next implementation slice
 
-1. Add persistent repositories for niches, prospects, evidence and opportunities.
-2. Add discovery adapters for approved search/directory sources.
-3. Add research orchestration that creates a traceable research case and evidence records.
-4. Add deduplication and entity normalization.
-5. Add business audit/problem detection models.
-6. Generate opportunity dossiers from evidence and scoring.
-7. Generate a real morning CEO report from stored run data.
-8. Add bounded experiment execution and outcome recording.
-9. Connect revenue/sales outcomes back into scoring and niche prioritization.
+1. Add approved discovery-source adapters with explicit provider contracts and rate/access controls.
+2. Add business audit/problem detection models backed by evidence.
+3. Generate opportunity dossiers from evidence and scoring.
+4. Generate a real morning CEO report from stored run data.
+5. Add bounded experiment execution and outcome recording.
+6. Connect revenue/sales outcomes back into scoring and niche prioritization.
 
 ## Safety / operating rules
 
