@@ -80,13 +80,18 @@ export {
 export {
   buildBusinessIdentity,
   createBusinessId,
-  normalizeBusinessName,
   normalizeEmail,
   normalizeGeography,
   normalizePhone,
-  normalizeWebsite,
   resolveIdentity,
   type BusinessIdentity,
   type IdentityCandidate,
   type IdentityMatch,
 } from './identity.js';
+
+export {
+  normalizeBusinessName,
+  normalizeCandidate,
+  normalizeWebsite,
+  type NormalizedBusinessCandidate,
+} from './normalization.js';

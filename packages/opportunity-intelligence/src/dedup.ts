@@ -1,5 +1,5 @@
 import type { DiscoveryCandidate } from './pipeline.js';
-import { createBusinessId, normalizeBusinessName, normalizeGeography, normalizeWebsite } from './identity.js';
+import { createBusinessId, normalizeBusinessName, normalizeWebsite } from './identity.js';
 
 export type DeduplicationResult = {
   unique: DiscoveryCandidate[];
@@ -18,7 +18,6 @@ export function deduplicateCandidates(candidates: DiscoveryCandidate[]): Dedupli
       unique.set(identityKey, {
         ...candidate,
         name: candidate.name.trim(),
-        geography: normalizeGeography(candidate.geography),
         websiteUrl: normalizedWebsite ?? candidate.websiteUrl,
         sourceRefs: [...new Set(candidate.sourceRefs)],
       });
@@ -27,7 +26,6 @@ export function deduplicateCandidates(candidates: DiscoveryCandidate[]): Dedupli
 
     unique.set(identityKey, {
       ...existing,
-      name: existing.name || candidate.name,
       websiteUrl: existing.websiteUrl ?? normalizedWebsite ?? candidate.websiteUrl,
       industry: existing.industry ?? candidate.industry,
       sourceRefs: [...new Set([...existing.sourceRefs, ...candidate.sourceRefs])],

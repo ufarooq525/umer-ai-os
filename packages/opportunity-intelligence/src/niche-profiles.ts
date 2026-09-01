@@ -1,6 +1,6 @@
 import { NicheDefinitionSchema, type NicheDefinition } from '@umer/contracts';
 
-export type NicheProfile = NicheDefinition & {
+type NicheProfileMetadata = {
   businessCategories: string[];
   discoveryQueries: string[];
   businessSignals: string[];
@@ -9,19 +9,32 @@ export type NicheProfile = NicheDefinition & {
   evidenceRequirements: string[];
 };
 
+export type NicheProfile = NicheDefinition & NicheProfileMetadata;
+
 export function validateNicheProfile(profile: NicheProfile): NicheProfile {
-  NicheDefinitionSchema.parse(profile);
-  if (profile.businessCategories.length === 0) throw new Error('Niche must define at least one business category');
-  if (profile.discoveryQueries.length === 0) throw new Error('Niche must define at least one discovery query');
-  if (profile.revenueModels.length === 0) throw new Error('Niche must define at least one revenue model');
-  return profile;
+  const {
+    businessCategories,
+    discoveryQueries,
+    businessSignals,
+    revenueModels,
+    acquisitionStrategies,
+    evidenceRequirements,
+    ...definition
+  } = profile;
+  NicheDefinitionSchema.parse(definition);
+  for (const [name, values] of Object.entries({ businessCategories, discoveryQueries, businessSignals, revenueModels, acquisitionStrategies, evidenceRequirements })) {
+    if (!values.length) throw new Error(`Niche must define at least one ${name}`);
+    if (values.some((value) => !value.trim())) throw new Error(`Niche ${name} cannot contain empty values`);
+  }
+  return structuredClone(profile);
 }
 
 export class InMemoryNicheProfileRegistry {
   private readonly profiles = new Map<string, NicheProfile>();
 
   upsert(profile: NicheProfile): void {
-    this.profiles.set(profile.id, structuredClone(validateNicheProfile(profile)));
+    const validated = validateNicheProfile(profile);
+    this.profiles.set(validated.id, validated);
   }
 
   get(id: string): NicheProfile | undefined {
