@@ -30,9 +30,9 @@ export class ResearchOrchestrator {
     const businessId = buildBusinessIdentity({
       externalId: candidate.externalId,
       name: candidate.name,
-      website: candidate.websiteUrl,
+      websiteUrl: candidate.websiteUrl,
       geography: candidate.geography,
-    }).businessId;
+    }).id;
     const caseId = this.caseId(niche.id, businessId, startedAt);
     const researchCase: ResearchCase = {
       id: caseId,

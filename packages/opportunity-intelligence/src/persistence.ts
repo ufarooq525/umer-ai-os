@@ -105,6 +105,30 @@ type OpportunityRow = {
   updated_at: string;
 };
 
+function toMySqlDateTime(isoString?: string | Date | null): string | null {
+  if (!isoString) return null;
+  const date = isoString instanceof Date ? isoString : new Date(isoString);
+  if (isNaN(date.getTime())) {
+    if (typeof isoString === 'string') {
+      return isoString.replace('T', ' ').replace('Z', '');
+    }
+    return null;
+  }
+  return date.toISOString().replace('T', ' ').replace('Z', '');
+}
+
+function toIsoDateTime(dateVal?: string | Date | null): string {
+  if (!dateVal) return '';
+  if (dateVal instanceof Date) return dateVal.toISOString();
+  if (typeof dateVal === 'string') {
+    if (dateVal.includes(' ') && !dateVal.endsWith('Z')) {
+      return dateVal.replace(' ', 'T') + 'Z';
+    }
+    return dateVal;
+  }
+  return '';
+}
+
 export class MySqlOpportunityPersistence implements OpportunityPersistence {
   constructor(private readonly options: MySqlOpportunityPersistenceOptions) {}
 
@@ -113,7 +137,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       `INSERT INTO opportunity_businesses (id, name, website, geography, industry, niche_id, source_refs, discovered_at, last_researched_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name=VALUES(name), website=VALUES(website), geography=VALUES(geography), industry=VALUES(industry), niche_id=VALUES(niche_id), source_refs=VALUES(source_refs), last_researched_at=VALUES(last_researched_at)`,
-      [value.id, value.name, value.website ?? null, value.geography, value.industry ?? null, value.nicheId ?? null, JSON.stringify(value.sourceRefs), value.discoveredAt, value.lastResearchedAt ?? null],
+      [value.id, value.name, value.website ?? null, value.geography, value.industry ?? null, value.nicheId ?? null, JSON.stringify(value.sourceRefs), toMySqlDateTime(value.discoveredAt), toMySqlDateTime(value.lastResearchedAt)],
     );
   }
 
@@ -122,7 +146,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       `INSERT INTO opportunity_evidence (id, type, title, source_url, observed_at, excerpt, observation, strength, supports_json, contradicts_json)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE title=VALUES(title), excerpt=VALUES(excerpt), observation=VALUES(observation), strength=VALUES(strength), supports_json=VALUES(supports_json), contradicts_json=VALUES(contradicts_json)`,
-      [value.id, value.type, value.title, value.sourceUrl, value.observedAt, value.excerpt ?? null, value.observation, value.strength, JSON.stringify(value.supports), JSON.stringify(value.contradicts)],
+      [value.id, value.type, value.title, value.sourceUrl, toMySqlDateTime(value.observedAt), value.excerpt ?? null, value.observation, value.strength, JSON.stringify(value.supports), JSON.stringify(value.contradicts)],
     );
   }
 
@@ -131,7 +155,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       `INSERT INTO opportunity_niches (id, name, description, geographies_json, status, priority, target_businesses_per_run, minimum_opportunity_score, research_depth, problem_hypotheses_json, discovery_signals_json, allowed_solution_types_json, outreach_mode, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), status=VALUES(status), priority=VALUES(priority), target_businesses_per_run=VALUES(target_businesses_per_run), minimum_opportunity_score=VALUES(minimum_opportunity_score), research_depth=VALUES(research_depth), updated_at=VALUES(updated_at)`,
-      [value.id, value.name, value.description, JSON.stringify(value.geographies), value.status, value.priority, value.targetBusinessesPerRun, value.minimumOpportunityScore, value.researchDepth, JSON.stringify(value.problemHypotheses), JSON.stringify(value.discoverySignals), JSON.stringify(value.allowedSolutionTypes), value.outreachMode, value.createdAt, value.updatedAt],
+      [value.id, value.name, value.description, JSON.stringify(value.geographies), value.status, value.priority, value.targetBusinessesPerRun, value.minimumOpportunityScore, value.researchDepth, JSON.stringify(value.problemHypotheses), JSON.stringify(value.discoverySignals), JSON.stringify(value.allowedSolutionTypes), value.outreachMode, toMySqlDateTime(value.createdAt), toMySqlDateTime(value.updatedAt)],
     );
   }
 
@@ -140,7 +164,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       `INSERT INTO opportunity_opportunities (id, type, title, geography, market, niche_id, business_id, problem_ids_json, score_json, estimated_value_min, estimated_value_max, currency, time_to_revenue_days, evidence_refs_json, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE title=VALUES(title), score_json=VALUES(score_json), estimated_value_min=VALUES(estimated_value_min), estimated_value_max=VALUES(estimated_value_max), currency=VALUES(currency), time_to_revenue_days=VALUES(time_to_revenue_days), evidence_refs_json=VALUES(evidence_refs_json), status=VALUES(status), updated_at=VALUES(updated_at)`,
-      [value.id, value.type, value.title, value.geography, value.market, value.nicheId ?? null, value.businessId ?? null, JSON.stringify(value.problemIds), JSON.stringify(value.score), value.estimatedValueMin ?? null, value.estimatedValueMax ?? null, value.currency ?? null, value.timeToRevenueDays ?? null, JSON.stringify(value.evidenceRefs), value.status, value.createdAt, value.updatedAt],
+      [value.id, value.type, value.title, value.geography, value.market, value.nicheId ?? null, value.businessId ?? null, JSON.stringify(value.problemIds), JSON.stringify(value.score), value.estimatedValueMin ?? null, value.estimatedValueMax ?? null, value.currency ?? null, value.timeToRevenueDays ?? null, JSON.stringify(value.evidenceRefs), value.status, toMySqlDateTime(value.createdAt), toMySqlDateTime(value.updatedAt)],
     );
   }
 
@@ -149,7 +173,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       `INSERT INTO opportunity_research_cases (id, objective, niche_id, business_id, depth, questions_json, evidence_refs_json, status, started_at, completed_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE status=VALUES(status), evidence_refs_json=VALUES(evidence_refs_json), completed_at=VALUES(completed_at)`,
-      [value.id, value.objective, value.nicheId ?? null, value.businessId ?? null, value.depth, JSON.stringify(value.questions), JSON.stringify(value.evidenceRefs), value.status, value.startedAt, value.completedAt ?? null],
+      [value.id, value.objective, value.nicheId ?? null, value.businessId ?? null, value.depth, JSON.stringify(value.questions), JSON.stringify(value.evidenceRefs), value.status, toMySqlDateTime(value.startedAt), toMySqlDateTime(value.completedAt)],
     );
   }
 
@@ -158,7 +182,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       `INSERT INTO opportunity_niche_runs (run_id, niche_id, businesses_discovered, businesses_researched, qualified_businesses, opportunities_found, high_value_opportunities, estimated_pipeline, errors, started_at, completed_at, next_run_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE businesses_discovered=VALUES(businesses_discovered), businesses_researched=VALUES(businesses_researched), qualified_businesses=VALUES(qualified_businesses), opportunities_found=VALUES(opportunities_found), high_value_opportunities=VALUES(high_value_opportunities), estimated_pipeline=VALUES(estimated_pipeline), errors=VALUES(errors), completed_at=VALUES(completed_at), next_run_at=VALUES(next_run_at)`,
-      [value.runId, value.nicheId, value.businessesDiscovered, value.businessesResearched, value.qualifiedBusinesses, value.opportunitiesFound, value.highValueOpportunities, value.estimatedPipeline, value.errors, value.startedAt, value.completedAt ?? null, value.nextRunAt ?? null],
+      [value.runId, value.nicheId, value.businessesDiscovered, value.businessesResearched, value.qualifiedBusinesses, value.opportunitiesFound, value.highValueOpportunities, value.estimatedPipeline, value.errors, toMySqlDateTime(value.startedAt), toMySqlDateTime(value.completedAt), toMySqlDateTime(value.nextRunAt)],
     );
   }
 
@@ -203,8 +227,8 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       ...(row.industry ? { industry: row.industry } : {}),
       ...(row.niche_id ? { nicheId: row.niche_id } : {}),
       sourceRefs: this.parseJson<string[]>(row.source_refs),
-      discoveredAt: row.discovered_at,
-      ...(row.last_researched_at ? { lastResearchedAt: row.last_researched_at } : {}),
+      discoveredAt: toIsoDateTime(row.discovered_at),
+      ...(row.last_researched_at ? { lastResearchedAt: toIsoDateTime(row.last_researched_at) } : {}),
     };
   }
 
@@ -214,7 +238,7 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       type: row.type,
       title: row.title,
       sourceUrl: row.source_url,
-      observedAt: row.observed_at,
+      observedAt: toIsoDateTime(row.observed_at),
       ...(row.excerpt ? { excerpt: row.excerpt } : {}),
       observation: row.observation,
       strength: row.strength,
@@ -240,8 +264,8 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
       ...(row.time_to_revenue_days !== null ? { timeToRevenueDays: Number(row.time_to_revenue_days) } : {}),
       evidenceRefs: this.parseJson<string[]>(row.evidence_refs_json),
       status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      createdAt: toIsoDateTime(row.created_at),
+      updatedAt: toIsoDateTime(row.updated_at),
     };
   }
 

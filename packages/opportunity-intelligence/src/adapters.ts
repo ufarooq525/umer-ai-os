@@ -30,7 +30,10 @@ export class StaticDiscoverySource implements DiscoverySource {
 
   async search(query: DiscoveryQuery): Promise<BusinessCandidate[]> {
     const geography = query.geography.trim().toLocaleLowerCase();
-    return this.candidates.filter((candidate) => candidate.geography.trim().toLocaleLowerCase() === geography);
+    return this.candidates.filter((candidate) => {
+      const candGeo = candidate.geography.trim().toLocaleLowerCase();
+      return candGeo === geography || candGeo.includes(geography) || geography.includes(candGeo);
+    });
   }
 }
 
@@ -83,7 +86,11 @@ export class StaticEvidenceSource implements EvidenceSource {
   constructor(private readonly records: EvidenceRecord[]) {}
 
   async collect(candidate: DiscoveryCandidate): Promise<EvidenceRecord[]> {
-    const prefix = candidate.websiteUrl ? candidate.websiteUrl : candidate.name;
-    return this.records.filter((record) => record.title.toLocaleLowerCase().includes(prefix.toLocaleLowerCase()) || record.observation.toLocaleLowerCase().includes(candidate.name.toLocaleLowerCase()));
+    const name = candidate.name.trim().toLocaleLowerCase();
+    const website = candidate.websiteUrl?.trim().toLocaleLowerCase();
+    return this.records.filter((record) => {
+      const haystack = `${record.title} ${record.sourceUrl} ${record.observation} ${record.excerpt ?? ''}`.toLocaleLowerCase();
+      return haystack.includes(name) || (website ? haystack.includes(website) || website.includes(record.sourceUrl.toLocaleLowerCase()) : false);
+    });
   }
 }

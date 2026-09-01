@@ -11,15 +11,15 @@ const evidence: EvidenceRecord[] = [
   {
     id: 'ev-hotel-1', type: 'website', title: 'Example Makkah Hotel website',
     sourceUrl: 'https://example.test', observedAt: '2026-09-02T00:00:00.000Z',
-    observation: 'Website has contact form and WhatsApp but no booking, reservation, availability, payment, checkout, CRM or automation workflow.',
-    strength: 'verified', supports: ['conversion'], contradicts: [],
+    observation: 'Website displays static contact phone and address only without modern interactive features.',
+    strength: 'verified', supports: ['digital presence'], contradicts: [],
   },
 ];
 
 const niche = { ...SAUDI_UMRAH_NICHE, targetBusinessesPerRun: 10, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-02T00:00:00.000Z' };
 
 const candidate = {
-  externalId: 'hotel-1', name: 'Example Makkah Hotel', geography: 'Makkah, Saudi Arabia', industry: 'hotel',
+  externalId: 'hotel-1', name: 'Example Makkah Hotel', geography: 'Makkah', industry: 'hotel',
   website: 'https://example.test', sourceRefs: ['fixture://discovery/hotel-1'],
 };
 

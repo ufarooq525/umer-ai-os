@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "opportunity:test": "vitest run src/e2e-mysql-flow.test.ts"
   },
   "dependencies": {
     "@umer/contracts": "workspace:*",
