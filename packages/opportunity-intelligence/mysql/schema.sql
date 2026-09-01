@@ -1,3 +1,9 @@
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id VARCHAR(191) PRIMARY KEY,
+  checksum CHAR(64) NOT NULL,
+  applied_at DATETIME(3) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS opportunity_niches (
   id VARCHAR(191) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
