@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import type { NicheDefinition, NicheRunMetrics, Opportunity } from '@umer/contracts';
-import type { DiscoveryCandidate, DiscoveryAdapter, OpportunityBuilder, ProblemDetector, ResearchAdapter, EvidenceRecord } from './pipeline.js';
-import { deduplicateCandidates } from './normalization.js';
+import type { BusinessProspect, EvidenceRecord, NicheDefinition, NicheRunMetrics, Opportunity } from '@umer/contracts';
+import type { DiscoveryCandidate, DiscoveryAdapter, OpportunityBuilder, ProblemDetector, ResearchAdapter } from './pipeline.js';
+import { deduplicateCandidates } from './dedup.js';
 import type { OpportunityPersistence } from './persistence.js';
 
 export type OpportunityRunClock = { nowIso(): string };
@@ -46,7 +46,8 @@ export class OpportunityRunService {
       errors.push({ stage: 'discovery', message: this.message(error) });
     }
 
-    const candidates = deduplicateCandidates(rawCandidates).slice(0, niche.targetBusinessesPerRun);
+    const deduplicated = deduplicateCandidates(rawCandidates);
+    const candidates = deduplicated.unique.slice(0, niche.targetBusinessesPerRun);
     let researched = 0;
     let qualified = 0;
 
@@ -58,17 +59,18 @@ export class OpportunityRunService {
         for (const item of evidence) await this.options.persistence.saveEvidence(item);
         researched += 1;
 
-        await this.options.persistence.saveBusiness({
+        const business: BusinessProspect = {
           id: businessId,
           name: candidate.name,
-          website: candidate.websiteUrl,
+          ...(candidate.websiteUrl ? { website: candidate.websiteUrl } : {}),
           geography: candidate.geography,
-          industry: candidate.industry,
+          ...(candidate.industry ? { industry: candidate.industry } : {}),
           nicheId: niche.id,
           sourceRefs: [...new Set(candidate.sourceRefs)],
           discoveredAt: startedAt,
           lastResearchedAt: this.clock.nowIso(),
-        });
+        };
+        await this.options.persistence.saveBusiness(business);
 
         const problems = await this.options.problemDetector.detect(candidate, evidence);
         if (problems.length > 0) qualified += 1;
@@ -83,10 +85,7 @@ export class OpportunityRunService {
     }
 
     const highValue = opportunities.filter((item) => item.score.overall >= niche.minimumOpportunityScore);
-    const estimatedPipeline = highValue.reduce((sum, item) => {
-      const value = item.estimatedValueMax ?? item.estimatedValueMin ?? 0;
-      return sum + value;
-    }, 0);
+    const estimatedPipeline = highValue.reduce((sum, item) => sum + (item.estimatedValueMax ?? item.estimatedValueMin ?? 0), 0);
 
     const metrics: NicheRunMetrics = {
       nicheId: niche.id,
@@ -111,5 +110,7 @@ export class OpportunityRunService {
     return `biz_${Buffer.from(source.toLowerCase()).toString('base64url').slice(0, 40)}`;
   }
 
-  private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+  private message(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
