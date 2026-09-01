@@ -1,5 +1,5 @@
 import type { DiscoveryCandidate } from './pipeline.js';
-import { normalizeCandidate } from './normalization.js';
+import { createBusinessId, normalizeBusinessName, normalizeGeography, normalizeWebsite } from './identity.js';
 
 export type DeduplicationResult = {
   unique: DiscoveryCandidate[];
@@ -10,21 +10,25 @@ export function deduplicateCandidates(candidates: DiscoveryCandidate[]): Dedupli
   const unique = new Map<string, DiscoveryCandidate>();
 
   for (const candidate of candidates) {
-    const normalized = normalizeCandidate(candidate);
-    const existing = unique.get(normalized.deduplicationKey);
+    const normalizedWebsite = normalizeWebsite(candidate.websiteUrl);
+    const identityKey = createBusinessId(candidate);
+    const existing = unique.get(identityKey);
 
     if (!existing) {
-      unique.set(normalized.deduplicationKey, {
+      unique.set(identityKey, {
         ...candidate,
+        name: candidate.name.trim(),
+        geography: normalizeGeography(candidate.geography),
+        websiteUrl: normalizedWebsite ?? candidate.websiteUrl,
         sourceRefs: [...new Set(candidate.sourceRefs)],
-        ...(normalized.normalizedWebsite && !candidate.websiteUrl ? { websiteUrl: normalized.normalizedWebsite } : {}),
       });
       continue;
     }
 
-    unique.set(normalized.deduplicationKey, {
+    unique.set(identityKey, {
       ...existing,
-      websiteUrl: existing.websiteUrl ?? candidate.websiteUrl,
+      name: existing.name || candidate.name,
+      websiteUrl: existing.websiteUrl ?? normalizedWebsite ?? candidate.websiteUrl,
       industry: existing.industry ?? candidate.industry,
       sourceRefs: [...new Set([...existing.sourceRefs, ...candidate.sourceRefs])],
     });
@@ -34,4 +38,13 @@ export function deduplicateCandidates(candidates: DiscoveryCandidate[]): Dedupli
     unique: [...unique.values()],
     duplicatesRemoved: candidates.length - unique.size,
   };
+}
+
+export function candidateIdentityKey(candidate: DiscoveryCandidate): string {
+  return createBusinessId({
+    externalId: candidate.externalId,
+    name: normalizeBusinessName(candidate.name),
+    geography: candidate.geography,
+    websiteUrl: candidate.websiteUrl,
+  });
 }

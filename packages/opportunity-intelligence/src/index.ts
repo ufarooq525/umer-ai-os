@@ -12,6 +12,13 @@ export {
 } from './scoring.js';
 
 export { InMemoryNicheRegistry, type NicheRegistry } from './niche-registry.js';
+export {
+  InMemoryNicheProfileRegistry,
+  BUILTIN_NICHE_PROFILES,
+  SAUDI_UMRAH_NICHE,
+  validateNicheProfile,
+  type NicheProfile,
+} from './niche-profiles.js';
 
 export {
   discoverBusinesses,
@@ -34,7 +41,7 @@ export {
   type ResearchAdapter,
 } from './pipeline.js';
 
-export { deduplicateCandidates, type DeduplicationResult } from './dedup.js';
+export { deduplicateCandidates, candidateIdentityKey, type DeduplicationResult } from './dedup.js';
 export { buildOpportunityDossier, type OpportunityDossier } from './dossier.js';
 
 export {
@@ -71,8 +78,15 @@ export {
 } from './run-service.js';
 
 export {
+  buildBusinessIdentity,
+  createBusinessId,
   normalizeBusinessName,
-  normalizeCandidate,
+  normalizeEmail,
+  normalizeGeography,
+  normalizePhone,
   normalizeWebsite,
-  type NormalizedBusinessCandidate,
-} from './normalization.js';
+  resolveIdentity,
+  type BusinessIdentity,
+  type IdentityCandidate,
+  type IdentityMatch,
+} from './identity.js';
