@@ -42,6 +42,67 @@ export const OpportunityTypeSchema = z.enum([
 
 export const ResearchDepthSchema = z.enum(['quick', 'standard', 'deep']);
 
+export const EvidenceTypeSchema = z.enum([
+  'website',
+  'directory',
+  'review',
+  'job_posting',
+  'social_post',
+  'forum_post',
+  'pricing_page',
+  'product_page',
+  'announcement',
+  'public_document',
+  'search_result',
+  'other',
+]);
+
+export const EvidenceStrengthSchema = z.enum(['weak', 'moderate', 'strong', 'verified']);
+
+export const BusinessProspectSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    website: z.string().url().optional(),
+    geography: z.string().min(1),
+    industry: z.string().optional(),
+    nicheId: z.string().optional(),
+    sourceRefs: z.array(z.string()).min(1),
+    discoveredAt: z.string().datetime(),
+    lastResearchedAt: z.string().datetime().optional(),
+  })
+  .strict();
+
+export const EvidenceRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    type: EvidenceTypeSchema,
+    title: z.string().min(1),
+    sourceUrl: z.string().url(),
+    observedAt: z.string().datetime(),
+    excerpt: z.string().min(1).optional(),
+    observation: z.string().min(1),
+    strength: EvidenceStrengthSchema,
+    supports: z.array(z.string()).default([]),
+    contradicts: z.array(z.string()).default([]),
+  })
+  .strict();
+
+export const ResearchCaseSchema = z
+  .object({
+    id: z.string().min(1),
+    objective: z.string().min(1),
+    nicheId: z.string().optional(),
+    businessId: z.string().optional(),
+    depth: ResearchDepthSchema,
+    questions: z.array(z.string().min(1)).min(1),
+    evidenceRefs: z.array(z.string()).default([]),
+    status: z.enum(['planned', 'running', 'completed', 'blocked', 'cancelled']),
+    startedAt: z.string().datetime(),
+    completedAt: z.string().datetime().optional(),
+  })
+  .strict();
+
 export const NicheDefinitionSchema = z
   .object({
     id: z.string().min(1),
@@ -145,6 +206,11 @@ export const ExperimentSchema = z
 export type OpportunityStatus = z.infer<typeof OpportunityStatusSchema>;
 export type NicheStatus = z.infer<typeof NicheStatusSchema>;
 export type OpportunityType = z.infer<typeof OpportunityTypeSchema>;
+export type EvidenceType = z.infer<typeof EvidenceTypeSchema>;
+export type EvidenceStrength = z.infer<typeof EvidenceStrengthSchema>;
+export type BusinessProspect = z.infer<typeof BusinessProspectSchema>;
+export type EvidenceRecord = z.infer<typeof EvidenceRecordSchema>;
+export type ResearchCase = z.infer<typeof ResearchCaseSchema>;
 export type NicheDefinition = z.infer<typeof NicheDefinitionSchema>;
 export type Problem = z.infer<typeof ProblemSchema>;
 export type OpportunityScore = z.infer<typeof OpportunityScoreSchema>;
