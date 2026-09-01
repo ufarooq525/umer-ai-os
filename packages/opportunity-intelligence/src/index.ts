@@ -35,7 +35,6 @@ export {
 } from './pipeline.js';
 
 export { deduplicateCandidates, type DeduplicationResult } from './dedup.js';
-
 export { buildOpportunityDossier, type OpportunityDossier } from './dossier.js';
 
 export {
@@ -52,3 +51,26 @@ export {
   type OpportunityStore,
   type ResearchCaseStore,
 } from './store.js';
+
+export {
+  InMemoryOpportunityPersistence,
+  MySqlOpportunityPersistence,
+  type MySqlExecutor,
+  type MySqlOpportunityPersistenceOptions,
+  type OpportunityPersistence,
+} from './persistence.js';
+
+export {
+  OpportunityRunService,
+  defaultOpportunityRunClock,
+  type OpportunityRunClock,
+  type OpportunityRunResult,
+  type OpportunityRunServiceOptions,
+} from './run-service.js';
+
+export {
+  normalizeBusinessName,
+  normalizeCandidate,
+  normalizeWebsite,
+  type NormalizedBusinessCandidate,
+} from './normalization.js';
