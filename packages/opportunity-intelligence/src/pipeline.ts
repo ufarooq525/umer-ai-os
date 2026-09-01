@@ -1,4 +1,5 @@
 import type {
+  EvidenceRecord,
   NicheDefinition,
   Opportunity,
   Problem,
@@ -13,15 +14,7 @@ export type DiscoveryCandidate = {
   sourceRefs: string[];
 };
 
-export type EvidenceRecord = {
-  id: string;
-  sourceUrl: string;
-  sourceType: 'website' | 'directory' | 'review' | 'job_posting' | 'social' | 'forum' | 'document' | 'other';
-  capturedAt: string;
-  claim: string;
-  excerpt?: string;
-  confidence: number;
-};
+export type { EvidenceRecord };
 
 export type BusinessAudit = {
   businessId: string;
@@ -47,10 +40,7 @@ export type ResearchAdapter = {
 };
 
 export type ProblemDetector = {
-  detect(
-    candidate: DiscoveryCandidate,
-    evidence: EvidenceRecord[],
-  ): Promise<Problem[]>;
+  detect(candidate: DiscoveryCandidate, evidence: EvidenceRecord[]): Promise<Problem[]>;
 };
 
 export type OpportunityBuilder = {
@@ -76,10 +66,6 @@ export type OpportunityPipeline = {
   run(niche: NicheDefinition, runId: string): Promise<PipelineResult>;
 };
 
-/**
- * Small orchestration shell. Adapters own external systems; this layer owns
- * sequencing and makes every opportunity trace back to captured evidence.
- */
 export class DefaultOpportunityPipeline implements OpportunityPipeline {
   constructor(
     private readonly discovery: DiscoveryAdapter,
@@ -103,29 +89,19 @@ export class DefaultOpportunityPipeline implements OpportunityPipeline {
 
     const limited = candidates.slice(0, niche.targetBusinessesPerRun);
     let researched = 0;
-
     for (const candidate of limited) {
       try {
         const evidence = await this.research.research(candidate);
         allEvidence.push(...evidence);
         researched += 1;
         const problems = await this.problemDetector.detect(candidate, evidence);
-        const built = await this.opportunityBuilder.build({ niche, candidate, evidence, problems });
-        opportunities.push(...built);
+        opportunities.push(...await this.opportunityBuilder.build({ niche, candidate, evidence, problems }));
       } catch (error) {
         errors.push({ stage: 'research', message: this.message(error), candidate: candidate.name });
       }
     }
 
-    return {
-      nicheId: niche.id,
-      runId,
-      discovered: candidates.length,
-      researched,
-      opportunities,
-      evidence: allEvidence,
-      errors,
-    };
+    return { nicheId: niche.id, runId, discovered: candidates.length, researched, opportunities, evidence: allEvidence, errors };
   }
 
   private message(error: unknown): string {
