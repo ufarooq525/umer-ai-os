@@ -20,3 +20,35 @@ export {
   type DiscoveryQuery,
   type DiscoveryResult,
 } from './discovery.js';
+
+export {
+  DefaultOpportunityPipeline,
+  type BusinessAudit,
+  type DiscoveryAdapter,
+  type DiscoveryCandidate,
+  type EvidenceRecord as PipelineEvidenceRecord,
+  type OpportunityBuilder,
+  type OpportunityPipeline,
+  type PipelineResult,
+  type ProblemDetector,
+  type ResearchAdapter,
+} from './pipeline.js';
+
+export { deduplicateCandidates, type DeduplicationResult } from './dedup.js';
+
+export { buildOpportunityDossier, type OpportunityDossier } from './dossier.js';
+
+export {
+  InMemoryBusinessProspectStore,
+  InMemoryEvidenceStore,
+  InMemoryNicheRunMetricsStore,
+  InMemoryNicheStore,
+  InMemoryOpportunityStore,
+  InMemoryResearchCaseStore,
+  type BusinessProspectStore,
+  type EvidenceStore,
+  type NicheRunMetricsStore,
+  type NicheStore,
+  type OpportunityStore,
+  type ResearchCaseStore,
+} from './store.js';
