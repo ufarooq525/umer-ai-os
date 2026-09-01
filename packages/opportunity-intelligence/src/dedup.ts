@@ -1,30 +1,37 @@
 import type { DiscoveryCandidate } from './pipeline.js';
+import { normalizeCandidate } from './normalization.js';
 
 export type DeduplicationResult = {
   unique: DiscoveryCandidate[];
   duplicatesRemoved: number;
 };
 
-function normalize(value: string): string {
-  return value.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '');
-}
-
-function key(candidate: DiscoveryCandidate): string {
-  if (candidate.externalId) return `id:${normalize(candidate.externalId)}`;
-  if (candidate.websiteUrl) return `url:${normalize(candidate.websiteUrl)}`;
-  return `name:${normalize(candidate.name)}|geo:${normalize(candidate.geography)}`;
-}
-
 export function deduplicateCandidates(candidates: DiscoveryCandidate[]): DeduplicationResult {
-  const seen = new Set<string>();
-  const unique: DiscoveryCandidate[] = [];
+  const unique = new Map<string, DiscoveryCandidate>();
 
   for (const candidate of candidates) {
-    const candidateKey = key(candidate);
-    if (seen.has(candidateKey)) continue;
-    seen.add(candidateKey);
-    unique.push({ ...candidate, sourceRefs: [...new Set(candidate.sourceRefs)] });
+    const normalized = normalizeCandidate(candidate);
+    const existing = unique.get(normalized.deduplicationKey);
+
+    if (!existing) {
+      unique.set(normalized.deduplicationKey, {
+        ...candidate,
+        sourceRefs: [...new Set(candidate.sourceRefs)],
+        ...(normalized.normalizedWebsite && !candidate.websiteUrl ? { websiteUrl: normalized.normalizedWebsite } : {}),
+      });
+      continue;
+    }
+
+    unique.set(normalized.deduplicationKey, {
+      ...existing,
+      websiteUrl: existing.websiteUrl ?? candidate.websiteUrl,
+      industry: existing.industry ?? candidate.industry,
+      sourceRefs: [...new Set([...existing.sourceRefs, ...candidate.sourceRefs])],
+    });
   }
 
-  return { unique, duplicatesRemoved: candidates.length - unique.length };
+  return {
+    unique: [...unique.values()],
+    duplicatesRemoved: candidates.length - unique.size,
+  };
 }
