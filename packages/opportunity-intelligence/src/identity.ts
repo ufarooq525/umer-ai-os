@@ -43,12 +43,12 @@ export function normalizeWebsite(url?: string): string | undefined {
     }
 
     parsed.search = parsed.searchParams.toString();
-    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
+    const cleanPath = parsed.pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
     const port = parsed.port && !((parsed.protocol === 'https:' && parsed.port === '443') || (parsed.protocol === 'http:' && parsed.port === '80'))
       ? `:${parsed.port}`
       : '';
     const query = parsed.searchParams.toString();
-    return `${parsed.protocol}//${parsed.hostname}${port}${parsed.pathname}${query ? `?${query}` : ''}`;
+    return `${parsed.protocol}//${parsed.hostname}${port}${cleanPath}${query ? `?${query}` : ''}`;
   } catch {
     return undefined;
   }
