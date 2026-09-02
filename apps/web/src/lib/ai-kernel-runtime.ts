@@ -36,9 +36,7 @@ export type ClaimedKernelTask = {
 
 const LEASE_SECONDS = Math.max(30, Number(process.env.AI_TASK_LEASE_SECONDS ?? 120) || 120);
 
-function now() {
-  return new Date();
-}
+function now() { return new Date(); }
 
 async function writeKernelEvent(input: {
   eventType: string;
@@ -55,14 +53,12 @@ async function writeKernelEvent(input: {
     await db.execute(
       `INSERT INTO ai_workflow_events
        (event_id, objective_id, project_id, run_id, task_id, agent_id, event_type, entity_type, entity_id, message, metadata_json, occurred_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'task', ?, ?, ?, ?)` ,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'task', ?, ?, ?, ?)`,
       [randomUUID(), input.objectiveId ?? null, input.projectId ?? null, input.runId ?? null, input.taskId ?? null,
         input.agentId ?? null, input.eventType, input.taskId ?? null, input.message ?? null,
         input.metadata ? JSON.stringify(input.metadata) : null, now()],
     );
-  } catch (error) {
-    console.warn('[ai-kernel] event write failed', error);
-  }
+  } catch (error) { console.warn('[ai-kernel] event write failed', error); }
 }
 
 export async function createKernelTask(input: CreateKernelTaskInput): Promise<string> {
@@ -71,14 +67,17 @@ export async function createKernelTask(input: CreateKernelTaskInput): Promise<st
   const db = createMySqlExecutor();
   await db.execute(
     `INSERT INTO ai_tasks
-      (task_id, objective_id, project_id, parent_task_id, run_id, task_type, title, instructions, status, priority,
-       assigned_agent_id, token_budget, cost_budget, max_attempts, attempts, scheduled_at, deadline_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, NULL, ?, ?, 3, 0, ?, ?, ?)` ,
+      (task_id, objective_id, project_id, parent_task_id, run_id, task_type, title, instructions, why_json, entity_type, entity_id,
+       status, priority, assigned_agent_id, required_capability, token_budget, cost_budget, max_attempts, attempts, scheduled_at, deadline_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'QUEUED', ?, NULL, ?, ?, ?, 3, 0, ?, ?, ?, ?)`,
     [taskId, input.objectiveId ?? null, input.projectId ?? null, input.parentTaskId ?? null, input.runId ?? null,
-      input.taskType, input.title, input.instructions ?? null, input.priority ?? 50, input.tokenBudget ?? null,
-      input.costBudget ?? null, input.scheduledAt ?? null, input.deadlineAt ?? null, createdAt],
+      input.taskType, input.title, input.instructions ?? null,
+      JSON.stringify({ reason: 'Created as a durable unit of work', objectiveId: input.objectiveId ?? null, projectId: input.projectId ?? null, runId: input.runId ?? null }),
+      input.projectId ? 'project' : input.runId ? 'run' : null, input.projectId ?? input.runId ?? null,
+      input.priority ?? 50, input.requiredCapability ?? null, input.tokenBudget ?? null, input.costBudget ?? null,
+      input.scheduledAt ?? null, input.deadlineAt ?? null, createdAt, createdAt],
   );
-  await writeKernelEvent({ eventType: 'task.created', taskId, objectiveId: input.objectiveId, projectId: input.projectId, runId: input.runId, message: input.title });
+  await writeKernelEvent({ eventType: 'task.created', taskId, objectiveId: input.objectiveId, projectId: input.projectId, runId: input.runId, message: input.title, metadata: { why: 'Durable task created from an explicit objective/run context' } });
   return taskId;
 }
 
@@ -87,7 +86,6 @@ export async function claimNextKernelTask(agentId: string, capability?: string |
   const pool = createMySqlClient();
   const connection = await pool.getConnection();
   const leaseToken = randomUUID();
-  const taskId = randomUUID();
   try {
     await connection.beginTransaction();
     const [rows] = await connection.query<any[]>(
@@ -97,45 +95,34 @@ export async function claimNextKernelTask(agentId: string, capability?: string |
         WHERE status='QUEUED'
           AND (scheduled_at IS NULL OR scheduled_at <= UTC_TIMESTAMP(3))
           AND (deadline_at IS NULL OR deadline_at > UTC_TIMESTAMP(3))
-          AND (required_capability IS NULL OR required_capability = ?)
+          AND (? IS NULL OR required_capability IS NULL OR required_capability = ?)
         ORDER BY priority DESC, scheduled_at ASC, created_at ASC
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED`,
-      [capability ?? ''],
+        LIMIT 1 FOR UPDATE SKIP LOCKED`,
+      [capability ?? null, capability ?? null],
     );
-    if (!rows.length) {
-      await connection.rollback();
-      return null;
-    }
-
+    if (!rows.length) { await connection.rollback(); return null; }
     const task = rows[0];
-    const leaseId = randomUUID();
     await connection.query(
-      `UPDATE ai_tasks SET status='RUNNING', assigned_agent_id=?, attempts=attempts+1, started_at=COALESCE(started_at, UTC_TIMESTAMP(3))
-       WHERE task_id=? AND status='QUEUED'`,
+      `UPDATE ai_tasks SET status='RUNNING', assigned_agent_id=?, attempts=attempts+1, started_at=COALESCE(started_at, UTC_TIMESTAMP(3)), claimed_at=UTC_TIMESTAMP(3), updated_at=UTC_TIMESTAMP(3) WHERE task_id=? AND status='QUEUED'`,
       [agentId, task.task_id],
     );
     await connection.query(
-      `INSERT INTO ai_task_leases (task_id, agent_id, lease_token, leased_at, lease_until, heartbeat_at)
-       VALUES (?, ?, ?, UTC_TIMESTAMP(3), DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ${LEASE_SECONDS} SECOND), UTC_TIMESTAMP(3))`,
+      `INSERT INTO ai_task_leases (task_id, agent_id, lease_token, leased_at, lease_until, heartbeat_at, status)
+       VALUES (?, ?, ?, UTC_TIMESTAMP(3), DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ${LEASE_SECONDS} SECOND), UTC_TIMESTAMP(3), 'ACTIVE')`,
       [task.task_id, agentId, leaseToken],
     );
     await connection.commit();
     void writeKernelEvent({ eventType: 'task.claimed', taskId: task.task_id, agentId, objectiveId: task.objective_id, projectId: task.project_id, runId: task.run_id, message: `Task claimed by ${agentId}` });
     return { ...task, leaseToken } as ClaimedKernelTask;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  } catch (error) { await connection.rollback(); throw error; }
+  finally { connection.release(); }
 }
 
 export async function heartbeatKernelTask(taskId: string, agentId: string, leaseToken: string): Promise<boolean> {
   const db = createMySqlExecutor();
   const result = await db.execute<any>(
     `UPDATE ai_task_leases SET heartbeat_at=UTC_TIMESTAMP(3), lease_until=DATE_ADD(UTC_TIMESTAMP(3), INTERVAL ${LEASE_SECONDS} SECOND)
-      WHERE task_id=? AND agent_id=? AND lease_token=? AND lease_until > UTC_TIMESTAMP(3)`,
+      WHERE task_id=? AND agent_id=? AND lease_token=? AND status='ACTIVE' AND lease_until > UTC_TIMESTAMP(3)`,
     [taskId, agentId, leaseToken],
   );
   return Number(result?.affectedRows ?? 0) === 1;
@@ -146,11 +133,11 @@ export async function completeKernelTask(taskId: string, agentId: string, leaseT
   const nowAt = now();
   await db.execute(
     `UPDATE ai_tasks t JOIN ai_task_leases l ON l.task_id=t.task_id
-        SET t.status=?, t.completed_at=?, t.result_json=?, t.error_message=?
-      WHERE t.task_id=? AND l.agent_id=? AND l.lease_token=?`,
-    [status, nowAt, result == null ? null : JSON.stringify(result), errorMessage ?? null, taskId, agentId, leaseToken],
+        SET t.status=?, t.completed_at=?, t.result_json=?, t.error_message=?, t.updated_at=?
+      WHERE t.task_id=? AND l.agent_id=? AND l.lease_token=? AND l.status='ACTIVE'`,
+    [status, nowAt, result == null ? null : JSON.stringify(result), errorMessage ?? null, nowAt, taskId, agentId, leaseToken],
   );
-  await db.execute(`UPDATE ai_task_leases SET status='RELEASED', released_at=? WHERE task_id=? AND agent_id=? AND lease_token=?`, [nowAt, taskId, agentId, leaseToken]);
+  await db.execute(`UPDATE ai_task_leases SET status='RELEASED', released_at=? WHERE task_id=? AND agent_id=? AND lease_token=? AND status='ACTIVE'`, [nowAt, taskId, agentId, leaseToken]);
   void writeKernelEvent({ eventType: status === 'COMPLETED' ? 'task.completed' : 'task.failed', taskId, agentId, message: errorMessage ?? (status === 'COMPLETED' ? 'Task completed' : 'Task failed') });
 }
 
@@ -161,7 +148,7 @@ export async function recoverExpiredKernelTasks(): Promise<number> {
   if (!leases.length) return 0;
   for (const lease of leases) {
     await db.execute(`UPDATE ai_task_leases SET status='EXPIRED', released_at=UTC_TIMESTAMP(3) WHERE task_id=? AND status='ACTIVE'`, [lease.task_id]);
-    await db.execute(`UPDATE ai_tasks SET status=CASE WHEN attempts < max_attempts THEN 'QUEUED' ELSE 'FAILED' END, assigned_agent_id=NULL, error_message=CASE WHEN attempts < max_attempts THEN NULL ELSE 'Maximum task attempts exhausted after lease expiry' END WHERE task_id=?`, [lease.task_id]);
+    await db.execute(`UPDATE ai_tasks SET status=CASE WHEN attempts < max_attempts THEN 'QUEUED' ELSE 'FAILED' END, assigned_agent_id=NULL, error_message=CASE WHEN attempts < max_attempts THEN NULL ELSE 'Maximum task attempts exhausted after lease expiry' END, updated_at=UTC_TIMESTAMP(3) WHERE task_id=?`, [lease.task_id]);
     await writeKernelEvent({ eventType: 'task.lease_expired', taskId: lease.task_id, agentId: lease.agent_id, message: 'Worker lease expired; task recovered or failed by retry policy' });
   }
   return leases.length;
@@ -174,10 +161,5 @@ export async function getKernelQueueSnapshot() {
     db.execute<any[]>(`SELECT task_id, title, task_type, status, priority, assigned_agent_id, attempts, token_budget, cost_budget, created_at, started_at, completed_at FROM ai_tasks ORDER BY created_at DESC LIMIT 50`),
     db.execute<any[]>(`SELECT task_id, agent_id, lease_until, heartbeat_at, status FROM ai_task_leases WHERE status='ACTIVE' ORDER BY lease_until ASC LIMIT 50`),
   ]);
-  return {
-    counts: Object.fromEntries(counts.map((row) => [row.status, Number(row.count)])),
-    recentTasks: recent,
-    activeLeases: leases,
-    leaseSeconds: LEASE_SECONDS,
-  };
+  return { counts: Object.fromEntries(counts.map((row) => [row.status, Number(row.count)])), recentTasks: recent, activeLeases: leases, leaseSeconds: LEASE_SECONDS };
 }
