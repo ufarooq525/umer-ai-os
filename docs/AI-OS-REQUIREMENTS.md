@@ -1,166 +1,88 @@
 # Umer AI OS — Living Requirements
 
-> This is the source-of-truth planning document for the AI OS. Every meaningful feature must update this file and add/adjust test cases before it is considered complete.
+> Source of truth for the AI OS. The current 71-case product acceptance milestone is implemented. Automated execution remains a follow-up where the repository harness does not exercise live MySQL behavior.
 
 ## Product objective
-
 Build a company-like autonomous AI operating system where the CEO can understand, control, audit, and improve the entire workforce without asking an engineer or an agent what happened.
 
 ## Core operating chain
-
 ```text
-CEO Objective
-  → Project
-  → Plan
-  → Task
-  → Agent
-  → Tool Call
-  → Evidence
-  → Problem
-  → Opportunity
-  → Decision
-  → Action
-  → Result
-  → Revenue
+CEO Objective → Project → Plan → Task → Agent → Tool Call → Evidence → Problem → Opportunity → Decision → Action → Result → Revenue
 ```
-
-Every link should be persisted where technically available and explainable to the CEO.
-
-## Non-negotiable principles
-
-1. **CEO visibility:** current state, ownership, next action, blockers, errors, cost, and outcomes must be inspectable.
-2. **Durable state:** important work cannot exist only in process memory or UI fixtures.
-3. **Traceability:** tasks, agents, runs, evidence, decisions, and outcomes should be correlatable.
-4. **Explainability:** important decisions and task creation must record a structured `why` context.
-5. **Economics:** token usage, tool usage, estimated cost, cache usage, and evaluation quality must be observable.
-6. **Recoverability:** abandoned work must be recoverable through leases/retry policy.
-7. **Searchability:** the CEO must be able to find entities and follow their relationships.
-8. **Testability:** each feature has explicit acceptance tests with a measurable coverage count.
-9. **MySQL first:** durable operational state uses the project's MySQL database.
-10. **No fake activity:** an agent is not shown as working unless the runtime has actually recorded its work.
 
 ## Current implementation status
 
-### Completed
+### Workforce & kernel
+- [x] Persistent 8-agent workforce registry, assignments and events.
+- [x] Durable MySQL task queue with atomic `SKIP LOCKED` claiming.
+- [x] Capability matching, leases, heartbeats, completion/failure and recovery.
+- [x] Structured task `why_json` and objective/project/run/entity linkage.
+- [x] Task investigation with attempts, events, model/tool/evaluation/cost and child-task lineage.
 
-- [x] Persistent AI workforce registry and assignments.
-- [x] Workforce event stream and CEO command center.
-- [x] Durable kernel task queue in MySQL.
-- [x] Atomic task claiming with leases and capability matching.
-- [x] Task heartbeat and completion/failure lifecycle.
-- [x] Expired lease recovery and retry policy.
-- [x] Kernel workflow event persistence.
-- [x] Model/tool/evaluation/cost telemetry schema and operations API.
-- [x] Structured task `why_json` and entity linkage.
-- [x] Task investigation API with attempts/events/model/tool/evaluation/cost/child-task lineage.
-- [x] CEO task explorer and task investigation UI.
-- [x] Global search across the operational AI OS entities currently stored in MySQL.
-- [x] Unified cross-system timeline API joining workforce, kernel, and opportunity-run events.
-- [x] CEO timeline filters for agent, run, entity type/id, and free-text event search.
-- [x] Timeline correlation fields preserve task, agent, run, project, and entity identifiers where persisted.
+### CEO visibility
+- [x] Mission Control workforce command center.
+- [x] 24h token/cache/tool/evaluation/cost economics.
+- [x] Global operational search across agents, tasks, runs, niches, businesses, opportunities, evidence, problems, outreach and events.
+- [x] Unified cross-system timeline for workforce + kernel + opportunity-run events.
+- [x] Timeline agent/run/entity/text filters and correlation identifiers.
+- [x] Entity investigation route for every searchable entity type.
+- [x] Guide route for system documentation.
 
-### In progress / next
+### CEO controls
+- [x] Pause agent.
+- [x] Resume agent.
+- [x] Retry failed/blocked/waiting/cancelled task.
+- [x] Reassign task to an available agent.
+- [x] Safely cancel active task and release its lease.
+- [x] Append-only control audit records with before/after state and reason.
+- [x] Paused agents are prevented from claiming new kernel work.
 
-- [ ] Search result deep-links for every entity type.
-- [ ] Structured `why` metadata for opportunity scoring, decisions, and tool calls.
-- [ ] Documentation/Guide generated from registered agents, tools, workflows, and schemas.
-- [ ] Evidence → problem → opportunity → decision → action lineage.
-- [ ] Revenue/outcome attribution.
-- [ ] MCP control center with permissions, health, tool catalog, and usage.
-- [ ] CEO controls for pause/resume/retry/reassign/cancel with audit trail.
-- [ ] Autonomous worker supervisor. **Explicitly deferred until observability/control is solid.**
+### MCP control plane
+- [x] Registered MCP server inventory and health/trust visibility.
+- [x] MCP tool catalog, risk/read-only/approval metadata and enablement state.
+- [x] Permission policy visibility.
+- [x] 24h tool usage, failures, cache hits, latency and estimated cost.
+- [x] Default-deny authorization for agent tool calls.
+- [x] Hourly call limits and approval-required denial.
+- [x] Denied calls are recorded in tool telemetry, control audit and workflow timeline.
 
-## Global search requirements
+### Evidence → revenue lineage
+- [x] Durable generic lineage edges with relation, confidence, metadata and structured why.
+- [x] Existing opportunity/problem/business/evidence relationships are materialized into the lineage graph.
+- [x] Opportunity scoring is represented as an explainable decision edge using persisted score data.
+- [x] Generic decision/action/result relationships can be persisted.
+- [x] Business outcomes and revenue amounts/currencies are persisted.
+- [x] Revenue can be traced through lineage to opportunity/evidence.
+- [x] Investigation UI exposes lineage, outcomes and AI tracked cost.
+- [x] Investigation API calculates revenue-to-AI-cost ROI when both are recorded.
 
-The search system must search the durable operational state, not just the current page's in-memory data.
+## API surfaces
+- `GET /api/workforce`
+- `GET /api/kernel`
+- `GET /api/kernel/operations`
+- `GET /api/kernel/tasks/{taskId}`
+- `GET /api/search?q=...`
+- `GET /api/timeline?...`
+- `GET/POST /api/control`
+- `GET/POST /api/mcp`
+- `GET/POST /api/lineage`
 
-### Searchable entities
+## Safety and operating rules
+- Search is read-only, bounded and no-store.
+- Timeline never invents missing correlation identifiers.
+- CEO controls validate state transitions and audit before/after state.
+- Paused agents cannot claim new kernel work.
+- MCP authorization is default-deny and denied calls are audited.
+- Lineage uses a flexible graph because opportunity relationships are stored partly in JSON arrays.
+- No fake agent activity is introduced merely to make the dashboard look busy.
 
-- Agents
-- Tasks
-- Projects (when a project table is available)
-- Runs / opportunity runs
-- Niches
-- Businesses
-- Opportunities
-- Evidence
-- Problems
-- Outreach drafts
-- Workflow events
-
-### Search result contract
-
-Every result should expose:
-
-- `entityType`
-- `entityId`
-- human-readable title
-- short summary
-- status where available
-- timestamp where available
-- searchable context/reason
-- enough identity to navigate to the entity detail view
-
-### Search behavior
-
-- Minimum query length: 2 characters.
-- Case-insensitive matching.
-- Search IDs, titles/names, status, task type, agent, run, business, niche, and event message where applicable.
-- Return a bounded result set so one query cannot overload the database.
-- Never expose SQL errors as successful search results.
-- Search must be read-only.
-- Search must use no-store semantics because operational state changes continuously.
-
-## Task lifecycle requirements
-
-```text
-QUEUED → RUNNING → COMPLETED
-             ├──→ FAILED
-             ├──→ WAITING/BLOCKED
-             └──→ lease expiry → QUEUED or FAILED
-```
-
-A claim must atomically assign the task and create an active lease. Completion must require the valid lease identity. Expired leases must not permanently strand work.
-
-## Cross-system timeline requirements
-
-The CEO needs one chronological operational stream rather than separate event screens. The timeline must:
-
-- join durable workforce events, kernel workflow events, and opportunity run events;
-- preserve source, event type, severity/level, message, timestamp, and correlation identifiers;
-- support filtering by agent, run, project, entity type, and entity ID;
-- support free-text search over event identity and metadata;
-- refresh automatically without caching stale operational state;
-- tolerate a source having fewer correlation fields than another source without fabricating identifiers.
-
-Current implementation exposes `GET /api/timeline` and a live Mission Control timeline component. Opportunity-run events are joined to registered agents by agent name when possible; otherwise the source remains visible without inventing an agent identity.
-
-## Observability requirements
-
-For every meaningful operation, the system should eventually answer:
-
-- What happened?
-- When did it happen?
-- Which agent did it?
-- Which task/run/project/objective was involved?
-- Which tool/model was used?
-- What did it cost?
-- What evidence supported it?
-- Why was it done?
-- What happened next?
-- What was the result?
+## Remaining full-vision work
+The defined 71-case milestone is complete. A larger future milestone remains intentionally separate: a continuously running worker supervisor that autonomously schedules and executes queued work without a human-triggered worker. This is not counted as a failure of the current milestone; it is the next architectural stage after production verification of observability and controls.
 
 ## Definition of done
-
-A feature is not complete until:
-
-1. requirements are documented here;
-2. implementation is committed;
-3. acceptance tests are added/updated in `docs/AI-OS-TEST-CASES.md`;
-4. the coverage count is updated;
-5. existing functionality is not silently replaced by fixtures or mock-only behavior;
-6. CI/build/test status is checked when available.
-
-## Current test coverage target
-
-See `docs/AI-OS-TEST-CASES.md`. The test inventory is deliberately maintained separately so the CEO can see exactly how many behavioral cases are covered and which remain pending.
+1. Requirement documented.
+2. Implementation committed.
+3. Acceptance case updated.
+4. Coverage count updated.
+5. No fake runtime activity introduced.
+6. CI/build/test status checked before declaring a release healthy.
