@@ -3,6 +3,7 @@ import { getDashboard, getProjects, getWorkPackages } from '@/lib/control-api';
 import { QuickTaskForm } from '@/components/QuickTaskForm';
 import { OpportunityControlCenter } from '@/components/OpportunityControlCenter';
 import { AIWorkforceCommandCenter } from '@/components/AIWorkforceCommandCenter';
+import { GlobalAISearch } from '@/components/GlobalAISearch';
 import { WatchdogFindingsBanner } from '@/components/WatchdogFindingsBanner';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,7 @@ export default async function DashboardPage() {
         </p>
       </header>
 
+      <GlobalAISearch />
       <AIWorkforceCommandCenter />
       <OpportunityControlCenter />
 
