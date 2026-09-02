@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       UNION ALL SELECT 'workflow_event', event_id, CONCAT(event_type, ' · ', COALESCE(message, '')), CONCAT('task=', COALESCE(task_id, '-'), ' · agent=', COALESCE(agent_id, '-'), ' · run=', COALESCE(run_id, '-')), event_type, occurred_at FROM ai_workflow_events WHERE event_id LIKE ? OR event_type LIKE ? OR message LIKE ? OR task_id LIKE ? OR agent_id LIKE ? OR run_id LIKE ?
       UNION ALL SELECT 'run_event', id, CONCAT(stage, ' · ', agent_name), message, level, occurred_at FROM opportunity_run_events WHERE id LIKE ? OR run_id LIKE ? OR niche_id LIKE ? OR stage LIKE ? OR agent_name LIKE ? OR message LIKE ?
     ) search_results ORDER BY CASE WHEN entity_id = ? THEN 0 WHEN title LIKE ? THEN 1 ELSE 2 END, occurred_at DESC LIMIT ${MAX_RESULTS}`,
-      [term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, term, query, term]);
+      [...Array(54).fill(term), query, term]);
     return NextResponse.json({ query, results }, { headers: { 'cache-control': 'no-store' } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 503, headers: { 'cache-control': 'no-store' } }); }
 }
