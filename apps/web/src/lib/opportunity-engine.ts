@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { EvidenceRecord, NicheDefinition } from '@umer/contracts';
 import type { BusinessCandidate } from '@umer/opportunity-intelligence';
 import { persistWorkforceState } from './workforce-runtime';
+import { claimNextKernelTask, completeKernelTask, createKernelTask, recoverExpiredKernelTasks } from './ai-kernel-runtime';
 import {
   CompositeDiscoveryAdapter,
   createMySqlOpportunityPersistence,
@@ -62,7 +63,7 @@ function event(agent: string, message: string, stage?: string, level?: string) {
   state.events = state.events.slice(-100);
   persistWorkforceState({
     agentName: agent,
-    status: agent === 'Orchestrator' && state.running ? 'RUNNING' : 'RUNNING',
+    status: 'RUNNING',
     task: message,
     runId: state.runId,
     eventType: 'pipeline_event',
@@ -117,7 +118,30 @@ export function startOpportunityRun(): { runId: string } {
 }
 
 async function execute(runId: string, live: boolean) {
+  const taskIds: Record<string, string> = {};
+  const taskLeases: Record<string, { token: string }> = {};
   try {
+    await recoverExpiredKernelTasks();
+    taskIds.discovery = await createKernelTask({
+      runId, taskType: 'discovery', title: 'Discover businesses for opportunity run',
+      instructions: 'Find candidate businesses matching the active niche.', priority: 90,
+      requiredCapability: 'discovery', tokenBudget: 4000, costBudget: 0.25,
+    });
+    taskIds.research = await createKernelTask({
+      runId, parentTaskId: taskIds.discovery, taskType: 'research', title: 'Research discovered businesses',
+      instructions: 'Collect relevant evidence and identify operational problems.', priority: 80,
+      requiredCapability: 'research', tokenBudget: 8000, costBudget: 0.50,
+    });
+    taskIds.opportunity = await createKernelTask({
+      runId, parentTaskId: taskIds.research, taskType: 'opportunity_scoring', title: 'Score validated opportunities',
+      instructions: 'Evaluate evidence and produce opportunity candidates with confidence.', priority: 70,
+      requiredCapability: 'opportunity', tokenBudget: 6000, costBudget: 0.40,
+    });
+
+    const discoveryTask = await claimNextKernelTask('discovery', 'discovery');
+    if (!discoveryTask || discoveryTask.taskId !== taskIds.discovery) throw new Error('Discovery worker could not claim its durable task');
+    taskLeases.discovery = { token: discoveryTask.leaseToken };
+
     const discoveryLimit = Math.max(1, Math.min(Number(process.env.OPPORTUNITY_DISCOVERY_LIMIT ?? 20) || 20, 20));
     const niche: NicheDefinition = {
       ...SAUDI_UMRAH_NICHE,
@@ -129,12 +153,8 @@ async function execute(runId: string, live: boolean) {
       updatedAt: new Date().toISOString(),
     };
 
-    const discoverySource = live
-      ? new GooglePlacesDiscoverySource()
-      : new StaticDiscoverySource(candidates);
-    const researchSources = live
-      ? [new WebsiteEvidenceSource()]
-      : [new StaticEvidenceSource(evidence)];
+    const discoverySource = live ? new GooglePlacesDiscoverySource() : new StaticDiscoverySource(candidates);
+    const researchSources = live ? [new WebsiteEvidenceSource()] : [new StaticEvidenceSource(evidence)];
     const discovery = new CompositeDiscoveryAdapter(new SourceDiscoveryProvider([discoverySource]));
     const research = new EvidenceResearchAdapter(researchSources, niche);
 
@@ -147,31 +167,25 @@ async function execute(runId: string, live: boolean) {
       onEvent: (ev) => {
         event(ev.agentName, ev.message, ev.stage, ev.level);
         if (ev.stage === 'discovery') {
-          state.stage = 'Discovery';
-          state.progress = 15;
+          state.stage = 'Discovery'; state.progress = 15;
           state.agents[0] = { name: 'Discovery Agent', status: 'RUNNING', task: ev.message };
         } else if (ev.stage === 'deduplication') {
-          state.stage = 'Deduplication';
-          state.progress = 30;
+          state.stage = 'Deduplication'; state.progress = 30;
           if (!state.completedStages.includes('Discovery')) state.completedStages.push('Discovery');
           state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: 'Discovery completed' };
         } else if (ev.stage === 'research') {
-          state.stage = 'Research';
-          state.progress = 50;
+          state.stage = 'Research'; state.progress = 50;
           if (!state.completedStages.includes('Deduplication')) state.completedStages.push('Deduplication');
           state.agents[1] = { name: 'Research Agent', status: 'RUNNING', task: ev.message };
         } else if (ev.stage === 'audit') {
-          state.stage = 'Audit';
-          state.progress = 65;
+          state.stage = 'Audit'; state.progress = 65;
           if (!state.completedStages.includes('Research')) state.completedStages.push('Research');
           state.agents[1] = { name: 'Research Agent', status: 'COMPLETED', task: 'Audit in progress' };
         } else if (ev.stage === 'problems') {
-          state.stage = 'Problems';
-          state.progress = 78;
+          state.stage = 'Problems'; state.progress = 78;
           if (!state.completedStages.includes('Audit')) state.completedStages.push('Audit');
         } else if (ev.stage === 'scoring') {
-          state.stage = 'Scoring';
-          state.progress = 90;
+          state.stage = 'Scoring'; state.progress = 90;
           if (!state.completedStages.includes('Problems')) state.completedStages.push('Problems');
           state.agents[2] = { name: 'Opportunity Agent', status: 'RUNNING', task: ev.message };
         }
@@ -189,13 +203,23 @@ async function execute(runId: string, live: boolean) {
       estimatedPipeline: result.metrics.estimatedPipeline,
     };
 
+    await completeKernelTask(taskIds.discovery, 'discovery', taskLeases.discovery.token, { businesses: result.metrics.businessesDiscovered });
+    const researchTask = await claimNextKernelTask('research', 'research');
+    if (researchTask && researchTask.taskId === taskIds.research) {
+      taskLeases.research = { token: researchTask.leaseToken };
+      await completeKernelTask(taskIds.research, 'research', taskLeases.research.token, { researched: result.metrics.businessesResearched, qualified: result.metrics.qualifiedBusinesses });
+    }
+    const opportunityTask = await claimNextKernelTask('opportunity', 'opportunity');
+    if (opportunityTask && opportunityTask.taskId === taskIds.opportunity) {
+      taskLeases.opportunity = { token: opportunityTask.leaseToken };
+      await completeKernelTask(taskIds.opportunity, 'opportunity', taskLeases.opportunity.token, { opportunities: result.metrics.opportunitiesFound, highValue: result.metrics.highValueOpportunities });
+    }
+
     state.completedStages = ['Discovery', 'Deduplication', 'Research', 'Audit', 'Problems', 'Scoring', 'Opportunities'];
     state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: `${result.metrics.businessesDiscovered} found` };
     state.agents[1] = { name: 'Research Agent', status: 'COMPLETED', task: `${result.metrics.businessesResearched} researched` };
     state.agents[2] = { name: 'Opportunity Agent', status: 'COMPLETED', task: `${result.metrics.opportunitiesFound} scored` };
-    state.running = false;
-    state.progress = 100;
-    state.stage = 'Completed';
+    state.running = false; state.progress = 100; state.stage = 'Completed';
     persistWorkforceState({ agentName: 'Discovery Agent', status: 'COMPLETED', task: `${result.metrics.businessesDiscovered} found`, runId, eventType: 'completed', stage: 'discovery', message: `Discovery completed: ${result.metrics.businessesDiscovered} businesses found` });
     persistWorkforceState({ agentName: 'Research Agent', status: 'COMPLETED', task: `${result.metrics.businessesResearched} researched`, runId, eventType: 'completed', stage: 'research', message: `Research completed: ${result.metrics.businessesResearched} businesses researched` });
     persistWorkforceState({ agentName: 'Opportunity Agent', status: 'COMPLETED', task: `${result.metrics.opportunitiesFound} scored`, runId, eventType: 'completed', stage: 'scoring', message: `Opportunity scoring completed: ${result.metrics.opportunitiesFound} opportunities` });
@@ -204,8 +228,11 @@ async function execute(runId: string, live: boolean) {
     state.running = false;
     state.stage = 'Failed';
     state.error = err instanceof Error ? err.message : String(err);
-    for (const agent of state.agents) {
-      if (agent.status === 'RUNNING') agent.status = 'FAILED';
+    for (const agent of state.agents) if (agent.status === 'RUNNING') agent.status = 'FAILED';
+    for (const [kind, lease] of Object.entries(taskLeases)) {
+      const agentId = kind === 'discovery' ? 'discovery' : kind === 'research' ? 'research' : 'opportunity';
+      const taskId = taskIds[kind];
+      if (taskId) await completeKernelTask(taskId, agentId, lease.token, null, 'FAILED', state.error).catch(() => undefined);
     }
     event('Orchestrator', `Run failed: ${state.error}`, 'error', 'error');
     persistWorkforceState({ agentName: 'Orchestrator', status: 'FAILED', task: state.error, runId, eventType: 'failed', stage: 'error', message: `Run failed: ${state.error}` });
