@@ -19,3 +19,4 @@ export { OpportunityRunService, defaultOpportunityRunClock, type OpportunityRunC
 export { buildBusinessIdentity, createBusinessId, normalizeEmail, normalizeGeography, normalizePhone, resolveIdentity, type BusinessIdentity, type IdentityCandidate, type IdentityMatch } from './identity.js';
 export { normalizeBusinessName, normalizeCandidate, normalizeWebsite, type NormalizedBusinessCandidate } from './normalization.js';
 export { CompositeDiscoveryAdapter, EvidenceResearchAdapter, GooglePlacesDiscoverySource, SourceDiscoveryProvider, StaticDiscoverySource, StaticEvidenceSource, WebsiteEvidenceSource, type DiscoverySource, type EvidenceSource } from './adapters.js';
+export { OpportunityAutonomousScheduler, type AutonomousSchedulerState, type SchedulerConfig } from './autonomous-scheduler.js';

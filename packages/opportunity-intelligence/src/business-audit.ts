@@ -3,13 +3,14 @@ import { createHash } from 'node:crypto';
 import type { DiscoveryCandidate, BusinessAudit, ProblemDetector } from './pipeline.js';
 
 const SIGNALS = {
-  website: ['website', 'web site', 'homepage'],
-  conversion: ['contact form', 'request quote', 'cta', 'call to action', 'whatsapp', 'booking'],
-  booking: ['booking', 'reservation', 'appointment', 'availability'],
-  payments: ['payment', 'checkout', 'online payment', 'visa', 'mastercard'],
-  automation: ['automation', 'automated', 'crm', 'workflow', 'follow-up', 'reminder'],
-  integrations: ['api', 'integration', 'integrated', 'erp', 'crm'],
-  trust: ['review', 'testimonial', 'rating', 'certificate', 'accreditation'],
+  website: ['website', 'web site', 'homepage', 'portal'],
+  conversion: ['contact form', 'request quote', 'cta', 'call to action', 'whatsapp', 'booking', 'inquire', 'get quote'],
+  booking: ['booking', 'reservation', 'appointment', 'availability', 'schedule', 'book now', 'reserve'],
+  payments: ['payment', 'checkout', 'online payment', 'visa', 'mastercard', 'mada', 'apple pay', 'hyperpay', 'stripe', 'paytabs'],
+  automation: ['automation', 'automated', 'crm', 'workflow', 'follow-up', 'reminder', 'portal', 'dashboard', 'self-service'],
+  integrations: ['api', 'integration', 'integrated', 'erp', 'crm', 'webhook'],
+  trust: ['review', 'testimonial', 'rating', 'certificate', 'accreditation', 'license', 'ministry', 'hajj'],
+  multilingual: ['bilingual', 'arabic and english', 'multilingual', 'english'],
 } as const;
 
 function text(evidence: EvidenceRecord[]): string {
@@ -76,18 +77,32 @@ export class EvidenceBasedProblemDetector implements ProblemDetector {
     if (evidence.length === 0) return [];
     const audit = auditBusiness(candidate, evidence);
     const results: Problem[] = [];
+    const targetId = candidate.externalId ?? candidate.name;
 
+    // 1. Missing website / broken digital storefront
+    if (!candidate.websiteUrl) {
+      results.push(problem(targetId, 'The business operates without a public digital storefront, causing complete loss of direct online demand.', 85, 80, 85, evidence));
+      return results;
+    }
+
+    // 2. Conversion path weakness
     if (audit.digitalPresence.conversion < 50) {
-      results.push(problem(candidate.externalId ?? candidate.name, 'The business shows weak or unclear digital conversion paths.', 65, 60, 65, evidence));
+      results.push(problem(targetId, 'The digital presence lacks automated lead capture and clear conversion paths, causing prospective customer drop-off.', 65, 60, 65, evidence));
     }
-    if (candidate.websiteUrl && audit.digitalPresence.booking < 50) {
-      results.push(problem(candidate.externalId ?? candidate.name, 'The business website shows no clear booking or reservation workflow.', 60, 55, 60, evidence));
+
+    // 3. Missing online booking engine
+    if (audit.digitalPresence.booking < 50) {
+      results.push(problem(targetId, 'The business website has no self-service booking engine, forcing all reservations through manual inquiries.', 70, 75, 75, evidence));
     }
+
+    // 4. Missing digital payment checkout
     if (audit.digitalPresence.payments < 50) {
-      results.push(problem(candidate.externalId ?? candidate.name, 'Public evidence does not show a clear online payment workflow.', 55, 50, 60, evidence));
+      results.push(problem(targetId, 'Public evidence does not show online checkout (Mada/Visa/Apple Pay); payments require manual transfers or physical collection.', 65, 70, 70, evidence));
     }
+
+    // 5. Missing customer & CRM workflow automation
     if (audit.digitalPresence.automation < 50) {
-      results.push(problem(candidate.externalId ?? candidate.name, 'Public evidence does not show meaningful customer or operational automation.', 50, 55, 55, evidence));
+      results.push(problem(targetId, 'Customer inquiries and booking follow-ups lack automated CRM workflows, leading to operational delays and lost revenue.', 55, 60, 60, evidence));
     }
 
     return results;

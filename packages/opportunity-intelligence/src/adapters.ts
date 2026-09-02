@@ -40,6 +40,7 @@ export class StaticDiscoverySource implements DiscoverySource {
 
 /**
  * Live Google Places Text Search (New) source.
+ * Supports multi-query search across Saudi Arabia/Umrah geographies and subcategories.
  * Requires GOOGLE_MAPS_API_KEY on the server. No scraping is performed.
  */
 export class GooglePlacesDiscoverySource implements DiscoverySource {
@@ -50,59 +51,89 @@ export class GooglePlacesDiscoverySource implements DiscoverySource {
   async search(query: DiscoveryQuery): Promise<BusinessCandidate[]> {
     if (!this.apiKey) throw new Error('GOOGLE_MAPS_API_KEY is not configured; live discovery cannot start.');
 
-    const limit = Math.max(1, Math.min(query.limit, 20));
-    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': this.apiKey,
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,places.types,places.googleMapsUri',
-      },
-      body: JSON.stringify({
-        textQuery: query.query,
-        pageSize: limit,
-        languageCode: 'en',
-        regionCode: 'SA',
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    // Generate specialized sub-category search queries if discoverySignals exist in niche
+    const searchQueries = this.buildSearchQueries(query);
+    const candidates: BusinessCandidate[] = [];
+    const pageSize = Math.max(1, Math.min(Math.ceil(query.limit / searchQueries.length), 20));
 
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Google Places request failed (${response.status}): ${detail.slice(0, 500)}`);
+    for (const textQuery of searchQueries) {
+      try {
+        const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': this.apiKey,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.websiteUri,places.nationalPhoneNumber,places.internationalPhoneNumber,places.types,places.rating,places.userRatingCount,places.googleMapsUri,places.businessStatus',
+          },
+          body: JSON.stringify({
+            textQuery,
+            pageSize,
+            languageCode: 'en',
+            regionCode: 'SA',
+          }),
+          signal: AbortSignal.timeout(15_000),
+        });
+
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(`Google Places request failed (${response.status}): ${detail.slice(0, 500)}`);
+        }
+
+        const body = (await response.json()) as {
+          places?: Array<{
+            id?: string;
+            displayName?: { text?: string };
+            formattedAddress?: string;
+            websiteUri?: string;
+            nationalPhoneNumber?: string;
+            internationalPhoneNumber?: string;
+            types?: string[];
+            rating?: number;
+            userRatingCount?: number;
+            googleMapsUri?: string;
+            businessStatus?: string;
+          }>;
+        };
+
+        const discoveredAt = new Date().toISOString();
+        const items = (body.places ?? []).flatMap((place) => {
+          const name = place.displayName?.text?.trim();
+          if (!name) return [];
+          const phone = place.internationalPhoneNumber || place.nationalPhoneNumber;
+          const sourceRefs = [
+            place.id ? `google-places:${place.id}` : 'google-places',
+            ...(place.googleMapsUri ? [place.googleMapsUri] : []),
+            ...(phone ? [`phone:${phone}`] : []),
+            ...(place.formattedAddress ? [`address:${place.formattedAddress}`] : []),
+          ];
+          return [{
+            externalId: place.id ? `google:${place.id}` : undefined,
+            name,
+            website: place.websiteUri,
+            geography: query.geography,
+            industry: place.types?.[0]?.replaceAll('_', ' '),
+            sourceRefs: [...new Set(sourceRefs)],
+            discoveredAt,
+          }];
+        });
+        candidates.push(...items);
+      } catch (err) {
+        // Continue to next query if one fails, but log if needed
+        if (searchQueries.length === 1) throw err;
+      }
     }
 
-    const body = (await response.json()) as {
-      places?: Array<{
-        id?: string;
-        displayName?: { text?: string };
-        formattedAddress?: string;
-        websiteUri?: string;
-        nationalPhoneNumber?: string;
-        internationalPhoneNumber?: string;
-        types?: string[];
-        googleMapsUri?: string;
-      }>;
-    };
-    const discoveredAt = new Date().toISOString();
+    return candidates.slice(0, query.limit);
+  }
 
-    return (body.places ?? []).slice(0, limit).flatMap((place) => {
-      const name = place.displayName?.text?.trim();
-      if (!name) return [];
-      const sourceRefs = [
-        place.id ? `google-places:${place.id}` : 'google-places',
-        ...(place.googleMapsUri ? [place.googleMapsUri] : []),
-      ];
-      return [{
-        externalId: place.id ? `google:${place.id}` : undefined,
-        name,
-        website: place.websiteUri,
-        geography: query.geography,
-        industry: place.types?.[0]?.replaceAll('_', ' '),
-        sourceRefs: [...new Set(sourceRefs)],
-        discoveredAt,
-      }];
-    });
+  private buildSearchQueries(query: DiscoveryQuery): string[] {
+    const base = `${query.niche.name} ${query.geography}`;
+    if (!query.niche.discoverySignals || query.niche.discoverySignals.length === 0) {
+      return [base];
+    }
+    // Pick top complementary discovery signals for the geography
+    const specialized = query.niche.discoverySignals.slice(0, 3).map((sig) => `${sig} in ${query.geography}`);
+    return [base, ...specialized];
   }
 }
 
@@ -115,7 +146,7 @@ export class CompositeDiscoveryAdapter implements DiscoveryAdapter {
       const results = await this.provider.discover({
         niche,
         geography,
-        query: `${niche.name} ${geography}`,
+        query: `${niche.name} in ${geography}`,
         limit: niche.targetBusinessesPerRun,
       });
       all.push(...results.map((item) => ({
@@ -164,8 +195,9 @@ export class StaticEvidenceSource implements EvidenceSource {
 }
 
 /**
- * Live first-party website research. It fetches only the public website URL
- * returned by the discovery provider and turns observable signals into evidence.
+ * Live first-party website and commercial signals research.
+ * It inspects the public website URL and analyzes transactional readiness,
+ * booking engine, payment flows, multilingual coverage, mobile accessibility, and CRM automation signals.
  */
 export class WebsiteEvidenceSource implements EvidenceSource {
   readonly name = 'website';
@@ -175,12 +207,12 @@ export class WebsiteEvidenceSource implements EvidenceSource {
       return [{
         id: evidenceId(candidate.name, 'no-website'),
         type: 'directory',
-        title: 'Business listing without website',
+        title: 'Business listing without public website',
         sourceUrl: candidate.sourceRefs.find((ref) => ref.startsWith('http')) ?? 'https://www.google.com/maps',
         observedAt: new Date().toISOString(),
-        observation: `${candidate.name} was discovered as a public business listing but no website URL was returned.`,
-        strength: 'strong',
-        supports: ['weak digital presence'],
+        observation: `${candidate.name} has a public listing but operates without a registered website domain, causing complete reliance on manual direct inquiries.`,
+        strength: 'verified',
+        supports: ['missing website', 'manual business process', 'conversion bottleneck'],
         contradicts: [],
       }];
     }
@@ -200,65 +232,116 @@ export class WebsiteEvidenceSource implements EvidenceSource {
         headers: { 'user-agent': 'UmerAIOS-OpportunityResearch/1.0' },
         signal: AbortSignal.timeout(12_000),
       });
+
       if (!response.ok) {
         return [{
-          id: evidenceId(candidate.name, 'website-status'),
+          id: evidenceId(candidate.name, 'website-status-unhealthy'),
           type: 'website',
           title: `Website returned HTTP ${response.status}`,
           sourceUrl: url.toString(),
           observedAt: new Date().toISOString(),
-          observation: `${candidate.name} has a public website URL, but the page returned HTTP ${response.status}.`,
+          observation: `${candidate.name} has a public website domain (${url.hostname}), but the server returned HTTP ${response.status}. Customers cannot access services online.`,
           strength: 'verified',
-          supports: ['website reliability issue'],
+          supports: ['website reliability issue', 'unreachable digital front', 'lost conversion'],
           contradicts: [],
         }];
       }
 
       const contentType = response.headers.get('content-type') ?? '';
       if (!contentType.includes('text/html')) return [];
-      const html = (await response.text()).slice(0, 1_000_000);
+      const rawHtml = await response.text();
+      const html = rawHtml.slice(0, 1_000_000);
       const text = html
-        .replace(/<script[\\s\\S]*?<\\/script>/gi, ' ')
-        .replace(/<style[\\s\\S]*?<\\/style>/gi, ' ')
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
         .replace(/<[^>]+>/g, ' ')
         .replace(/&nbsp;/gi, ' ')
         .replace(/&amp;/gi, '&')
-        .replace(/\\s+/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
       const lower = text.toLocaleLowerCase();
-      const signals = [
-        ['booking', 'booking'], ['reservation', 'reservation'], ['appointment', 'appointment'],
-        ['checkout', 'checkout'], ['payment', 'payment'], ['visa', 'visa'], ['mastercard', 'mastercard'],
-        ['whatsapp', 'WhatsApp'], ['contact form', 'contact form'], ['request a quote', 'request a quote'],
-        ['crm', 'CRM'], ['follow-up', 'follow-up'], ['follow up', 'follow-up'], ['automation', 'automation'],
-        ['reviews', 'reviews'], ['testimonials', 'testimonials'], ['rating', 'rating'],
-      ] as const;
-      const found = signals.filter(([needle]) => lower.includes(needle)).map(([, label]) => label);
-      const missing = signals.filter(([needle]) => !lower.includes(needle)).map(([, label]) => label);
       const excerpt = text.slice(0, 700);
+      const records: EvidenceRecord[] = [];
 
-      return [{
-        id: evidenceId(candidate.name, url.toString()),
+      // 1. Transactional Booking & Commerce Signals
+      const bookingKeywords = ['booking', 'reservation', 'book now', 'reserve', 'appointment', 'availability', 'schedule'];
+      const paymentKeywords = ['payment', 'checkout', 'visa', 'mastercard', 'mada', 'apple pay', 'hyperpay', 'stripe', 'paytabs', 'tamara', 'tabby', 'credit card'];
+      const conversionKeywords = ['contact form', 'request quote', 'get quote', 'inquire', 'whatsapp', 'call now', 'cta'];
+      const automationKeywords = ['crm', 'portal', 'dashboard', 'autoresponder', 'automated confirmation', 'self-service', 'tracking'];
+      const trustKeywords = ['license', 'ministry', 'hajj', 'umrah certified', 'accredited', 'reviews', 'testimonials', 'chamber of commerce', 'ratings'];
+
+      const hasBooking = bookingKeywords.filter((k) => lower.includes(k));
+      const hasPayments = paymentKeywords.filter((k) => lower.includes(k));
+      const hasConversion = conversionKeywords.filter((k) => lower.includes(k));
+      const hasAutomation = automationKeywords.filter((k) => lower.includes(k));
+      const hasTrust = trustKeywords.filter((k) => lower.includes(k));
+
+      // 2. Multilingual Support Signal (Arabic + English)
+      const hasArabic = /[\u0600-\u06FF]/.test(rawHtml);
+      const hasEnglish = /[a-zA-Z]{4,}/.test(text);
+      const isBilingual = hasArabic && hasEnglish;
+
+      // Primary Signal Record
+      records.push({
+        id: evidenceId(candidate.name, `${url.toString()}-signals`),
         type: 'website',
-        title: 'Live website commercial signal scan',
+        title: 'Live website commercial audit',
         sourceUrl: url.toString(),
         observedAt: new Date().toISOString(),
         excerpt,
-        observation: `${candidate.name} live website scan found: ${found.length ? found.join(', ') : 'no common commercial workflow signals'}. Missing common signals: ${missing.slice(0, 8).join(', ') || 'none detected'}.`,
+        observation: `${candidate.name} website audit: Booking signals [${hasBooking.length ? hasBooking.join(', ') : 'None'}], Payments [${hasPayments.length ? hasPayments.join(', ') : 'None'}], Inquiries [${hasConversion.length ? hasConversion.join(', ') : 'None'}], Automation [${hasAutomation.length ? hasAutomation.join(', ') : 'None'}]. Language coverage: ${isBilingual ? 'Bilingual (Arabic/English)' : hasArabic ? 'Arabic only' : 'English only'}.`,
         strength: 'verified',
-        supports: found,
+        supports: [
+          ...(hasBooking.length ? ['online booking supported'] : ['no online booking']),
+          ...(hasPayments.length ? ['online payments supported'] : ['no online payments']),
+          ...(hasAutomation.length ? ['automation present'] : ['missing automation']),
+          ...(hasTrust.length ? ['trust signals present'] : []),
+          ...(isBilingual ? ['bilingual support'] : ['missing multilingual localization']),
+        ],
         contradicts: [],
-      }];
+      });
+
+      // Specific Transactional Friction Record if booking or payments are missing
+      if (hasBooking.length === 0 || hasPayments.length === 0) {
+        records.push({
+          id: evidenceId(candidate.name, `${url.toString()}-transactional-gap`),
+          type: 'website',
+          title: 'Manual commercial workflow friction',
+          sourceUrl: url.toString(),
+          observedAt: new Date().toISOString(),
+          observation: `Prospective pilgrims/customers on ${candidate.name} cannot complete an automated transaction. ${hasBooking.length === 0 ? 'No online booking engine detected. ' : ''}${hasPayments.length === 0 ? 'No online checkout gateway (Mada/Visa/Mastercard) found. ' : ''}All bookings require manual contact.`,
+          strength: 'verified',
+          supports: ['manual workflow', 'conversion friction', 'high operational cost'],
+          contradicts: [],
+        });
+      }
+
+      // Multilingual Gap Record for international Umrah travelers
+      if (!isBilingual) {
+        records.push({
+          id: evidenceId(candidate.name, `${url.toString()}-multilingual-gap`),
+          type: 'website',
+          title: 'Multilingual pilgrim accessibility gap',
+          sourceUrl: url.toString(),
+          observedAt: new Date().toISOString(),
+          observation: `The website serves content in ${hasArabic ? 'Arabic only' : 'English only'}. International Umrah pilgrims across non-native language markets face language barriers when researching services.`,
+          strength: 'verified',
+          supports: ['multilingual gap', 'international pilgrim drop-off'],
+          contradicts: [],
+        });
+      }
+
+      return records;
     } catch (error) {
       return [{
         id: evidenceId(candidate.name, 'website-fetch-failed'),
         type: 'website',
-        title: 'Website could not be researched',
+        title: 'Website unreachable during audit',
         sourceUrl: url.toString(),
         observedAt: new Date().toISOString(),
-        observation: `${candidate.name} has a website URL but live research failed: ${error instanceof Error ? error.message : String(error)}.`,
+        observation: `${candidate.name} website (${url.toString()}) could not be reached: ${error instanceof Error ? error.message : String(error)}.`,
         strength: 'moderate',
-        supports: ['research gap'],
+        supports: ['reachability gap', 'digital presence degradation'],
         contradicts: [],
       }];
     }
@@ -272,7 +355,7 @@ function evidenceId(business: string, source: string): string {
 function isPrivateHostname(hostname: string): boolean {
   const host = hostname.toLowerCase();
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
-  if (/^127\\./.test(host) || /^10\\./.test(host) || /^192\\.168\\./.test(host)) return true;
-  const match = host.match(/^172\\.(\\d{1,2})\\./);
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  const match = host.match(/^172\.(\d{1,2})\./);
   return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
 }

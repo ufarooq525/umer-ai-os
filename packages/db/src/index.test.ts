@@ -12,12 +12,19 @@ describe('@umer/db MySQL integration boundary', () => {
     await expect(executor.execute<{ ok: number }[]>('SELECT 1')).resolves.toEqual([{ ok: 1 }]);
   });
 
-  it('defines a stable, versioned Opportunity Intelligence migration', () => {
-    expect(OPPORTUNITY_MIGRATIONS).toHaveLength(1);
+  it('defines stable, versioned Opportunity Intelligence migrations', () => {
+    expect(OPPORTUNITY_MIGRATIONS).toHaveLength(2);
     expect(OPPORTUNITY_MIGRATIONS[0]?.id).toBe('001_opportunity_intelligence');
     expect(OPPORTUNITY_MIGRATIONS[0]?.checksum).toHaveLength(64);
     expect(OPPORTUNITY_MIGRATIONS[0]?.statements).toHaveLength(6);
     expect(OPPORTUNITY_MIGRATIONS[0]?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS opportunity_niches');
     expect(OPPORTUNITY_MIGRATIONS[0]?.statements[5]).toContain('CREATE TABLE IF NOT EXISTS opportunity_niche_runs');
+
+    expect(OPPORTUNITY_MIGRATIONS[1]?.id).toBe('002_opportunity_events_and_problems');
+    expect(OPPORTUNITY_MIGRATIONS[1]?.checksum).toHaveLength(64);
+    expect(OPPORTUNITY_MIGRATIONS[1]?.statements).toHaveLength(3);
+    expect(OPPORTUNITY_MIGRATIONS[1]?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS opportunity_run_events');
+    expect(OPPORTUNITY_MIGRATIONS[1]?.statements[1]).toContain('CREATE TABLE IF NOT EXISTS opportunity_problems');
+    expect(OPPORTUNITY_MIGRATIONS[1]?.statements[2]).toContain('CREATE TABLE IF NOT EXISTS opportunity_discovery_candidates');
   });
 });

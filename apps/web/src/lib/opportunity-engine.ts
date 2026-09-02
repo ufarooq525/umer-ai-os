@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { EvidenceRecord, NicheDefinition } from '@umer/contracts';
 import type { BusinessCandidate } from '@umer/opportunity-intelligence';
 import {
@@ -15,7 +16,7 @@ import {
   WebsiteEvidenceSource,
 } from '@umer/opportunity-intelligence';
 
-export type OpportunityEvent = { at: string; agent: string; message: string };
+export type OpportunityEvent = { at: string; agent: string; message: string; stage?: string; level?: string };
 export type OpportunityAgent = { name: string; status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED'; task: string };
 export type OpportunityMetrics = {
   businessesDiscovered: number;
@@ -27,6 +28,7 @@ export type OpportunityMetrics = {
 };
 export type OpportunityRunStatus = {
   running: boolean;
+  mode: 'LIVE_GOOGLE_PLACES' | 'DETERMINISTIC_FALLBACK';
   runId: string | null;
   stage: string;
   progress: number;
@@ -39,6 +41,7 @@ export type OpportunityRunStatus = {
 
 const state: OpportunityRunStatus = {
   running: false,
+  mode: process.env.GOOGLE_MAPS_API_KEY ? 'LIVE_GOOGLE_PLACES' : 'DETERMINISTIC_FALLBACK',
   runId: null,
   stage: 'Idle',
   progress: 0,
@@ -53,14 +56,9 @@ const state: OpportunityRunStatus = {
   error: null,
 };
 
-function event(agent: string, message: string) {
-  state.events.push({ at: new Date().toISOString(), agent, message });
-  state.events = state.events.slice(-80);
-}
-
-function setStage(stage: string, progress: number) {
-  state.stage = stage;
-  state.progress = progress;
+function event(agent: string, message: string, stage?: string, level?: string) {
+  state.events.push({ at: new Date().toISOString(), agent, message, stage, level });
+  state.events = state.events.slice(-100);
 }
 
 const candidates: BusinessCandidate[] = [
@@ -78,33 +76,35 @@ const evidence: EvidenceRecord[] = [
 ];
 
 export function getOpportunityStatus(): OpportunityRunStatus {
+  state.mode = process.env.GOOGLE_MAPS_API_KEY ? 'LIVE_GOOGLE_PLACES' : 'DETERMINISTIC_FALLBACK';
   return JSON.parse(JSON.stringify(state)) as OpportunityRunStatus;
 }
 
 export function startOpportunityRun(): { runId: string } {
   if (state.running) return { runId: state.runId! };
-  const runId = `ui-${Date.now()}`;
+  const runId = randomUUID();
+  const live = Boolean(process.env.GOOGLE_MAPS_API_KEY);
   state.running = true;
+  state.mode = live ? 'LIVE_GOOGLE_PLACES' : 'DETERMINISTIC_FALLBACK';
   state.runId = runId;
-  state.progress = 2;
+  state.progress = 5;
   state.stage = 'Discovery';
   state.completedStages = [];
   state.error = null;
   state.events = [];
   state.metrics = { businessesDiscovered: 0, businessesResearched: 0, problemsDetected: 0, opportunitiesFound: 0, highValueOpportunities: 0, estimatedPipeline: 0 };
   state.agents = [
-    { name: 'Discovery Agent', status: 'RUNNING', task: 'Finding Saudi Umrah businesses' },
+    { name: 'Discovery Agent', status: 'RUNNING', task: live ? 'Scanning Google Places API' : 'Scanning deterministic fixtures' },
     { name: 'Research Agent', status: 'IDLE', task: 'Waiting for discovered businesses' },
     { name: 'Opportunity Agent', status: 'IDLE', task: 'Waiting for research' },
   ];
-  event('Orchestrator', 'Autonomous opportunity run started');
-  void execute(runId);
+  event('Orchestrator', `Autonomous opportunity run started (${state.mode})`);
+  void execute(runId, live);
   return { runId };
 }
 
-async function execute(runId: string) {
+async function execute(runId: string, live: boolean) {
   try {
-    const live = Boolean(process.env.GOOGLE_MAPS_API_KEY);
     const discoveryLimit = Math.max(1, Math.min(Number(process.env.OPPORTUNITY_DISCOVERY_LIMIT ?? 20) || 20, 20));
     const niche: NicheDefinition = {
       ...SAUDI_UMRAH_NICHE,
@@ -124,76 +124,72 @@ async function execute(runId: string) {
       : [new StaticEvidenceSource(evidence)];
     const discovery = new CompositeDiscoveryAdapter(new SourceDiscoveryProvider([discoverySource]));
     const research = new EvidenceResearchAdapter(researchSources, niche);
+
     const service = new OpportunityRunService({
       discovery,
       research,
       problemDetector: new EvidenceBasedProblemDetector(),
       opportunityBuilder: new DefaultOpportunityBuilder(),
       persistence: createMySqlOpportunityPersistence(),
+      onEvent: (ev) => {
+        event(ev.agentName, ev.message, ev.stage, ev.level);
+        if (ev.stage === 'discovery') {
+          state.stage = 'Discovery';
+          state.progress = 15;
+          state.agents[0] = { name: 'Discovery Agent', status: 'RUNNING', task: ev.message };
+        } else if (ev.stage === 'deduplication') {
+          state.stage = 'Deduplication';
+          state.progress = 30;
+          if (!state.completedStages.includes('Discovery')) state.completedStages.push('Discovery');
+          state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: 'Discovery completed' };
+        } else if (ev.stage === 'research') {
+          state.stage = 'Research';
+          state.progress = 50;
+          if (!state.completedStages.includes('Deduplication')) state.completedStages.push('Deduplication');
+          state.agents[1] = { name: 'Research Agent', status: 'RUNNING', task: ev.message };
+        } else if (ev.stage === 'audit') {
+          state.stage = 'Audit';
+          state.progress = 65;
+          if (!state.completedStages.includes('Research')) state.completedStages.push('Research');
+          state.agents[1] = { name: 'Research Agent', status: 'COMPLETED', task: 'Audit in progress' };
+        } else if (ev.stage === 'problems') {
+          state.stage = 'Problems';
+          state.progress = 78;
+          if (!state.completedStages.includes('Audit')) state.completedStages.push('Audit');
+        } else if (ev.stage === 'scoring') {
+          state.stage = 'Scoring';
+          state.progress = 90;
+          if (!state.completedStages.includes('Problems')) state.completedStages.push('Problems');
+          state.agents[2] = { name: 'Opportunity Agent', status: 'RUNNING', task: ev.message };
+        }
+      },
     });
 
-    setStage('Discovery', 12);
-    event('Discovery Agent', live
-      ? `Live Google Places discovery enabled — searching ${niche.geographies.length} Saudi geographies`
-      : 'Live discovery not configured — using deterministic local fixtures');
-    await delay(250);
+    const result = await service.execute(niche, runId);
 
-    const resultPromise = service.execute(niche, runId);
-    await delay(250);
-    state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: 'Discovery stage completed' };
-    state.metrics.businessesDiscovered = discoveryLimit;
-    event('Discovery Agent', live ? 'Live business discovery request completed' : `Loaded ${candidates.length} local candidates`);
-    state.completedStages.push('Discovery');
+    state.metrics = {
+      businessesDiscovered: result.metrics.businessesDiscovered,
+      businessesResearched: result.metrics.businessesResearched,
+      problemsDetected: result.metrics.qualifiedBusinesses,
+      opportunitiesFound: result.metrics.opportunitiesFound,
+      highValueOpportunities: result.metrics.highValueOpportunities,
+      estimatedPipeline: result.metrics.estimatedPipeline,
+    };
 
-    setStage('Research', 32);
-    state.agents[1] = { name: 'Research Agent', status: 'RUNNING', task: live ? 'Fetching live public business websites' : 'Collecting deterministic evidence' };
-    event('Research Agent', live ? 'Researching first-party websites returned by Google Places' : 'Researching local evidence');
-
-    const result = await resultPromise;
-    state.metrics.businessesDiscovered = result.metrics.businessesDiscovered;
-    state.metrics.businessesResearched = result.metrics.businessesResearched;
-    state.metrics.opportunitiesFound = result.metrics.opportunitiesFound;
-    state.metrics.highValueOpportunities = result.metrics.highValueOpportunities;
-    state.metrics.estimatedPipeline = result.metrics.estimatedPipeline;
-    state.metrics.problemsDetected = result.metrics.qualifiedBusinesses;
-
-    event('Research Agent', `Research completed for ${result.metrics.businessesResearched} businesses`);
-    state.completedStages.push('Research');
+    state.completedStages = ['Discovery', 'Deduplication', 'Research', 'Audit', 'Problems', 'Scoring', 'Opportunities'];
+    state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: `${result.metrics.businessesDiscovered} found` };
     state.agents[1] = { name: 'Research Agent', status: 'COMPLETED', task: `${result.metrics.businessesResearched} researched` };
-
-    setStage('Audit', 58);
-    event('Audit Agent', 'Evaluating website, booking, payment and automation signals from collected evidence');
-    await delay(200);
-    state.completedStages.push('Audit');
-
-    setStage('Problems', 70);
-    event('Analysis Agent', `${result.metrics.qualifiedBusinesses} businesses produced qualified commercial signals`);
-    await delay(200);
-    state.completedStages.push('Problems');
-
-    setStage('Scoring', 84);
-    state.agents[2] = { name: 'Opportunity Agent', status: 'RUNNING', task: 'Scoring revenue opportunities' };
-    event('Opportunity Agent', `Scoring ${result.opportunities.length} generated opportunities`);
-    await delay(200);
-    state.completedStages.push('Scoring');
-
-    setStage('Opportunities', 96);
-    event('Opportunity Agent', `${result.metrics.highValueOpportunities} high-value opportunities are ready`);
-    await delay(200);
-    state.completedStages.push('Opportunities');
-
-    state.agents[2] = { name: 'Opportunity Agent', status: 'COMPLETED', task: `${result.metrics.opportunitiesFound} opportunities generated` };
+    state.agents[2] = { name: 'Opportunity Agent', status: 'COMPLETED', task: `${result.metrics.opportunitiesFound} scored` };
     state.running = false;
     state.progress = 100;
     state.stage = 'Completed';
-    event('Orchestrator', `${live ? 'Live' : 'Local'} run completed — $${result.metrics.estimatedPipeline.toLocaleString()} estimated pipeline`);
   } catch (err) {
     state.running = false;
     state.stage = 'Failed';
     state.error = err instanceof Error ? err.message : String(err);
-    for (const agent of state.agents) if (agent.status === 'RUNNING') agent.status = 'FAILED';
-    event('Orchestrator', `Run failed: ${state.error}`);
+    for (const agent of state.agents) {
+      if (agent.status === 'RUNNING') agent.status = 'FAILED';
+    }
+    event('Orchestrator', `Run failed: ${state.error}`, 'error', 'error');
   }
 }
-
-function delay(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }

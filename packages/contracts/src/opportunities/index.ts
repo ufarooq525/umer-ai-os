@@ -203,6 +203,53 @@ export const ExperimentSchema = z
   })
   .strict();
 
+export const OpportunityRunEventSchema = z
+  .object({
+    id: z.string().min(1),
+    runId: z.string().min(1),
+    nicheId: z.string().min(1),
+    stage: z.string().min(1),
+    agentName: z.string().min(1),
+    level: z.enum(['info', 'warn', 'error', 'success']).default('info'),
+    message: z.string().min(1),
+    metadata: z.record(z.unknown()).optional(),
+    occurredAt: z.string().datetime(),
+  })
+  .strict();
+
+export const OpportunityProblemRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    businessId: z.string().min(1),
+    nicheId: z.string().min(1),
+    runId: z.string().min(1),
+    statement: z.string().min(1),
+    severity: z.number().min(0).max(100),
+    frequency: z.number().min(0).max(100),
+    financialImpact: z.number().min(0).max(100),
+    evidenceConfidence: z.number().min(0).max(100),
+    evidenceRefs: z.array(z.string()).min(1),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const DiscoveryCandidateRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    runId: z.string().min(1),
+    nicheId: z.string().min(1),
+    externalId: z.string().optional(),
+    name: z.string().min(1),
+    websiteUrl: z.string().url().optional(),
+    phone: z.string().optional(),
+    address: z.string().optional(),
+    geography: z.string().min(1),
+    industry: z.string().optional(),
+    sourceRefs: z.array(z.string()).min(1),
+    discoveredAt: z.string().datetime(),
+  })
+  .strict();
+
 export type OpportunityStatus = z.infer<typeof OpportunityStatusSchema>;
 export type NicheStatus = z.infer<typeof NicheStatusSchema>;
 export type OpportunityType = z.infer<typeof OpportunityTypeSchema>;
@@ -217,3 +264,6 @@ export type OpportunityScore = z.infer<typeof OpportunityScoreSchema>;
 export type Opportunity = z.infer<typeof OpportunitySchema>;
 export type NicheRunMetrics = z.infer<typeof NicheRunMetricsSchema>;
 export type Experiment = z.infer<typeof ExperimentSchema>;
+export type OpportunityRunEvent = z.infer<typeof OpportunityRunEventSchema>;
+export type OpportunityProblemRecord = z.infer<typeof OpportunityProblemRecordSchema>;
+export type DiscoveryCandidateRecord = z.infer<typeof DiscoveryCandidateRecordSchema>;

@@ -236,9 +236,18 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@umer/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@umer/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@umer/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@umer/opportunity-intelligence':
+        specifier: workspace:*
+        version: link:../../packages/opportunity-intelligence
       '@umer/ui':
         specifier: workspace:*
         version: link:../../packages/ui

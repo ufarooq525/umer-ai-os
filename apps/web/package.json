@@ -14,7 +14,10 @@
   },
   "dependencies": {
     "@umer/config": "workspace:*",
+    "@umer/contracts": "workspace:*",
+    "@umer/db": "workspace:*",
     "@umer/observability": "workspace:*",
+    "@umer/opportunity-intelligence": "workspace:*",
     "@umer/ui": "workspace:*",
     "next": "^15.1.2",
     "react": "^19.0.0",

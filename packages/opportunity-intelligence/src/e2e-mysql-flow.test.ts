@@ -24,6 +24,9 @@ describe('Opportunity Intelligence E2E Flow (MySQL)', () => {
     // Ensure migrations are in place
     await migrate(mysqlClient);
     await mysqlClient.execute('DELETE FROM opportunity_opportunities WHERE niche_id = ?', ['saudi-umrah-e2e']);
+    await mysqlClient.execute('DELETE FROM opportunity_problems WHERE niche_id = ?', ['saudi-umrah-e2e']);
+    await mysqlClient.execute('DELETE FROM opportunity_run_events WHERE niche_id = ?', ['saudi-umrah-e2e']);
+    await mysqlClient.execute('DELETE FROM opportunity_discovery_candidates WHERE niche_id = ?', ['saudi-umrah-e2e']);
     await mysqlClient.execute('DELETE FROM opportunity_research_cases WHERE niche_id = ?', ['saudi-umrah-e2e']);
     await mysqlClient.execute('DELETE FROM opportunity_businesses WHERE niche_id = ?', ['saudi-umrah-e2e']);
     await mysqlClient.execute('DELETE FROM opportunity_niche_runs WHERE niche_id = ?', ['saudi-umrah-e2e']);
@@ -225,6 +228,24 @@ describe('Opportunity Intelligence E2E Flow (MySQL)', () => {
     );
     expect(dbRuns.length).toBe(1);
     expect(dbRuns[0].opportunities_found).toBe(result1.metrics.opportunitiesFound);
+
+    const [dbEvents] = await mysqlClient.execute<any[]>(
+      'SELECT * FROM opportunity_run_events WHERE run_id = ?',
+      [runId1],
+    );
+    expect(dbEvents.length).toBeGreaterThan(0);
+
+    const [dbProblems] = await mysqlClient.execute<any[]>(
+      'SELECT * FROM opportunity_problems WHERE niche_id = ?',
+      [niche.id],
+    );
+    expect(dbProblems.length).toBeGreaterThan(0);
+
+    const [dbCandidates] = await mysqlClient.execute<any[]>(
+      'SELECT * FROM opportunity_discovery_candidates WHERE run_id = ?',
+      [runId1],
+    );
+    expect(dbCandidates.length).toBe(discoveryCandidates.length);
 
     // 7. Execute 2nd Pipeline Run (Idempotency verification)
     const runId2 = '22222222-2222-4222-8222-222222222222';

@@ -1,4 +1,9 @@
-import type { NicheDefinition, ResearchCase } from '@umer/contracts';
+import type {
+  DiscoveryCandidateRecord,
+  NicheDefinition,
+  OpportunityRunEvent,
+  ResearchCase,
+} from '@umer/contracts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { DiscoveryCandidate, DiscoveryAdapter, OpportunityBuilder, ProblemDetector, ResearchAdapter } from './pipeline.js';
 import { deduplicateCandidates } from './dedup.js';
@@ -8,44 +13,125 @@ import type { OpportunityPersistence } from './persistence.js';
 export type OpportunityRunClock = { nowIso(): string };
 export const defaultOpportunityRunClock: OpportunityRunClock = { nowIso: () => new Date().toISOString() };
 export type OpportunityRunResult = {
-  runId: string; nicheId: string; metrics: import('@umer/contracts').NicheRunMetrics;
-  opportunities: import('@umer/contracts').Opportunity[]; evidence: import('@umer/contracts').EvidenceRecord[];
+  runId: string;
+  nicheId: string;
+  metrics: import('@umer/contracts').NicheRunMetrics;
+  opportunities: import('@umer/contracts').Opportunity[];
+  evidence: import('@umer/contracts').EvidenceRecord[];
+  events: OpportunityRunEvent[];
   errors: Array<{ stage: string; message: string; candidate?: string }>;
 };
+
 export type OpportunityRunServiceOptions = {
-  discovery: DiscoveryAdapter; research: ResearchAdapter; problemDetector: ProblemDetector;
-  opportunityBuilder: OpportunityBuilder; persistence: OpportunityPersistence; clock?: OpportunityRunClock;
+  discovery: DiscoveryAdapter;
+  research: ResearchAdapter;
+  problemDetector: ProblemDetector;
+  opportunityBuilder: OpportunityBuilder;
+  persistence: OpportunityPersistence;
+  clock?: OpportunityRunClock;
+  onEvent?: (event: OpportunityRunEvent) => Promise<void> | void;
 };
 
 export class OpportunityRunService {
   private readonly clock: OpportunityRunClock;
-  constructor(private readonly options: OpportunityRunServiceOptions) { this.clock = options.clock ?? defaultOpportunityRunClock; }
+  constructor(private readonly options: OpportunityRunServiceOptions) {
+    this.clock = options.clock ?? defaultOpportunityRunClock;
+  }
 
-  async execute(niche: NicheDefinition, runId = randomUUID()): Promise<OpportunityRunResult> {
+  async execute(niche: NicheDefinition, runId: string = randomUUID()): Promise<OpportunityRunResult> {
     const startedAt = this.clock.nowIso();
     await this.options.persistence.saveNiche(niche);
     const errors: OpportunityRunResult['errors'] = [];
     const allEvidence: import('@umer/contracts').EvidenceRecord[] = [];
     const opportunities: import('@umer/contracts').Opportunity[] = [];
-    let rawCandidates: DiscoveryCandidate[] = [];
-    try { rawCandidates = await this.options.discovery.discover(niche); }
-    catch (error) { errors.push({ stage: 'discovery', message: this.message(error) }); }
+    const runEvents: OpportunityRunEvent[] = [];
 
-    const candidates = deduplicateCandidates(rawCandidates).unique.slice(0, niche.targetBusinessesPerRun);
-    let researched = 0; let qualified = 0;
+    const emit = async (stage: string, agentName: string, level: OpportunityRunEvent['level'], message: string, metadata?: Record<string, unknown>) => {
+      const event: OpportunityRunEvent = {
+        id: randomUUID(),
+        runId,
+        nicheId: niche.id,
+        stage,
+        agentName,
+        level,
+        message,
+        metadata,
+        occurredAt: this.clock.nowIso(),
+      };
+      runEvents.push(event);
+      try {
+        await this.options.persistence.saveEvent(event);
+      } catch {
+        /* ignore persistence failure on non-critical events */
+      }
+      try {
+        await this.options.onEvent?.(event);
+      } catch {
+        /* ignore event callback error */
+      }
+    };
+
+    await emit('discovery', 'Orchestrator', 'info', `Starting autonomous run for "${niche.name}" (${runId})`);
+    await emit('discovery', 'Discovery Agent', 'info', `Scanning ${niche.geographies.length} target geographies: ${niche.geographies.join(', ')}`);
+
+    let rawCandidates: DiscoveryCandidate[] = [];
+    try {
+      rawCandidates = await this.options.discovery.discover(niche);
+      for (const candidate of rawCandidates) {
+        const candidateRecord: DiscoveryCandidateRecord = {
+          id: randomUUID(),
+          runId,
+          nicheId: niche.id,
+          externalId: candidate.externalId,
+          name: candidate.name,
+          websiteUrl: candidate.websiteUrl,
+          geography: candidate.geography,
+          industry: candidate.industry,
+          sourceRefs: candidate.sourceRefs,
+          discoveredAt: startedAt,
+        };
+        await this.options.persistence.saveDiscoveryCandidate(candidateRecord);
+      }
+      await emit('discovery', 'Discovery Agent', 'info', `Discovered ${rawCandidates.length} raw business candidate listings`);
+    } catch (error) {
+      const msg = this.message(error);
+      errors.push({ stage: 'discovery', message: msg });
+      await emit('discovery', 'Discovery Agent', 'error', `Discovery encountered an error: ${msg}`);
+    }
+
+    const deduplication = deduplicateCandidates(rawCandidates);
+    const candidates = deduplication.unique.slice(0, niche.targetBusinessesPerRun);
+    await emit('deduplication', 'Identity Agent', 'info', `Deduplicated candidates into ${candidates.length} unique businesses (${deduplication.duplicatesRemoved} duplicates merged)`);
+
+    let researched = 0;
+    let qualified = 0;
+
     for (const candidate of candidates) {
       try {
-        const identity = buildBusinessIdentity({ externalId: candidate.externalId, name: candidate.name, websiteUrl: candidate.websiteUrl, geography: candidate.geography });
+        const identity = buildBusinessIdentity({
+          externalId: candidate.externalId,
+          name: candidate.name,
+          websiteUrl: candidate.websiteUrl,
+          geography: candidate.geography,
+        });
+
+        await emit('research', 'Research Agent', 'info', `Researching business "${candidate.name}" (${candidate.geography})`);
         const evidence = await this.options.research.research(candidate);
         allEvidence.push(...evidence);
-        for (const item of evidence) await this.options.persistence.saveEvidence(item);
+        for (const item of evidence) {
+          await this.options.persistence.saveEvidence(item);
+        }
         researched += 1;
 
         const business = {
-          id: identity.id, name: candidate.name,
+          id: identity.id,
+          name: candidate.name,
           ...(identity.canonicalWebsite ? { website: identity.canonicalWebsite } : {}),
-          geography: candidate.geography, ...(candidate.industry ? { industry: candidate.industry } : {}),
-          nicheId: niche.id, sourceRefs: [...new Set(candidate.sourceRefs)], discoveredAt: startedAt,
+          geography: candidate.geography,
+          ...(candidate.industry ? { industry: candidate.industry } : {}),
+          nicheId: niche.id,
+          sourceRefs: [...new Set(candidate.sourceRefs)],
+          discoveredAt: startedAt,
           lastResearchedAt: this.clock.nowIso(),
         } satisfies import('@umer/contracts').BusinessProspect;
         await this.options.persistence.saveBusiness(business);
@@ -53,30 +139,79 @@ export class OpportunityRunService {
         const researchCase: ResearchCase = {
           id: this.researchCaseId(niche, identity.id),
           objective: `Assess ${candidate.name} for commercially actionable problems in ${niche.name}.`,
-          nicheId: niche.id, businessId: identity.id, depth: niche.researchDepth,
+          nicheId: niche.id,
+          businessId: identity.id,
+          depth: niche.researchDepth,
           questions: niche.problemHypotheses.length > 0 ? [...niche.problemHypotheses] : ['What operational or digital problems are evidenced?', 'What evidence supports a paid solution?'],
-          evidenceRefs: evidence.map((item) => item.id), status: 'completed', startedAt, completedAt: this.clock.nowIso(),
+          evidenceRefs: evidence.map((item) => item.id),
+          status: 'completed',
+          startedAt,
+          completedAt: this.clock.nowIso(),
         };
         await this.options.persistence.saveResearchCase(researchCase);
 
+        await emit('audit', 'Audit Agent', 'info', `Evaluating commercial signals and evidence for "${candidate.name}"`);
         const problems = await this.options.problemDetector.detect(candidate, evidence);
-        if (problems.length > 0) qualified += 1;
+        if (problems.length > 0) {
+          qualified += 1;
+          for (const prob of problems) {
+            await this.options.persistence.saveProblem(prob, {
+              businessId: identity.id,
+              nicheId: niche.id,
+              runId,
+            });
+          }
+          await emit('problems', 'Analysis Agent', 'info', `Identified ${problems.length} evidence-backed commercial problems for "${candidate.name}"`);
+        }
+
         const built = await this.options.opportunityBuilder.build({ niche, candidate, evidence, problems });
-        for (const opportunity of built) { await this.options.persistence.saveOpportunity(opportunity); opportunities.push(opportunity); }
-      } catch (error) { errors.push({ stage: 'candidate', message: this.message(error), candidate: candidate.name }); }
+        for (const opportunity of built) {
+          await this.options.persistence.saveOpportunity(opportunity);
+          opportunities.push(opportunity);
+          await emit('scoring', 'Opportunity Agent', 'info', `Built and scored opportunity: "${opportunity.title}" (Score: ${opportunity.score.overall}/100 [${opportunity.score.recommendation}])`);
+        }
+      } catch (error) {
+        const msg = this.message(error);
+        errors.push({ stage: 'candidate', message: msg, candidate: candidate.name });
+        await emit('research', 'Research Agent', 'warn', `Failed researching candidate "${candidate.name}": ${msg}`);
+      }
     }
 
     const highValue = opportunities.filter((item) => item.score.overall >= niche.minimumOpportunityScore);
+    const estimatedPipeline = highValue.reduce((sum, item) => sum + (item.estimatedValueMax ?? item.estimatedValueMin ?? 0), 0);
+
     const metrics: import('@umer/contracts').NicheRunMetrics = {
-      nicheId: niche.id, runId, businessesDiscovered: rawCandidates.length, businessesResearched: researched,
-      qualifiedBusinesses: qualified, opportunitiesFound: opportunities.length, highValueOpportunities: highValue.length,
-      estimatedPipeline: highValue.reduce((sum, item) => sum + (item.estimatedValueMax ?? item.estimatedValueMin ?? 0), 0),
-      errors: errors.length, startedAt, completedAt: this.clock.nowIso(),
+      nicheId: niche.id,
+      runId,
+      businessesDiscovered: rawCandidates.length,
+      businessesResearched: researched,
+      qualifiedBusinesses: qualified,
+      opportunitiesFound: opportunities.length,
+      highValueOpportunities: highValue.length,
+      estimatedPipeline,
+      errors: errors.length,
+      startedAt,
+      completedAt: this.clock.nowIso(),
     };
     await this.options.persistence.saveRunMetrics(metrics);
-    return { runId, nicheId: niche.id, metrics, opportunities, evidence: allEvidence, errors };
+
+    await emit(
+      'completed',
+      'Orchestrator',
+      'success',
+      `Autonomous run completed: ${opportunities.length} opportunities created (${highValue.length} high-value, $${estimatedPipeline.toLocaleString()} USD est. pipeline)`,
+      { metrics },
+    );
+
+    return { runId, nicheId: niche.id, metrics, opportunities, evidence: allEvidence, events: runEvents, errors };
   }
 
-  private researchCaseId(niche: NicheDefinition, businessId: string): string { return `research_${createHash('sha256').update(`${niche.id}|${businessId}`).digest('hex')}`; }
-  private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+  private researchCaseId(niche: NicheDefinition, businessId: string): string {
+    return `research_${createHash('sha256').update(`${niche.id}|${businessId}`).digest('hex')}`;
+  }
+
+  private message(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
+

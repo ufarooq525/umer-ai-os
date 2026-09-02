@@ -61,11 +61,14 @@ export function OpportunityControlCenter() {
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Badge tone={status?.running ? 'success' : 'default'}>{status?.running ? 'RUNNING' : activeStage.toUpperCase()}</Badge>
+              <Badge tone={status?.mode === 'LIVE_GOOGLE_PLACES' ? 'success' : 'warning'}>
+                {status?.mode === 'LIVE_GOOGLE_PLACES' ? 'LIVE PLACES API' : 'LOCAL FALLBACK'}
+              </Badge>
               {status?.runId ? <code style={{ fontSize: 12 }}>{status.runId}</code> : null}
             </div>
             <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>Saudi Umrah Opportunity Intelligence</h2>
             <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
-              Real pipeline activity from discovery through research, problem detection and revenue scoring.
+              Autonomous commercial pipeline: multi-query discovery, deep signals research, problem detection, and revenue scoring.
             </p>
           </div>
           <Button onClick={() => void startRun()} disabled={busy || status?.running}>
@@ -73,7 +76,7 @@ export function OpportunityControlCenter() {
           </Button>
         </div>
 
-        <div style={{ marginTop: 20, height: 7, borderRadius: radii.pill, background: colors.border, overflow: 'hidden' }}>
+        <div style={{ marginTop: 20, height: 7, borderRadius: radii.lg, background: colors.border, overflow: 'hidden' }}>
           <div style={{ width: `${progress}%`, height: '100%', background: colors.accent, transition: 'width 400ms ease' }} />
         </div>
         <div style={{ marginTop: 7, display: 'flex', justifyContent: 'space-between', color: colors.muted, fontSize: 12 }}>

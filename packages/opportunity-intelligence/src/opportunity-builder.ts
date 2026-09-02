@@ -49,20 +49,23 @@ export class DefaultOpportunityBuilder implements OpportunityBuilder {
       if (score.overall < niche.minimumOpportunityScore) continue;
 
       const opportunityId = id(`${niche.id}|${businessId}|${problem.id}`);
+      const title = this.formatSolutionTitle(candidate.name, problem.statement);
+      const { minVal, maxVal, days } = this.estimateValuation(problem);
+
       opportunities.push({
         id: opportunityId,
         type: 'repeatable_service',
-        title: `${candidate.name}: solve ${problem.statement.toLowerCase()}`,
+        title,
         geography: candidate.geography,
         market: niche.name,
         nicheId: niche.id,
         businessId,
         problemIds: [problem.id],
         score,
-        estimatedValueMin: 500,
-        estimatedValueMax: 5000,
+        estimatedValueMin: minVal,
+        estimatedValueMax: maxVal,
         currency: 'USD',
-        timeToRevenueDays: 30,
+        timeToRevenueDays: days,
         evidenceRefs: evidence.map((item) => item.id),
         status: score.recommendation === 'outreach_ready' ? 'outreach_ready' : 'validated',
         createdAt: now,
@@ -70,5 +73,33 @@ export class DefaultOpportunityBuilder implements OpportunityBuilder {
       });
     }
     return opportunities;
+  }
+
+  private formatSolutionTitle(businessName: string, problemStatement: string): string {
+    const lower = problemStatement.toLowerCase();
+    if (lower.includes('booking')) {
+      return `${businessName}: Automated Self-Service Booking & Reservation System`;
+    }
+    if (lower.includes('payment') || lower.includes('checkout')) {
+      return `${businessName}: Direct Digital Checkout & Payment Gateway Integration`;
+    }
+    if (lower.includes('conversion') || lower.includes('lead capture')) {
+      return `${businessName}: Automated Lead Capture & Conversion Engine`;
+    }
+    if (lower.includes('storefront') || lower.includes('without a public digital')) {
+      return `${businessName}: Digital Storefront & Online Discovery Portal`;
+    }
+    if (lower.includes('crm') || lower.includes('automation')) {
+      return `${businessName}: Automated Customer Follow-up & CRM Workflow System`;
+    }
+    return `${businessName}: Solution for ${problemStatement.toLowerCase()}`;
+  }
+
+  private estimateValuation(problem: Problem): { minVal: number; maxVal: number; days: number } {
+    const severityFactor = (problem.severity * problem.financialImpact) / 10000;
+    const baseMin = Math.round(1500 + severityFactor * 3500);
+    const baseMax = Math.round(baseMin * 2.5);
+    const days = Math.max(14, Math.round(45 - severityFactor * 15));
+    return { minVal: baseMin, maxVal: baseMax, days };
   }
 }

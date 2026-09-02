@@ -1,6 +1,6 @@
 import { loadEnv } from '@umer/config';
 import { Redis } from 'ioredis';
-import mysql, { type Pool, type ResultSetHeader, type RowDataPacket } from 'mysql2/promise';
+import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 import postgres from 'postgres';
 import { OPPORTUNITY_MIGRATIONS } from './migrations.js';
 
@@ -108,36 +108,26 @@ export async function migrate(client: MySqlClient = createMySqlClient()): Promis
   `);
 
   for (const migration of OPPORTUNITY_MIGRATIONS) {
-    const connection = await client.getConnection();
-    try {
-      await connection.beginTransaction();
-      const [result] = await connection.execute<ResultSetHeader>(
-        'INSERT IGNORE INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, UTC_TIMESTAMP(3))',
+    for (const statement of migration.statements) {
+      await client.query(statement);
+    }
+
+    const [rows] = await client.query<RowDataPacket[]>(
+      'SELECT id FROM schema_migrations WHERE id = ?',
+      [migration.id],
+    );
+
+    if (rows.length === 0) {
+      await client.execute(
+        'INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, UTC_TIMESTAMP(3))',
         [migration.id, migration.checksum],
       );
-
-      if (result.affectedRows === 0) {
-        await connection.commit();
-        continue;
-      }
-
-      for (const statement of migration.statements) {
-        await connection.query(statement);
-      }
-
-      await connection.commit();
       console.info(`[@umer/db] applied MySQL migration ${migration.id}`);
-    } catch (error) {
-      await connection.rollback();
-      throw new Error(
-        `Failed to apply MySQL migration ${migration.id}: ${error instanceof Error ? error.message : String(error)}`,
-        { cause: error },
-      );
-    } finally {
-      connection.release();
     }
   }
 }
+
+
 
 /**
  * Redis connection bootstrap (cache / locks / rate limits).
