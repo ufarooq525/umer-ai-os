@@ -4,18 +4,20 @@ import { buildBusinessIdentity, createMySqlOpportunityPersistence } from '@umer/
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const runId = request.nextUrl.searchParams.get('runId');
-  if (!runId) return NextResponse.json({ error: 'runId is required' }, { status: 400 });
-
   try {
     const persistence = createMySqlOpportunityPersistence();
+    const requestedRunId = request.nextUrl.searchParams.get('runId');
+    const latestRun = requestedRunId ? undefined : await persistence.getLatestRun();
+    const runId = requestedRunId ?? latestRun?.runId;
+    if (!runId) return NextResponse.json({ error: 'No persisted opportunity runs found' }, { status: 404 });
+
     const [candidates, problems, events] = await Promise.all([
       persistence.listDiscoveryCandidates(runId),
       persistence.listProblems({ runId }),
       persistence.listEvents(runId),
     ]);
 
-    const nicheId = candidates[0]?.nicheId;
+    const nicheId = candidates[0]?.nicheId ?? latestRun?.nicheId;
     const opportunities = nicheId ? await persistence.listOpportunities(nicheId) : [];
     const outreach = nicheId ? await persistence.listOutreachDrafts({ nicheId }) : [];
     const evidenceIds = [...new Set([
