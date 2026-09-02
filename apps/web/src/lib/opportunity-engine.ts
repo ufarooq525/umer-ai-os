@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { EvidenceRecord, NicheDefinition } from '@umer/contracts';
 import type { BusinessCandidate } from '@umer/opportunity-intelligence';
+import { persistWorkforceState } from './workforce-runtime';
 import {
   CompositeDiscoveryAdapter,
   createMySqlOpportunityPersistence,
@@ -59,6 +60,15 @@ const state: OpportunityRunStatus = {
 function event(agent: string, message: string, stage?: string, level?: string) {
   state.events.push({ at: new Date().toISOString(), agent, message, stage, level });
   state.events = state.events.slice(-100);
+  persistWorkforceState({
+    agentName: agent,
+    status: agent === 'Orchestrator' && state.running ? 'RUNNING' : 'RUNNING',
+    task: message,
+    runId: state.runId,
+    eventType: 'pipeline_event',
+    stage,
+    message,
+  });
 }
 
 const candidates: BusinessCandidate[] = [
@@ -99,6 +109,9 @@ export function startOpportunityRun(): { runId: string } {
     { name: 'Opportunity Agent', status: 'IDLE', task: 'Waiting for research' },
   ];
   event('Orchestrator', `Autonomous opportunity run started (${state.mode})`);
+  persistWorkforceState({ agentName: 'Discovery Agent', status: 'RUNNING', task: live ? 'Scanning Google Places API' : 'Scanning deterministic fixtures', runId, eventType: 'assignment', stage: 'discovery', message: 'Discovery assignment started' });
+  persistWorkforceState({ agentName: 'Research Agent', status: 'WAITING', task: 'Waiting for discovered businesses', runId, eventType: 'assignment', stage: 'research', message: 'Research agent waiting for discovery output' });
+  persistWorkforceState({ agentName: 'Opportunity Agent', status: 'WAITING', task: 'Waiting for research', runId, eventType: 'assignment', stage: 'scoring', message: 'Opportunity agent waiting for research output' });
   void execute(runId, live);
   return { runId };
 }
@@ -183,6 +196,10 @@ async function execute(runId: string, live: boolean) {
     state.running = false;
     state.progress = 100;
     state.stage = 'Completed';
+    persistWorkforceState({ agentName: 'Discovery Agent', status: 'COMPLETED', task: `${result.metrics.businessesDiscovered} found`, runId, eventType: 'completed', stage: 'discovery', message: `Discovery completed: ${result.metrics.businessesDiscovered} businesses found` });
+    persistWorkforceState({ agentName: 'Research Agent', status: 'COMPLETED', task: `${result.metrics.businessesResearched} researched`, runId, eventType: 'completed', stage: 'research', message: `Research completed: ${result.metrics.businessesResearched} businesses researched` });
+    persistWorkforceState({ agentName: 'Opportunity Agent', status: 'COMPLETED', task: `${result.metrics.opportunitiesFound} scored`, runId, eventType: 'completed', stage: 'scoring', message: `Opportunity scoring completed: ${result.metrics.opportunitiesFound} opportunities` });
+    persistWorkforceState({ agentName: 'Orchestrator', status: 'COMPLETED', task: 'Run completed', runId, eventType: 'completed', stage: 'complete', message: 'Autonomous opportunity run completed' });
   } catch (err) {
     state.running = false;
     state.stage = 'Failed';
@@ -191,5 +208,6 @@ async function execute(runId: string, live: boolean) {
       if (agent.status === 'RUNNING') agent.status = 'FAILED';
     }
     event('Orchestrator', `Run failed: ${state.error}`, 'error', 'error');
+    persistWorkforceState({ agentName: 'Orchestrator', status: 'FAILED', task: state.error, runId, eventType: 'failed', stage: 'error', message: `Run failed: ${state.error}` });
   }
 }
