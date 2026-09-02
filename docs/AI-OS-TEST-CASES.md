@@ -15,9 +15,17 @@ This file is the living acceptance-test register.
 | Cross-system timeline | 5 | 0 | 5 |
 | MCP control center | 6 | 0 | 6 |
 | Evidence → revenue lineage | 8 | 0 | 8 |
-| **Total** | **71** | **0** | **71** |
+| Worker supervisor | 5 | 0 | 5 |
+| **Total** | **76** | **0** | **76** |
 
-> **71/71 acceptance cases are implemented.** This is product acceptance coverage, not a claim that 71 CI tests have executed against a live database. Remaining engineering validation is automated/live integration testing plus production verification.
+> **76/76 acceptance cases are implemented.** This is product acceptance coverage, not a claim that 76 CI tests have executed against a live database. Automated/live integration testing and production verification remain separate validation work.
+
+## Worker supervisor — 5/5
+- [x] SUP-001 Worker heartbeat records durable worker/agent status.
+- [x] SUP-002 Heartbeat records expose queue depth and active lease count.
+- [x] SUP-003 Supervisor detects workers whose heartbeat exceeds the configured timeout.
+- [x] SUP-004 Supervisor reconciles expired task leases using the kernel retry policy.
+- [x] SUP-005 Mission Control exposes worker health, stale workers and supervisor events.
 
 ## Workforce visibility — 8/8
 - [x] WF-001 Agent registry shows all seeded agents.
@@ -109,4 +117,4 @@ This file is the living acceptance-test register.
 - [x] REV-008 CEO can inspect lineage, outcomes and AI spend from the investigation surface.
 
 ## Validation note
-Acceptance coverage and automated test execution are intentionally separate. Before production release, run the MySQL migrations and exercise the new API/UI paths against the configured database, then verify CI. No case is called an automated test merely because the code path exists.
+Acceptance coverage and automated test execution are intentionally separate. Before production release, run the MySQL migrations and exercise the API/UI paths against the configured database, then verify CI. No case is called an automated test merely because the code path exists.
