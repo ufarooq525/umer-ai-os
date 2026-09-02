@@ -13,7 +13,7 @@ describe('@umer/db MySQL integration boundary', () => {
   });
 
   it('defines stable, versioned Opportunity Intelligence migrations', () => {
-    expect(OPPORTUNITY_MIGRATIONS).toHaveLength(2);
+    expect(OPPORTUNITY_MIGRATIONS).toHaveLength(3);
     expect(OPPORTUNITY_MIGRATIONS[0]?.id).toBe('001_opportunity_intelligence');
     expect(OPPORTUNITY_MIGRATIONS[0]?.checksum).toHaveLength(64);
     expect(OPPORTUNITY_MIGRATIONS[0]?.statements).toHaveLength(6);
@@ -26,5 +26,10 @@ describe('@umer/db MySQL integration boundary', () => {
     expect(OPPORTUNITY_MIGRATIONS[1]?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS opportunity_run_events');
     expect(OPPORTUNITY_MIGRATIONS[1]?.statements[1]).toContain('CREATE TABLE IF NOT EXISTS opportunity_problems');
     expect(OPPORTUNITY_MIGRATIONS[1]?.statements[2]).toContain('CREATE TABLE IF NOT EXISTS opportunity_discovery_candidates');
+
+    expect(OPPORTUNITY_MIGRATIONS[2]?.id).toBe('003_opportunity_outreach_drafts');
+    expect(OPPORTUNITY_MIGRATIONS[2]?.checksum).toHaveLength(64);
+    expect(OPPORTUNITY_MIGRATIONS[2]?.statements).toHaveLength(1);
+    expect(OPPORTUNITY_MIGRATIONS[2]?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS opportunity_outreach_drafts');
   });
 });

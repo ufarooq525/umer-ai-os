@@ -23,6 +23,7 @@ describe('Opportunity Intelligence E2E Flow (MySQL)', () => {
   beforeAll(async () => {
     // Ensure migrations are in place
     await migrate(mysqlClient);
+    await mysqlClient.execute('DELETE FROM opportunity_outreach_drafts WHERE niche_id = ?', ['saudi-umrah-e2e']);
     await mysqlClient.execute('DELETE FROM opportunity_opportunities WHERE niche_id = ?', ['saudi-umrah-e2e']);
     await mysqlClient.execute('DELETE FROM opportunity_problems WHERE niche_id = ?', ['saudi-umrah-e2e']);
     await mysqlClient.execute('DELETE FROM opportunity_run_events WHERE niche_id = ?', ['saudi-umrah-e2e']);
@@ -246,6 +247,17 @@ describe('Opportunity Intelligence E2E Flow (MySQL)', () => {
       [runId1],
     );
     expect(dbCandidates.length).toBe(discoveryCandidates.length);
+
+    const [dbOutreachDrafts] = await mysqlClient.execute<any[]>(
+      'SELECT * FROM opportunity_outreach_drafts WHERE niche_id = ?',
+      [niche.id],
+    );
+    expect(dbOutreachDrafts.length).toBeGreaterThan(0);
+    const waDraft = dbOutreachDrafts.find((d: any) => d.channel === 'whatsapp');
+    expect(waDraft).toBeDefined();
+
+    const persistenceDrafts = await persistence.listOutreachDrafts({ nicheId: niche.id });
+    expect(persistenceDrafts.length).toBe(dbOutreachDrafts.length);
 
     // 7. Execute 2nd Pipeline Run (Idempotency verification)
     const runId2 = '22222222-2222-4222-8222-222222222222';

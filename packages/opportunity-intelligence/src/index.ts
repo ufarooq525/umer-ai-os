@@ -20,3 +20,4 @@ export { buildBusinessIdentity, createBusinessId, normalizeEmail, normalizeGeogr
 export { normalizeBusinessName, normalizeCandidate, normalizeWebsite, type NormalizedBusinessCandidate } from './normalization.js';
 export { CompositeDiscoveryAdapter, EvidenceResearchAdapter, GooglePlacesDiscoverySource, SourceDiscoveryProvider, StaticDiscoverySource, StaticEvidenceSource, WebsiteEvidenceSource, type DiscoverySource, type EvidenceSource } from './adapters.js';
 export { OpportunityAutonomousScheduler, type AutonomousSchedulerState, type SchedulerConfig } from './autonomous-scheduler.js';
+export { DefaultOutreachGenerator, type OutreachGenerator, type OutreachGeneratorInput } from './outreach-generator.js';

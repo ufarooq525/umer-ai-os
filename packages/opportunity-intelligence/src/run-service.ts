@@ -9,6 +9,7 @@ import type { DiscoveryCandidate, DiscoveryAdapter, OpportunityBuilder, ProblemD
 import { deduplicateCandidates } from './dedup.js';
 import { buildBusinessIdentity } from './identity.js';
 import type { OpportunityPersistence } from './persistence.js';
+import { DefaultOutreachGenerator, type OutreachGenerator } from './outreach-generator.js';
 
 export type OpportunityRunClock = { nowIso(): string };
 export const defaultOpportunityRunClock: OpportunityRunClock = { nowIso: () => new Date().toISOString() };
@@ -28,14 +29,18 @@ export type OpportunityRunServiceOptions = {
   problemDetector: ProblemDetector;
   opportunityBuilder: OpportunityBuilder;
   persistence: OpportunityPersistence;
+  outreachGenerator?: OutreachGenerator;
   clock?: OpportunityRunClock;
   onEvent?: (event: OpportunityRunEvent) => Promise<void> | void;
 };
 
 export class OpportunityRunService {
   private readonly clock: OpportunityRunClock;
+  private readonly outreachGenerator: OutreachGenerator;
+
   constructor(private readonly options: OpportunityRunServiceOptions) {
     this.clock = options.clock ?? defaultOpportunityRunClock;
+    this.outreachGenerator = options.outreachGenerator ?? new DefaultOutreachGenerator();
   }
 
   async execute(niche: NicheDefinition, runId: string = randomUUID()): Promise<OpportunityRunResult> {
@@ -169,6 +174,20 @@ export class OpportunityRunService {
           await this.options.persistence.saveOpportunity(opportunity);
           opportunities.push(opportunity);
           await emit('scoring', 'Opportunity Agent', 'info', `Built and scored opportunity: "${opportunity.title}" (Score: ${opportunity.score.overall}/100 [${opportunity.score.recommendation}])`);
+
+          if (opportunity.score.recommendation === 'outreach_ready' || opportunity.score.overall >= niche.minimumOpportunityScore) {
+            const drafts = await this.outreachGenerator.generateDrafts({
+              opportunity,
+              business,
+              problems,
+              evidence,
+              niche,
+            });
+            for (const draft of drafts) {
+              await this.options.persistence.saveOutreachDraft(draft);
+            }
+            await emit('outreach', 'Outreach Agent', 'info', `Drafted ${drafts.length} personalized proposals (WhatsApp & Email) for "${candidate.name}"`);
+          }
         }
       } catch (error) {
         const msg = this.message(error);

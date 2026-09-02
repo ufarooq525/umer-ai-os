@@ -166,4 +166,29 @@ export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
       )`,
     ],
   },
+  {
+    id: '003_opportunity_outreach_drafts',
+    checksum: 'c4e9738bfd2f1b0a82643a6ec0409a807d9b9ea182061517441315579975b9aa',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS opportunity_outreach_drafts (
+        id VARCHAR(191) PRIMARY KEY,
+        opportunity_id VARCHAR(191) NOT NULL,
+        business_id VARCHAR(191) NOT NULL,
+        niche_id VARCHAR(191) NOT NULL,
+        channel VARCHAR(32) NOT NULL,
+        recipient VARCHAR(255) NULL,
+        subject VARCHAR(500) NULL,
+        body TEXT NOT NULL,
+        language VARCHAR(16) NOT NULL DEFAULT 'en',
+        value_proposition TEXT NOT NULL,
+        evidence_refs_json JSON NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'drafted',
+        created_at DATETIME(3) NOT NULL,
+        updated_at DATETIME(3) NOT NULL,
+        INDEX idx_opportunity_outreach_opp (opportunity_id),
+        INDEX idx_opportunity_outreach_business (business_id),
+        INDEX idx_opportunity_outreach_status (status, created_at)
+      )`,
+    ],
+  },
 ];

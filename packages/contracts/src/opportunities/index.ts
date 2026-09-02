@@ -250,6 +250,28 @@ export const DiscoveryCandidateRecordSchema = z
   })
   .strict();
 
+export const OutreachChannelSchema = z.enum(['email', 'whatsapp', 'linkedin', 'phone']);
+export const OutreachStatusSchema = z.enum(['drafted', 'ready', 'sent', 'replied', 'converted', 'rejected']);
+
+export const OutreachDraftSchema = z
+  .object({
+    id: z.string().min(1),
+    opportunityId: z.string().min(1),
+    businessId: z.string().min(1),
+    nicheId: z.string().min(1),
+    channel: OutreachChannelSchema,
+    recipient: z.string().optional(),
+    subject: z.string().optional(),
+    body: z.string().min(1),
+    language: z.enum(['ar', 'en', 'bilingual']).default('en'),
+    valueProposition: z.string().min(1),
+    evidenceRefs: z.array(z.string()).default([]),
+    status: OutreachStatusSchema.default('drafted'),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+
 export type OpportunityStatus = z.infer<typeof OpportunityStatusSchema>;
 export type NicheStatus = z.infer<typeof NicheStatusSchema>;
 export type OpportunityType = z.infer<typeof OpportunityTypeSchema>;
@@ -267,3 +289,6 @@ export type Experiment = z.infer<typeof ExperimentSchema>;
 export type OpportunityRunEvent = z.infer<typeof OpportunityRunEventSchema>;
 export type OpportunityProblemRecord = z.infer<typeof OpportunityProblemRecordSchema>;
 export type DiscoveryCandidateRecord = z.infer<typeof DiscoveryCandidateRecordSchema>;
+export type OutreachChannel = z.infer<typeof OutreachChannelSchema>;
+export type OutreachStatus = z.infer<typeof OutreachStatusSchema>;
+export type OutreachDraft = z.infer<typeof OutreachDraftSchema>;

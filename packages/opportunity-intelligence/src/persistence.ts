@@ -7,6 +7,7 @@ import type {
   Opportunity,
   OpportunityProblemRecord,
   OpportunityRunEvent,
+  OutreachDraft,
   Problem,
   ResearchCase,
 } from '@umer/contracts';
@@ -27,6 +28,7 @@ export type OpportunityPersistence = {
   saveEvent(event: OpportunityRunEvent): Promise<void>;
   saveProblem(problem: Problem, meta: ProblemSaveMeta): Promise<void>;
   saveDiscoveryCandidate(candidate: DiscoveryCandidateRecord): Promise<void>;
+  saveOutreachDraft(draft: OutreachDraft): Promise<void>;
   getBusiness(id: string): Promise<BusinessProspect | undefined>;
   getEvidence(id: string): Promise<EvidenceRecord | undefined>;
   getOpportunity(id: string): Promise<Opportunity | undefined>;
@@ -37,6 +39,7 @@ export type OpportunityPersistence = {
   listEvents(runId: string): Promise<OpportunityRunEvent[]>;
   listProblems(filter?: { businessId?: string; nicheId?: string; runId?: string }): Promise<OpportunityProblemRecord[]>;
   listDiscoveryCandidates(runId: string): Promise<DiscoveryCandidateRecord[]>;
+  listOutreachDrafts(filter?: { opportunityId?: string; businessId?: string; nicheId?: string; status?: string }): Promise<OutreachDraft[]>;
   getLatestRun(nicheId?: string): Promise<NicheRunMetrics | undefined>;
   listRuns(nicheId?: string, limit?: number): Promise<NicheRunMetrics[]>;
 };
@@ -51,6 +54,7 @@ export class InMemoryOpportunityPersistence implements OpportunityPersistence {
   private readonly events: OpportunityRunEvent[] = [];
   private readonly problems: OpportunityProblemRecord[] = [];
   private readonly discoveryCandidates: DiscoveryCandidateRecord[] = [];
+  private readonly outreachDrafts = new Map<string, OutreachDraft>();
 
   async saveBusiness(value: BusinessProspect): Promise<void> { this.businesses.set(value.id, structuredClone(value)); }
   async saveEvidence(value: EvidenceRecord): Promise<void> { this.evidence.set(value.id, structuredClone(value)); }
@@ -80,6 +84,9 @@ export class InMemoryOpportunityPersistence implements OpportunityPersistence {
   async saveDiscoveryCandidate(candidate: DiscoveryCandidateRecord): Promise<void> {
     this.discoveryCandidates.push(structuredClone(candidate));
   }
+  async saveOutreachDraft(draft: OutreachDraft): Promise<void> {
+    this.outreachDrafts.set(draft.id, structuredClone(draft));
+  }
 
   async getBusiness(id: string): Promise<BusinessProspect | undefined> { return this.businesses.get(id); }
   async getEvidence(id: string): Promise<EvidenceRecord | undefined> { return this.evidence.get(id); }
@@ -94,7 +101,7 @@ export class InMemoryOpportunityPersistence implements OpportunityPersistence {
     return ids.flatMap((id) => { const item = this.evidence.get(id); return item ? [item] : []; });
   }
   async listEvents(runId: string): Promise<OpportunityRunEvent[]> {
-    return this.events.filter((e) => e.runId === runId);
+    return this.events.filter((e) => e.runId === runId).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   }
   async listProblems(filter?: { businessId?: string; nicheId?: string; runId?: string }): Promise<OpportunityProblemRecord[]> {
     return this.problems.filter((p) => {
@@ -107,11 +114,18 @@ export class InMemoryOpportunityPersistence implements OpportunityPersistence {
   async listDiscoveryCandidates(runId: string): Promise<DiscoveryCandidateRecord[]> {
     return this.discoveryCandidates.filter((c) => c.runId === runId);
   }
+  async listOutreachDrafts(filter?: { opportunityId?: string; businessId?: string; nicheId?: string; status?: string }): Promise<OutreachDraft[]> {
+    return [...this.outreachDrafts.values()].filter((d) => {
+      if (filter?.opportunityId && d.opportunityId !== filter.opportunityId) return false;
+      if (filter?.businessId && d.businessId !== filter.businessId) return false;
+      if (filter?.nicheId && d.nicheId !== filter.nicheId) return false;
+      if (filter?.status && d.status !== filter.status) return false;
+      return true;
+    });
+  }
   async getLatestRun(nicheId?: string): Promise<NicheRunMetrics | undefined> {
-    const runs = [...this.runs.values()]
-      .filter((r) => !nicheId || r.nicheId === nicheId)
-      .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-    return runs[0];
+    const list = await this.listRuns(nicheId, 1);
+    return list[0];
   }
   async listRuns(nicheId?: string, limit = 50): Promise<NicheRunMetrics[]> {
     return [...this.runs.values()]
@@ -251,6 +265,23 @@ type CandidateRow = {
   industry: string | null;
   source_refs_json: string | string[];
   discovered_at: string;
+};
+
+type OutreachDraftRow = {
+  id: string;
+  opportunity_id: string;
+  business_id: string;
+  niche_id: string;
+  channel: OutreachDraft['channel'];
+  recipient: string | null;
+  subject: string | null;
+  body: string;
+  language: OutreachDraft['language'];
+  value_proposition: string;
+  evidence_refs_json: string | string[];
+  status: OutreachDraft['status'];
+  created_at: string;
+  updated_at: string;
 };
 
 function toMySqlDateTime(isoString?: string | Date | null): string | null {
@@ -462,6 +493,55 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
     }));
   }
 
+  async saveOutreachDraft(draft: OutreachDraft): Promise<void> {
+    await this.options.db.execute(
+      `INSERT INTO opportunity_outreach_drafts (
+        id, opportunity_id, business_id, niche_id, channel, recipient, subject, body, language, value_proposition, evidence_refs_json, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        recipient = VALUES(recipient),
+        subject = VALUES(subject),
+        body = VALUES(body),
+        language = VALUES(language),
+        value_proposition = VALUES(value_proposition),
+        evidence_refs_json = VALUES(evidence_refs_json),
+        status = VALUES(status),
+        updated_at = VALUES(updated_at)`,
+      [
+        draft.id,
+        draft.opportunityId,
+        draft.businessId,
+        draft.nicheId,
+        draft.channel,
+        draft.recipient ?? null,
+        draft.subject ?? null,
+        draft.body,
+        draft.language,
+        draft.valueProposition,
+        JSON.stringify(draft.evidenceRefs),
+        draft.status,
+        toMySqlDateTime(draft.createdAt),
+        toMySqlDateTime(draft.updatedAt),
+      ],
+    );
+  }
+
+  async listOutreachDrafts(filter?: { opportunityId?: string; businessId?: string; nicheId?: string; status?: string }): Promise<OutreachDraft[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (filter?.opportunityId) { conditions.push('opportunity_id = ?'); params.push(filter.opportunityId); }
+    if (filter?.businessId) { conditions.push('business_id = ?'); params.push(filter.businessId); }
+    if (filter?.nicheId) { conditions.push('niche_id = ?'); params.push(filter.nicheId); }
+    if (filter?.status) { conditions.push('status = ?'); params.push(filter.status); }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const rows = await this.queryMany<OutreachDraftRow>(
+      `SELECT * FROM opportunity_outreach_drafts ${where} ORDER BY created_at DESC`,
+      params,
+    );
+    return rows.map((row) => this.mapOutreachDraft(row));
+  }
+
   async getLatestRun(nicheId?: string): Promise<NicheRunMetrics | undefined> {
     const sql = nicheId
       ? 'SELECT * FROM opportunity_niche_runs WHERE niche_id = ? ORDER BY started_at DESC LIMIT 1'
@@ -478,6 +558,25 @@ export class MySqlOpportunityPersistence implements OpportunityPersistence {
     const params = nicheId ? [nicheId, limit] : [limit];
     const rows = await this.queryMany<RunMetricsRow>(sql, params);
     return rows.map((r) => this.mapRunMetrics(r));
+  }
+
+  private mapOutreachDraft(row: OutreachDraftRow): OutreachDraft {
+    return {
+      id: row.id,
+      opportunityId: row.opportunity_id,
+      businessId: row.business_id,
+      nicheId: row.niche_id,
+      channel: row.channel,
+      ...(row.recipient ? { recipient: row.recipient } : {}),
+      ...(row.subject ? { subject: row.subject } : {}),
+      body: row.body,
+      language: row.language,
+      valueProposition: row.value_proposition,
+      evidenceRefs: this.parseJson<string[]>(row.evidence_refs_json),
+      status: row.status,
+      createdAt: toIsoDateTime(row.created_at),
+      updatedAt: toIsoDateTime(row.updated_at),
+    };
   }
 
   private mapBusiness(row: BusinessRow): BusinessProspect {
