@@ -65,7 +65,7 @@ export function GlobalAISearch({ compact = false }: { compact?: boolean }) {
         {loading && <span style={{ color: colors.muted, fontSize: 12 }}>Searching…</span>}
       </div>
 
-      {error && <p style={{ color: colors.danger ?? colors.muted, fontSize: 13, margin: '10px 0 0' }}>{error}</p>}
+      {error && <p style={{ color: colors.muted, fontSize: 13, margin: '10px 0 0' }}>{error}</p>}
       {!error && query.trim().length === 1 && <p style={{ color: colors.muted, fontSize: 12, margin: '10px 0 0' }}>Enter at least 2 characters.</p>}
       {!error && query.trim().length >= 2 && !loading && results.length === 0 && <p style={{ color: colors.muted, fontSize: 13, margin: '12px 0 0' }}>No matching operational records.</p>}
 
