@@ -12,10 +12,10 @@ This file is the living acceptance-test register. Update it whenever functionali
 | Economics & telemetry | 6 | 1 | 7 |
 | Global search | 12 | 2 | 14 |
 | CEO controls | 0 | 6 | 6 |
-| Cross-system timeline | 0 | 5 | 5 |
+| Cross-system timeline | 5 | 0 | 5 |
 | MCP control center | 0 | 6 | 6 |
 | Evidence → revenue lineage | 0 | 8 | 8 |
-| **Total** | **42** | **29** | **71** |
+| **Total** | **47** | **24** | **71** |
 
 > Covered means implemented and represented by an acceptance case. It does not mean a CI automation suite has already executed every case. CI/automated execution should be added as the implementation matures.
 
@@ -89,13 +89,13 @@ This file is the living acceptance-test register. Update it whenever functionali
 - [ ] CTRL-005 Cancel a task safely.
 - [ ] CTRL-006 Every control action creates an immutable audit event.
 
-## Cross-system timeline — 0/5
+## Cross-system timeline — 5/5
 
-- [ ] TL-001 Workforce events and kernel events appear in one chronological stream.
-- [ ] TL-002 Opportunity run events join the same stream.
-- [ ] TL-003 Timeline can be filtered by agent.
-- [ ] TL-004 Timeline can be filtered by run/project/business/opportunity.
-- [ ] TL-005 Timeline preserves correlation IDs across all stages.
+- [x] TL-001 Workforce events and kernel events appear in one chronological stream.
+- [x] TL-002 Opportunity run events join the same stream.
+- [x] TL-003 Timeline can be filtered by agent.
+- [x] TL-004 Timeline can be filtered by run/project/entity type/entity ID, covering business/opportunity identifiers when those identifiers are persisted on events.
+- [x] TL-005 Timeline preserves correlation IDs across all stages without fabricating missing identifiers.
 
 ## MCP control center — 0/6
 
