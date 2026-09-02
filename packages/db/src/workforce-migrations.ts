@@ -1,0 +1,75 @@
+import type { MySqlMigration } from './migrations.js';
+
+/** Persistent registry/state for the CEO AI Workforce command center. */
+export const WORKFORCE_MIGRATIONS: readonly MySqlMigration[] = [
+  {
+    id: '004_ai_workforce',
+    checksum: 'a9d9b3b7e3c0d8a4d3c6e4e1e6c5d5e2b4a7f2f1d4a1c8e8c6f5d2a7b3c9e11',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS ai_agents (
+        agent_id VARCHAR(128) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        department VARCHAR(128) NOT NULL,
+        role VARCHAR(255) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'IDLE',
+        current_task TEXT NULL,
+        current_project VARCHAR(255) NULL,
+        current_business VARCHAR(255) NULL,
+        current_run_id VARCHAR(191) NULL,
+        last_heartbeat_at DATETIME(3) NULL,
+        started_at DATETIME(3) NULL,
+        completed_at DATETIME(3) NULL,
+        last_error TEXT NULL,
+        updated_at DATETIME(3) NOT NULL,
+        INDEX idx_ai_agents_status (status),
+        INDEX idx_ai_agents_heartbeat (last_heartbeat_at)
+      )`,
+      `CREATE TABLE IF NOT EXISTS ai_agent_assignments (
+        assignment_id VARCHAR(191) PRIMARY KEY,
+        agent_id VARCHAR(128) NOT NULL,
+        run_id VARCHAR(191) NULL,
+        project_id VARCHAR(191) NULL,
+        project_name VARCHAR(255) NULL,
+        niche_id VARCHAR(191) NULL,
+        business_id VARCHAR(191) NULL,
+        business_name VARCHAR(255) NULL,
+        task TEXT NOT NULL,
+        status VARCHAR(32) NOT NULL,
+        priority VARCHAR(16) NOT NULL DEFAULT 'normal',
+        assigned_at DATETIME(3) NOT NULL,
+        started_at DATETIME(3) NULL,
+        completed_at DATETIME(3) NULL,
+        blocked_reason TEXT NULL,
+        next_action TEXT NULL,
+        metadata_json JSON NULL,
+        INDEX idx_ai_assignments_agent_status (agent_id, status),
+        INDEX idx_ai_assignments_run (run_id, assigned_at),
+        INDEX idx_ai_assignments_project (project_id, assigned_at),
+        CONSTRAINT fk_ai_assignment_agent FOREIGN KEY (agent_id) REFERENCES ai_agents(agent_id) ON DELETE CASCADE
+      )`,
+      `CREATE TABLE IF NOT EXISTS ai_agent_events (
+        event_id VARCHAR(191) PRIMARY KEY,
+        agent_id VARCHAR(128) NOT NULL,
+        run_id VARCHAR(191) NULL,
+        assignment_id VARCHAR(191) NULL,
+        event_type VARCHAR(64) NOT NULL,
+        stage VARCHAR(64) NULL,
+        message TEXT NOT NULL,
+        metadata_json JSON NULL,
+        occurred_at DATETIME(3) NOT NULL,
+        INDEX idx_ai_events_agent_time (agent_id, occurred_at),
+        INDEX idx_ai_events_run_time (run_id, occurred_at),
+        CONSTRAINT fk_ai_event_agent FOREIGN KEY (agent_id) REFERENCES ai_agents(agent_id) ON DELETE CASCADE
+      )`,
+      `INSERT IGNORE INTO ai_agents (agent_id, name, department, role, status, updated_at) VALUES
+        ('orchestrator', 'Orchestrator', 'Executive Control', 'Coordinates autonomous departments and run lifecycle', 'IDLE', UTC_TIMESTAMP(3)),
+        ('discovery', 'Discovery Agent', 'Intelligence', 'Finds candidate businesses and commercial targets', 'IDLE', UTC_TIMESTAMP(3)),
+        ('identity', 'Identity Agent', 'Intelligence', 'Resolves business identity, duplicates and canonical records', 'IDLE', UTC_TIMESTAMP(3)),
+        ('research', 'Research Agent', 'Intelligence', 'Collects website, market and operational evidence', 'IDLE', UTC_TIMESTAMP(3)),
+        ('audit', 'Audit Agent', 'Intelligence', 'Validates evidence quality and detects operational gaps', 'IDLE', UTC_TIMESTAMP(3)),
+        ('analysis', 'Analysis Agent', 'Intelligence', 'Turns evidence into structured problems and commercial hypotheses', 'IDLE', UTC_TIMESTAMP(3)),
+        ('opportunity', 'Opportunity Agent', 'Revenue', 'Scores opportunities by demand, value, reachability and fit', 'IDLE', UTC_TIMESTAMP(3)),
+        ('outreach', 'Outreach Agent', 'Revenue', 'Prepares evidence-backed outreach and follow-up actions', 'IDLE', UTC_TIMESTAMP(3))`,
+    ],
+  },
+];
