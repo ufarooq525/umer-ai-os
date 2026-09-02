@@ -1,4 +1,5 @@
 import { AI_OS_KERNEL_MIGRATIONS } from './ai-os-kernel-migrations.js';
+import { AI_KERNEL_TELEMETRY_MIGRATIONS } from './ai-kernel-telemetry-migrations.js';
 import { WORKFORCE_MIGRATIONS } from './workforce-migrations.js';
 
 export type MySqlMigration = {
@@ -7,12 +8,7 @@ export type MySqlMigration = {
   statements: readonly string[];
 };
 
-/**
- * Revenue OS / Opportunity Intelligence schema migrations.
- *
- * The schema is intentionally represented in TypeScript so production builds
- * do not depend on a .sql file being copied beside the compiled output.
- */
+/** Revenue OS / Opportunity Intelligence schema migrations. */
 export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
   {
     id: '001_opportunity_intelligence',
@@ -44,4 +40,5 @@ export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
   },
   ...WORKFORCE_MIGRATIONS,
   ...AI_OS_KERNEL_MIGRATIONS,
+  ...AI_KERNEL_TELEMETRY_MIGRATIONS,
 ];
