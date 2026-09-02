@@ -2,18 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, colors, radii } from '@umer/ui';
-import { getOpportunityStatus, startOpportunityRun, type OpportunityStatus } from '@/lib/control-api';
+import type { OpportunityRunStatus } from '@/lib/opportunity-engine';
 
 const stages = ['Discovery', 'Research', 'Audit', 'Problems', 'Scoring', 'Opportunities'];
 
+async function getStatus(): Promise<OpportunityRunStatus> {
+  const response = await fetch('/api/opportunity/status', { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Opportunity status failed: ${response.status}`);
+  return response.json() as Promise<OpportunityRunStatus>;
+}
+
+async function runEngine(): Promise<void> {
+  const response = await fetch('/api/opportunity/run', { method: 'POST' });
+  if (!response.ok) throw new Error(`Opportunity run failed: ${response.status}`);
+}
+
 export function OpportunityControlCenter() {
-  const [status, setStatus] = useState<OpportunityStatus | null>(null);
+  const [status, setStatus] = useState<OpportunityRunStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
     try {
-      setStatus(await getOpportunityStatus());
+      setStatus(await getStatus());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -22,7 +33,7 @@ export function OpportunityControlCenter() {
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 1500);
+    const timer = setInterval(() => void refresh(), 1000);
     return () => clearInterval(timer);
   }, []);
 
@@ -30,7 +41,7 @@ export function OpportunityControlCenter() {
     setBusy(true);
     setError(null);
     try {
-      await startOpportunityRun();
+      await runEngine();
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -49,12 +60,12 @@ export function OpportunityControlCenter() {
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Badge tone={status?.running ? 'success' : 'default'}>{status?.running ? 'RUNNING' : 'IDLE'}</Badge>
+              <Badge tone={status?.running ? 'success' : 'default'}>{status?.running ? 'RUNNING' : activeStage.toUpperCase()}</Badge>
               {status?.runId ? <code style={{ fontSize: 12 }}>{status.runId}</code> : null}
             </div>
             <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>Saudi Umrah Opportunity Intelligence</h2>
             <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
-              Discover businesses, research evidence, detect commercial problems and surface revenue opportunities.
+              Real pipeline activity from discovery through research, problem detection and revenue scoring.
             </p>
           </div>
           <Button onClick={() => void startRun()} disabled={busy || status?.running}>
@@ -92,9 +103,7 @@ export function OpportunityControlCenter() {
           ['High value', status?.metrics.highValueOpportunities ?? 0],
           ['Pipeline value', `$${(status?.metrics.estimatedPipeline ?? 0).toLocaleString()}`],
         ].map(([label, value]) => (
-          <Card key={String(label)} title={String(label)}>
-            <strong style={{ fontSize: 30, letterSpacing: '-0.04em' }}>{value}</strong>
-          </Card>
+          <Card key={String(label)} title={String(label)}><strong style={{ fontSize: 30, letterSpacing: '-0.04em' }}>{value}</strong></Card>
         ))}
       </div>
 
@@ -102,23 +111,19 @@ export function OpportunityControlCenter() {
         <Card title="Live agent activity">
           {status?.events?.length ? (
             <div style={{ display: 'grid', gap: 0 }}>
-              {status.events.slice(-12).reverse().map((event, index) => (
-                <div key={`${event.at}-${index}`} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 10, padding: '10px 0', borderBottom: `1px solid ${colors.border}` }}>
-                  <span style={{ color: colors.muted, fontSize: 11, fontFamily: 'monospace' }}>{new Date(event.at).toLocaleTimeString()}</span>
-                  <div><strong style={{ fontSize: 12 }}>{event.agent}</strong><div style={{ fontSize: 13, marginTop: 2 }}>{event.message}</div></div>
+              {status.events.slice(-12).reverse().map((item, index) => (
+                <div key={`${item.at}-${index}`} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 10, padding: '10px 0', borderBottom: `1px solid ${colors.border}` }}>
+                  <span style={{ color: colors.muted, fontSize: 11, fontFamily: 'monospace' }}>{new Date(item.at).toLocaleTimeString()}</span>
+                  <div><strong style={{ fontSize: 12 }}>{item.agent}</strong><div style={{ fontSize: 13, marginTop: 2 }}>{item.message}</div></div>
                 </div>
               ))}
             </div>
-          ) : <p style={{ margin: 0, color: colors.muted }}>No active run. Start the engine to see real agent events here.</p>}
+          ) : <p style={{ margin: 0, color: colors.muted }}>No active run. Start the engine to see real events.</p>}
         </Card>
 
         <Card title="Agents">
           <div style={{ display: 'grid', gap: 10 }}>
-            {(status?.agents ?? [
-              { name: 'Discovery Agent', status: 'IDLE', task: 'Waiting for run' },
-              { name: 'Research Agent', status: 'IDLE', task: 'Waiting for discovery' },
-              { name: 'Opportunity Agent', status: 'IDLE', task: 'Waiting for research' },
-            ]).map((agent) => (
+            {(status?.agents ?? []).map((agent) => (
               <div key={agent.name} style={{ padding: '11px 12px', border: `1px solid ${colors.border}`, borderRadius: radii.md }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong style={{ fontSize: 13 }}>{agent.name}</strong><Badge tone={agent.status === 'RUNNING' ? 'success' : 'default'}>{agent.status}</Badge></div>
                 <p style={{ margin: '5px 0 0', fontSize: 12, color: colors.muted }}>{agent.task}</p>
