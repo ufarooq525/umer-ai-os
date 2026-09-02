@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.0",
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "scripts": {
     "build": "pnpm -r run build",
     "dev": "pnpm -r run dev",
@@ -17,7 +15,7 @@
     "helm:lint": "helm lint infra/k8s/charts/umer-ai-os",
     "helm:template": "helm template umer infra/k8s/charts/umer-ai-os",
     "lint": "pnpm -r run lint",
-    "typecheck": "pnpm -r run typecheck",
+    "typecheck": "pnpm --filter @umer/contracts run build && pnpm -r run typecheck",
     "test": "vitest run",
     "test:e2e": "vitest run tests/e2e",
     "opportunity:test": "vitest run packages/opportunity-intelligence/src/e2e-mysql-flow.test.ts",
