@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createMySqlOpportunityPersistence } from '@umer/opportunity-intelligence';
+import { buildBusinessIdentity, createMySqlOpportunityPersistence } from '@umer/opportunity-intelligence';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       persistence.listEvents(runId),
     ]);
 
-    const nicheId = candidates[0]?.nicheId ?? (await persistence.getLatestRun())?.nicheId;
+    const nicheId = candidates[0]?.nicheId;
     const opportunities = nicheId ? await persistence.listOpportunities(nicheId) : [];
     const outreach = nicheId ? await persistence.listOutreachDrafts({ nicheId }) : [];
     const evidenceIds = [...new Set([
@@ -24,28 +24,36 @@ export async function GET(request: NextRequest) {
       ...outreach.flatMap((item) => item.evidenceRefs),
     ])];
     const evidence = await persistence.listEvidence(evidenceIds);
+
     const businesses = await Promise.all(candidates.map(async (candidate) => {
-      const business = await persistence.getBusiness(
-        candidate.externalId ? candidate.externalId : '',
-      );
+      const identity = buildBusinessIdentity({
+        externalId: candidate.externalId,
+        name: candidate.name,
+        websiteUrl: candidate.websiteUrl,
+        geography: candidate.geography,
+      });
+      const business = await persistence.getBusiness(identity.id);
+      const businessProblems = problems.filter((item) => item.businessId === identity.id);
+      const businessOpportunities = opportunities.filter((item) => item.businessId === identity.id);
+      const businessOutreach = outreach.filter((item) => item.businessId === identity.id);
+      const refs = new Set([
+        ...businessProblems.flatMap((item) => item.evidenceRefs),
+        ...businessOpportunities.flatMap((item) => item.evidenceRefs),
+        ...businessOutreach.flatMap((item) => item.evidenceRefs),
+      ]);
       return {
         ...candidate,
         business: business ?? null,
-        problems: problems.filter((item) => item.businessId === business?.id),
-        opportunities: opportunities.filter((item) => item.businessId === business?.id),
-        outreach: outreach.filter((item) => item.businessId === business?.id),
-        evidence: evidence.filter((item) => {
-          const problemRefs = problems.filter((p) => p.businessId === business?.id).flatMap((p) => p.evidenceRefs);
-          const opportunityRefs = opportunities.filter((o) => o.businessId === business?.id).flatMap((o) => o.evidenceRefs);
-          return [...problemRefs, ...opportunityRefs].includes(item.id);
-        }),
+        problems: businessProblems,
+        opportunities: businessOpportunities,
+        outreach: businessOutreach,
+        evidence: evidence.filter((item) => refs.has(item.id)),
       };
     }));
 
     return NextResponse.json({
       runId,
       nicheId: nicheId ?? null,
-      candidates,
       businesses,
       problems,
       evidence,
