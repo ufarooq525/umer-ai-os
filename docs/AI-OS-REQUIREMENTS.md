@@ -55,11 +55,13 @@ Every link should be persisted where technically available and explainable to th
 - [x] Task investigation API with attempts/events/model/tool/evaluation/cost/child-task lineage.
 - [x] CEO task explorer and task investigation UI.
 - [x] Global search across the operational AI OS entities currently stored in MySQL.
+- [x] Unified cross-system timeline API joining workforce, kernel, and opportunity-run events.
+- [x] CEO timeline filters for agent, run, entity type/id, and free-text event search.
+- [x] Timeline correlation fields preserve task, agent, run, project, and entity identifiers where persisted.
 
 ### In progress / next
 
 - [ ] Search result deep-links for every entity type.
-- [ ] Unified cross-system timeline: workforce + kernel + opportunity run events.
 - [ ] Structured `why` metadata for opportunity scoring, decisions, and tool calls.
 - [ ] Documentation/Guide generated from registered agents, tools, workflows, and schemas.
 - [ ] Evidence → problem → opportunity → decision → action lineage.
@@ -119,6 +121,19 @@ QUEUED → RUNNING → COMPLETED
 ```
 
 A claim must atomically assign the task and create an active lease. Completion must require the valid lease identity. Expired leases must not permanently strand work.
+
+## Cross-system timeline requirements
+
+The CEO needs one chronological operational stream rather than separate event screens. The timeline must:
+
+- join durable workforce events, kernel workflow events, and opportunity run events;
+- preserve source, event type, severity/level, message, timestamp, and correlation identifiers;
+- support filtering by agent, run, project, entity type, and entity ID;
+- support free-text search over event identity and metadata;
+- refresh automatically without caching stale operational state;
+- tolerate a source having fewer correlation fields than another source without fabricating identifiers.
+
+Current implementation exposes `GET /api/timeline` and a live Mission Control timeline component. Opportunity-run events are joined to registered agents by agent name when possible; otherwise the source remains visible without inventing an agent identity.
 
 ## Observability requirements
 
