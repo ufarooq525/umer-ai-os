@@ -1,5 +1,6 @@
 import { AI_OS_KERNEL_MIGRATIONS } from './ai-os-kernel-migrations.js';
 import { AI_KERNEL_TELEMETRY_MIGRATIONS } from './ai-kernel-telemetry-migrations.js';
+import { AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS } from './ai-kernel-runtime-hardening-migration.js';
 import { WORKFORCE_MIGRATIONS } from './workforce-migrations.js';
 
 export type MySqlMigration = {
@@ -41,4 +42,5 @@ export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
   ...WORKFORCE_MIGRATIONS,
   ...AI_OS_KERNEL_MIGRATIONS,
   ...AI_KERNEL_TELEMETRY_MIGRATIONS,
+  ...AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS,
 ];
