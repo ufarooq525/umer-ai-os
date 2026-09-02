@@ -2,13 +2,10 @@ import { AI_OS_KERNEL_MIGRATIONS } from './ai-os-kernel-migrations.js';
 import { AI_KERNEL_TELEMETRY_MIGRATIONS } from './ai-kernel-telemetry-migrations.js';
 import { AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS } from './ai-kernel-runtime-hardening-migration.js';
 import { AI_KERNEL_EXPLAINABILITY_MIGRATIONS } from './ai-kernel-explainability-migration.js';
+import { AI_OS_CONTROL_LINEAGE_MIGRATIONS } from './ai-os-control-lineage-migration.js';
 import { WORKFORCE_MIGRATIONS } from './workforce-migrations.js';
 
-export type MySqlMigration = {
-  id: string;
-  checksum: string;
-  statements: readonly string[];
-};
+export type MySqlMigration = { id: string; checksum: string; statements: readonly string[] };
 
 /** Revenue OS / Opportunity Intelligence schema migrations. */
 export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
@@ -45,4 +42,5 @@ export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
   ...AI_KERNEL_TELEMETRY_MIGRATIONS,
   ...AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS,
   ...AI_KERNEL_EXPLAINABILITY_MIGRATIONS,
+  ...AI_OS_CONTROL_LINEAGE_MIGRATIONS,
 ];
