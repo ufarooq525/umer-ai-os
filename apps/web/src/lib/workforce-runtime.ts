@@ -55,7 +55,7 @@ export function persistWorkforceState(input: {
            ON DUPLICATE KEY UPDATE task=VALUES(task), status=VALUES(status), project_name=VALUES(project_name),
              niche_id=VALUES(niche_id), business_name=VALUES(business_name), next_action=VALUES(next_action),
              started_at=CASE WHEN VALUES(status)='RUNNING' AND started_at IS NULL THEN VALUES(started_at) ELSE started_at END,
-             completed_at=CASE WHEN VALUES(status) IN ('COMPLETED','FAILED') THEN VALUES(started_at) ELSE completed_at END`,
+             completed_at=CASE WHEN VALUES(status) IN ('COMPLETED','FAILED') THEN CURRENT_TIMESTAMP(3) ELSE completed_at END`,
           [assignmentId, agentId, input.runId, input.project ?? null, input.stage ? `stage:${input.stage}` : null,
             input.business ?? null, input.task, input.assignmentStatus ?? input.status, now, input.status === 'RUNNING' ? now : null, input.nextAction ?? null],
         );
