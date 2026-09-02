@@ -1,6 +1,6 @@
 # Umer AI OS — Living Requirements
 
-> Source of truth for the AI OS. The current 71-case product acceptance milestone is implemented. Automated execution remains a follow-up where the repository harness does not exercise live MySQL behavior.
+> Source of truth for the AI OS. The 71-case observability/control milestone is implemented; the worker-supervisor layer is now also implemented as the next runtime milestone.
 
 ## Product objective
 Build a company-like autonomous AI operating system where the CEO can understand, control, audit, and improve the entire workforce without asking an engineer or an agent what happened.
@@ -18,9 +18,12 @@ CEO Objective → Project → Plan → Task → Agent → Tool Call → Evidence
 - [x] Capability matching, leases, heartbeats, completion/failure and recovery.
 - [x] Structured task `why_json` and objective/project/run/entity linkage.
 - [x] Task investigation with attempts, events, model/tool/evaluation/cost and child-task lineage.
+- [x] Worker supervisor reconciliation detects expired leases and stale worker heartbeats.
+- [x] Worker heartbeat records include queue depth and active task count.
 
 ### CEO visibility
 - [x] Mission Control workforce command center.
+- [x] Worker Supervisor panel with queue, active leases, stale workers and supervisor events.
 - [x] 24h token/cache/tool/evaluation/cost economics.
 - [x] Global operational search across agents, tasks, runs, niches, businesses, opportunities, evidence, problems, outreach and events.
 - [x] Unified cross-system timeline for workforce + kernel + opportunity-run events.
@@ -66,6 +69,7 @@ CEO Objective → Project → Plan → Task → Agent → Tool Call → Evidence
 - `GET/POST /api/control`
 - `GET/POST /api/mcp`
 - `GET/POST /api/lineage`
+- `GET/POST /api/supervisor`
 
 ## Safety and operating rules
 - Search is read-only, bounded and no-store.
@@ -74,10 +78,11 @@ CEO Objective → Project → Plan → Task → Agent → Tool Call → Evidence
 - Paused agents cannot claim new kernel work.
 - MCP authorization is default-deny and denied calls are audited.
 - Lineage uses a flexible graph because opportunity relationships are stored partly in JSON arrays.
+- Supervisor marks stale workers rather than pretending they are healthy.
 - No fake agent activity is introduced merely to make the dashboard look busy.
 
 ## Remaining full-vision work
-The defined 71-case milestone is complete. A larger future milestone remains intentionally separate: a continuously running worker supervisor that autonomously schedules and executes queued work without a human-triggered worker. This is not counted as a failure of the current milestone; it is the next architectural stage after production verification of observability and controls.
+The runtime supervisor is now present, but this does **not** pretend that an LLM worker fleet exists merely because a queue exists. The remaining full-vision stage is to connect real model/tool executors to the durable worker loop: claim → build minimal context → authorize tools → execute → record tokens/cost/evaluation → persist evidence/results → create follow-up tasks → heartbeat until completion. That executor layer should be introduced only against real provider/tool integrations and must preserve the existing auditability and safety boundaries.
 
 ## Definition of done
 1. Requirement documented.
