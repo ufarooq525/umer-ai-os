@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, Button, Card, colors, radii } from '@umer/ui';
 import type { OpportunityRunStatus } from '@/lib/opportunity-engine';
+import { OpportunityIntelligenceDetails } from '@/components/OpportunityIntelligenceDetails';
 
 const stages = ['Discovery', 'Research', 'Audit', 'Problems', 'Scoring', 'Opportunities'];
 
@@ -68,7 +69,7 @@ export function OpportunityControlCenter() {
             </div>
             <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>Saudi Umrah Opportunity Intelligence</h2>
             <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
-              Autonomous commercial pipeline: multi-query discovery, deep signals research, problem detection, and revenue scoring.
+              Autonomous commercial pipeline: multi-query discovery, deep signals research, problem detection, revenue scoring, and outreach drafting.
             </p>
           </div>
           <Button onClick={() => void startRun()} disabled={busy || status?.running}>
@@ -114,7 +115,7 @@ export function OpportunityControlCenter() {
         <Card title="Live agent activity">
           {status?.events?.length ? (
             <div style={{ display: 'grid', gap: 0 }}>
-              {status.events.slice(-12).reverse().map((item, index) => (
+              {status.events.slice(-20).reverse().map((item, index) => (
                 <div key={`${item.at}-${index}`} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 10, padding: '10px 0', borderBottom: `1px solid ${colors.border}` }}>
                   <span style={{ color: colors.muted, fontSize: 11, fontFamily: 'monospace' }}>{new Date(item.at).toLocaleTimeString()}</span>
                   <div><strong style={{ fontSize: 12 }}>{item.agent}</strong><div style={{ fontSize: 13, marginTop: 2 }}>{item.message}</div></div>
@@ -124,7 +125,7 @@ export function OpportunityControlCenter() {
           ) : <p style={{ margin: 0, color: colors.muted }}>No active run. Start the engine to see real events.</p>}
         </Card>
 
-        <Card title="Agents">
+        <Card title="Current agents">
           <div style={{ display: 'grid', gap: 10 }}>
             {(status?.agents ?? []).map((agent) => (
               <div key={agent.name} style={{ padding: '11px 12px', border: `1px solid ${colors.border}`, borderRadius: radii.md }}>
@@ -135,6 +136,8 @@ export function OpportunityControlCenter() {
           </div>
         </Card>
       </div>
+
+      <OpportunityIntelligenceDetails runId={status?.runId ?? null} />
 
       {error ? <p style={{ color: colors.danger, margin: 0, fontSize: 13 }}>{error}</p> : null}
     </section>
