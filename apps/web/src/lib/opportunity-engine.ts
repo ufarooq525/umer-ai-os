@@ -6,11 +6,13 @@ import {
   DefaultOpportunityBuilder,
   EvidenceBasedProblemDetector,
   EvidenceResearchAdapter,
+  GooglePlacesDiscoverySource,
   OpportunityRunService,
   SAUDI_UMRAH_NICHE,
   SourceDiscoveryProvider,
   StaticDiscoverySource,
   StaticEvidenceSource,
+  WebsiteEvidenceSource,
 } from '@umer/opportunity-intelligence';
 
 export type OpportunityEvent = { at: string; agent: string; message: string };
@@ -102,18 +104,26 @@ export function startOpportunityRun(): { runId: string } {
 
 async function execute(runId: string) {
   try {
+    const live = Boolean(process.env.GOOGLE_MAPS_API_KEY);
+    const discoveryLimit = Math.max(1, Math.min(Number(process.env.OPPORTUNITY_DISCOVERY_LIMIT ?? 20) || 20, 20));
     const niche: NicheDefinition = {
       ...SAUDI_UMRAH_NICHE,
       id: `saudi-umrah-ui-${runId}`,
       name: 'Saudi Umrah Services',
       minimumOpportunityScore: 60,
-      targetBusinessesPerRun: candidates.length,
+      targetBusinessesPerRun: discoveryLimit,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    const discovery = new CompositeDiscoveryAdapter(new SourceDiscoveryProvider([new StaticDiscoverySource(candidates)]));
-    const research = new EvidenceResearchAdapter([new StaticEvidenceSource(evidence)], niche);
+    const discoverySource = live
+      ? new GooglePlacesDiscoverySource()
+      : new StaticDiscoverySource(candidates);
+    const researchSources = live
+      ? [new WebsiteEvidenceSource()]
+      : [new StaticEvidenceSource(evidence)];
+    const discovery = new CompositeDiscoveryAdapter(new SourceDiscoveryProvider([discoverySource]));
+    const research = new EvidenceResearchAdapter(researchSources, niche);
     const service = new OpportunityRunService({
       discovery,
       research,
@@ -123,36 +133,41 @@ async function execute(runId: string) {
     });
 
     setStage('Discovery', 12);
-    event('Discovery Agent', `Searching ${niche.geographies.length} Saudi geographies`);
+    event('Discovery Agent', live
+      ? `Live Google Places discovery enabled — searching ${niche.geographies.length} Saudi geographies`
+      : 'Live discovery not configured — using deterministic local fixtures');
     await delay(250);
-    state.metrics.businessesDiscovered = candidates.length;
-    event('Discovery Agent', `Discovered ${candidates.length} business candidates`);
+
+    const resultPromise = service.execute(niche, runId);
+    await delay(250);
+    state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: 'Discovery stage completed' };
+    state.metrics.businessesDiscovered = discoveryLimit;
+    event('Discovery Agent', live ? 'Live business discovery request completed' : `Loaded ${candidates.length} local candidates`);
     state.completedStages.push('Discovery');
-    state.agents[0] = { name: 'Discovery Agent', status: 'COMPLETED', task: `${candidates.length} candidates found` };
 
     setStage('Research', 32);
-    state.agents[1] = { name: 'Research Agent', status: 'RUNNING', task: 'Collecting business evidence' };
-    event('Research Agent', 'Researching websites and commercial signals');
-    await delay(250);
+    state.agents[1] = { name: 'Research Agent', status: 'RUNNING', task: live ? 'Fetching live public business websites' : 'Collecting deterministic evidence' };
+    event('Research Agent', live ? 'Researching first-party websites returned by Google Places' : 'Researching local evidence');
 
-    const result = await service.execute(niche, runId);
+    const result = await resultPromise;
+    state.metrics.businessesDiscovered = result.metrics.businessesDiscovered;
     state.metrics.businessesResearched = result.metrics.businessesResearched;
     state.metrics.opportunitiesFound = result.metrics.opportunitiesFound;
     state.metrics.highValueOpportunities = result.metrics.highValueOpportunities;
     state.metrics.estimatedPipeline = result.metrics.estimatedPipeline;
-    state.metrics.problemsDetected = result.opportunities.reduce((sum, opportunity) => sum + 1, 0);
+    state.metrics.problemsDetected = result.metrics.qualifiedBusinesses;
 
     event('Research Agent', `Research completed for ${result.metrics.businessesResearched} businesses`);
     state.completedStages.push('Research');
     state.agents[1] = { name: 'Research Agent', status: 'COMPLETED', task: `${result.metrics.businessesResearched} researched` };
 
     setStage('Audit', 58);
-    event('Audit Agent', 'Evaluating website, booking, payment and automation signals');
+    event('Audit Agent', 'Evaluating website, booking, payment and automation signals from collected evidence');
     await delay(200);
     state.completedStages.push('Audit');
 
     setStage('Problems', 70);
-    event('Analysis Agent', `${state.metrics.problemsDetected} commercial problems/opportunity signals detected`);
+    event('Analysis Agent', `${result.metrics.qualifiedBusinesses} businesses produced qualified commercial signals`);
     await delay(200);
     state.completedStages.push('Problems');
 
@@ -171,7 +186,7 @@ async function execute(runId: string) {
     state.running = false;
     state.progress = 100;
     state.stage = 'Completed';
-    event('Orchestrator', `Run completed — $${result.metrics.estimatedPipeline.toLocaleString()} estimated pipeline`);
+    event('Orchestrator', `${live ? 'Live' : 'Local'} run completed — $${result.metrics.estimatedPipeline.toLocaleString()} estimated pipeline`);
   } catch (err) {
     state.running = false;
     state.stage = 'Failed';
