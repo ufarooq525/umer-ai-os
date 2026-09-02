@@ -2,6 +2,7 @@ import { Badge, Card, colors, fonts } from '@umer/ui';
 import { getDashboard, getProjects, getWorkPackages } from '@/lib/control-api';
 import { QuickTaskForm } from '@/components/QuickTaskForm';
 import { OpportunityControlCenter } from '@/components/OpportunityControlCenter';
+import { AIWorkforceCommandCenter } from '@/components/AIWorkforceCommandCenter';
 import { WatchdogFindingsBanner } from '@/components/WatchdogFindingsBanner';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,7 @@ export default async function DashboardPage() {
         </p>
       </header>
 
+      <AIWorkforceCommandCenter />
       <OpportunityControlCenter />
 
       <section style={{ marginTop: 28, marginBottom: 28 }}>
