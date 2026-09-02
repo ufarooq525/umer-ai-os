@@ -4,6 +4,7 @@ import { QuickTaskForm } from '@/components/QuickTaskForm';
 import { OpportunityControlCenter } from '@/components/OpportunityControlCenter';
 import { AIWorkforceCommandCenter } from '@/components/AIWorkforceCommandCenter';
 import { GlobalAISearch } from '@/components/GlobalAISearch';
+import { CrossSystemTimeline } from '@/components/CrossSystemTimeline';
 import { WatchdogFindingsBanner } from '@/components/WatchdogFindingsBanner';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +34,7 @@ export default async function DashboardPage() {
 
       <GlobalAISearch />
       <AIWorkforceCommandCenter />
+      <CrossSystemTimeline />
       <OpportunityControlCenter />
 
       <section style={{ marginTop: 28, marginBottom: 28 }}>
