@@ -21,7 +21,9 @@
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
   },
   "dependencies": {
-    "@umer/contracts": "workspace:*"
+    "@umer/audit": "workspace:*",
+    "@umer/contracts": "workspace:*",
+    "@umer/trust": "workspace:*"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.8",

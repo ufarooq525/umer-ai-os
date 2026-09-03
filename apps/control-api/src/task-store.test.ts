@@ -67,6 +67,32 @@ describe('InMemoryTaskStore', () => {
     expect(events.publish).not.toHaveBeenCalled();
   });
 
+  it('reassign() changes assignedAgentId, preserves status, and emits task.assigned with previousAgentId', async () => {
+    const events = { publish: vi.fn().mockResolvedValue(undefined) };
+    const store = new InMemoryTaskStore({ events });
+    const task = await store.create(baseInput, 'corr-1');
+    await store.assign(task.taskId, 'agent-A', 'corr-1');
+    await store.updateStatus(task.taskId, 'InProgress', 'corr-1');
+    events.publish.mockClear();
+
+    const reassigned = await store.reassign(task.taskId, 'agent-B', 'corr-2');
+
+    expect(reassigned?.assignedAgentId).toBe('agent-B');
+    expect(reassigned?.status).toBe('InProgress');
+    expect(events.publish).toHaveBeenCalledWith(
+      'task.assigned',
+      'corr-2',
+      expect.objectContaining({ taskId: task.taskId, agentId: 'agent-B', previousAgentId: 'agent-A' }),
+    );
+  });
+
+  it('reassign() on an unknown task returns undefined without emitting', async () => {
+    const events = { publish: vi.fn().mockResolvedValue(undefined) };
+    const store = new InMemoryTaskStore({ events });
+    expect(await store.reassign('does-not-exist', 'agent-1', 'corr-1')).toBeUndefined();
+    expect(events.publish).not.toHaveBeenCalled();
+  });
+
   it('(6) Task -> Work Package traceability: linkWorkPackage() sets workPackageId', async () => {
     const store = new InMemoryTaskStore();
     const task = await store.create(baseInput, 'corr-1');

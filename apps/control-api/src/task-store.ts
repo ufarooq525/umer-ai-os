@@ -21,6 +21,8 @@ export type TaskStore = {
   get(taskId: string): Promise<TaskContract | undefined>;
   list(filter?: { status?: TaskStatus; assignedAgentId?: string; projectId?: string }): Promise<TaskContract[]>;
   assign(taskId: string, agentId: string, correlationId: string): Promise<TaskContract | undefined>;
+  /** Reassign an already-assigned task to a different agent — see CommandError's INVALID_TRANSITION guard in the ReassignTask command handler for the "must already be assigned" rule. */
+  reassign(taskId: string, agentId: string, correlationId: string): Promise<TaskContract | undefined>;
   updateStatus(taskId: string, status: TaskStatus, correlationId: string): Promise<TaskContract | undefined>;
   linkWorkPackage(taskId: string, workPackageId: string): Promise<TaskContract | undefined>;
 };
@@ -106,6 +108,27 @@ export class InMemoryTaskStore implements TaskStore {
     await this.events.publish('task.assigned', correlationId, {
       taskId,
       agentId,
+      projectId: updated.projectId,
+    });
+    return updated;
+  }
+
+  async reassign(taskId: string, agentId: string, correlationId: string): Promise<TaskContract | undefined> {
+    const existing = this.byTaskId.get(taskId);
+    if (!existing) {
+      return undefined;
+    }
+    const previousAgentId = existing.assignedAgentId;
+    const updated: TaskContract = {
+      ...existing,
+      assignedAgentId: agentId as TaskContract['assignedAgentId'],
+      updatedAt: new Date().toISOString(),
+    };
+    this.byTaskId.set(taskId, updated);
+    await this.events.publish('task.assigned', correlationId, {
+      taskId,
+      agentId,
+      previousAgentId,
       projectId: updated.projectId,
     });
     return updated;

@@ -22,6 +22,13 @@ export const ProjectStatusSchema = z.enum([
   'Active',
   'Stabilizing',
   'Closing',
+  /**
+   * CEO Command Plane control state (PauseProject/ResumeProject) — added for
+   * this milestone. No migration involved: Project is in-memory-only today
+   * (see sourceOpportunityId doc below), so this is a contract-only addition,
+   * not a database change.
+   */
+  'Paused',
   'Archived',
   'Abandoned',
 ]);

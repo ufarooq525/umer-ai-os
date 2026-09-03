@@ -185,6 +185,9 @@ importers:
       '@umer/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@umer/trust':
+        specifier: workspace:*
+        version: link:../../packages/trust
       node-cron:
         specifier: ^4.6.0
         version: 4.6.0
@@ -420,9 +423,15 @@ importers:
 
   packages/control-plane:
     dependencies:
+      '@umer/audit':
+        specifier: workspace:*
+        version: link:../audit
       '@umer/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@umer/trust':
+        specifier: workspace:*
+        version: link:../trust
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.1.8

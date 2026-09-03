@@ -40,6 +40,8 @@ export const RuntimeEventNameSchema = z.enum([
   'task.status.changed',
   'opportunity.selected',
   'opportunity.project.created',
+  'opportunity.status.changed',
+  'agent.control.changed',
   'artifact.sealed',
   'artifact.accepted',
   'artifact.rejected',

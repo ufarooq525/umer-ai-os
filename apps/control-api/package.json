@@ -25,6 +25,7 @@
     "@umer/observability": "workspace:*",
     "@umer/opportunity-intelligence": "workspace:*",
     "@umer/registry": "workspace:*",
+    "@umer/trust": "workspace:*",
     "node-cron": "^4.6.0"
   },
   "devDependencies": {

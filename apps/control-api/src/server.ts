@@ -1,14 +1,31 @@
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { healthCheck } from '@umer/kernel';
-import { createControlPlaneService, type ControlPlaneService } from '@umer/control-plane';
+import { loadEnv } from '@umer/config';
+import {
+  createCeoCommandService,
+  createControlPlaneService,
+  CommandError,
+  type ControlPlaneService,
+} from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
+import { createTrustRuntime } from '@umer/trust';
 import { createEventBus } from '@umer/event-bus';
-import type { ProjectStatus, TaskStatus } from '@umer/contracts';
+import {
+  SCHEMA_VERSION,
+  type ActorKind,
+  type CeoCommandEnvelope,
+  type CeoCommandName,
+  type CommandTarget,
+  type ProjectStatus,
+  type TaskStatus,
+} from '@umer/contracts';
 import { InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
 import { InMemoryOpportunityPersistence } from '@umer/opportunity-intelligence';
 import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
 import { InMemoryProjectStore } from './project-store.js';
 import { InMemoryTaskStore } from './task-store.js';
+import { InMemoryAgentControlStore } from './agent-control-store.js';
 import {
   type ControlApiState,
   applyEngOnGatePass,
@@ -17,6 +34,7 @@ import {
   applyPerfOnGatePass,
   applyUxOnGatePass,
   applySeoOnGatePass,
+  enrichAgentWithControlState,
   enrichAgentWithProject,
   listProjects,
   listRecentAudit,
@@ -57,10 +75,25 @@ export async function createControlApiState(): Promise<ControlApiState> {
     // Surface a misconfigured producer instead of silently writing nothing forever.
     console.warn(`[control-api] ${fallbackReason}`);
   }
+  const env = loadEnv();
+  const auditService = createAuditService();
+  const trustRuntime = createTrustRuntime();
+  // CEO Command Plane authority: only this principal (human by default) may
+  // execute ceo.command.* actions until a real auth layer exists (@umer/auth
+  // is a skeleton — see COMPANY_OPERATING_MODEL milestone notes). Every other
+  // principal (agents included) is denied by TrustRuntime's default-deny.
+  await trustRuntime.registerGrant({
+    grantId: `grant-ceo-${randomUUID()}`,
+    principalId: env.CEO_PRINCIPAL_ID,
+    action: '*',
+    resourceType: 'command',
+    effect: 'allow',
+  });
+
   const state: ControlApiState = {
     workPackages: [],
     intakes: [],
-    auditService: createAuditService(),
+    auditService,
     projectRegistry: await loadProjectRegistry(),
     controlPlane: null as unknown as ControlPlaneService,
     bus: createEventBus(),
@@ -69,8 +102,19 @@ export async function createControlApiState(): Promise<ControlApiState> {
     agentRegistry: new InMemoryAgentRegistryStore(),
     projectStore: new InMemoryProjectStore(),
     taskStore: new InMemoryTaskStore(),
+    agentControlStore: new InMemoryAgentControlStore(),
     opportunityReader: new InMemoryOpportunityPersistence(),
+    trustRuntime,
   };
+  state.commandService = createCeoCommandService(
+    {
+      opportunities: state.opportunityReader!,
+      projects: state.projectStore!,
+      tasks: state.taskStore!,
+      agentControl: state.agentControlStore!,
+    },
+    { trust: trustRuntime, auditService },
+  );
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
@@ -210,8 +254,10 @@ export function createControlApiServer(state: ControlApiState) {
     }
 
     // --- Company Operating Model: Agent / Project / Task / Opportunity read
-    // endpoints (implementation/COMPANY_OPERATING_MODEL.md). All read-only in
-    // this milestone — no write/POST routes yet (Phase E scope).
+    // endpoints (implementation/COMPANY_OPERATING_MODEL.md). Writes to these
+    // entities now happen exclusively through POST /v1/commands (CEO Command
+    // & Decision Plane, below) — these GET routes are unchanged and simply
+    // read whatever the command handlers just wrote.
 
     if (path === '/v1/agents' && req.method === 'GET') {
       const statusParam = url.searchParams.get('status');
@@ -222,7 +268,11 @@ export function createControlApiServer(state: ControlApiState) {
       const department = url.searchParams.get('department') ?? undefined;
       const specialistId = url.searchParams.get('specialist') ?? undefined;
       const agents = (await state.agentRegistry?.list({ status, department, specialistId })) ?? [];
-      sendJson(res, 200, { agents: await Promise.all(agents.map((agent) => enrichAgentWithProject(state, agent))) });
+      sendJson(res, 200, {
+        agents: await Promise.all(
+          agents.map(async (agent) => enrichAgentWithControlState(state, await enrichAgentWithProject(state, agent))),
+        ),
+      });
       return;
     }
 
@@ -234,7 +284,7 @@ export function createControlApiServer(state: ControlApiState) {
         sendJson(res, 404, { error: `No agent known for id ${agentId}` });
         return;
       }
-      sendJson(res, 200, await enrichAgentWithProject(state, agent));
+      sendJson(res, 200, await enrichAgentWithControlState(state, await enrichAgentWithProject(state, agent)));
       return;
     }
 
@@ -299,6 +349,77 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       sendJson(res, 200, opportunity);
+      return;
+    }
+
+    // CEO Command & Decision Plane — the sanctioned write path for Opportunity
+    // / Project / Task / Agent-control state. This route only translates the
+    // HTTP request into a CeoCommandEnvelope; every business rule (allowed
+    // transitions, idempotency, authorization) lives in
+    // CeoCommandService.execute (@umer/control-plane), not here.
+    //
+    // `body.actor` is trusted client-supplied identity, not a verified
+    // session — there is no authentication layer in front of this route yet
+    // (@umer/auth is still a skeleton). The intended future shape is:
+    //   HTTP authentication -> authenticated principal -> CeoCommandEnvelope
+    //   -> TrustRuntime.authorize -> command handler
+    // i.e. a real auth layer replaces this trusted `body.actor` with a
+    // verified principal and nothing downstream of that point changes —
+    // CeoCommandService already treats `actor` as an opaque, pre-authenticated
+    // input and asks TrustRuntime to authorize it on every command.
+    if (path === '/v1/commands' && req.method === 'POST') {
+      const body = await readJsonBody<{
+        commandId?: string;
+        name?: CeoCommandName;
+        payload?: Record<string, unknown>;
+        actor?: { principalId?: string; kind?: ActorKind };
+        target?: CommandTarget;
+        correlationId?: string;
+        idempotencyKey?: string;
+      }>(req);
+
+      if (!body.name || !body.actor?.principalId || !body.actor?.kind) {
+        sendJson(res, 400, {
+          error: 'MALFORMED_PAYLOAD',
+          message: 'name and actor{principalId,kind} are required',
+        });
+        return;
+      }
+      if (!state.commandService) {
+        sendJson(res, 503, { error: 'command_service_unavailable' });
+        return;
+      }
+
+      const commandId = body.commandId ?? `cmd-${randomUUID()}`;
+      const correlationId = body.correlationId ?? `corr-${commandId}`;
+      // Built as a plain object, not typed CeoCommandEnvelope directly: the
+      // branded id types (CorrelationIdSchema etc.) can only be produced by
+      // zod's own .parse — CeoCommandService.execute does that validation as
+      // its first step (safeParse), so this route doesn't duplicate it.
+      const envelope = {
+        commandId,
+        schemaVersion: SCHEMA_VERSION,
+        name: body.name,
+        issuedAt: new Date().toISOString(),
+        correlationId,
+        producer: 'control-api',
+        payload: body.payload ?? {},
+        idempotencyKey: body.idempotencyKey,
+        actor: { principalId: body.actor.principalId, kind: body.actor.kind },
+        target: body.target,
+      } as unknown as CeoCommandEnvelope;
+
+      try {
+        const result = await state.commandService.execute(envelope);
+        sendJson(res, result.status === 'applied' ? 201 : 200, result);
+      } catch (err) {
+        if (err instanceof CommandError) {
+          const status = err.code === 'UNAUTHORIZED' ? 403 : err.code === 'NOT_FOUND' ? 404 : 400;
+          sendJson(res, status, { error: err.code, message: err.message });
+          return;
+        }
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
       return;
     }
 

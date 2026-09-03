@@ -22,3 +22,4 @@ export * from './events/index.js';
 export * from './audit/index.js';
 export * from './execution/index.js';
 export * from './opportunities/index.js';
+export * from './commands/index.js';

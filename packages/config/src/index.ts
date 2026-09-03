@@ -57,6 +57,14 @@ export const envSchema = z.object({
   AGENT_LOOP_MAX_ITERATIONS: z.coerce.number().default(8),
   /** Agent loop safeguard: wall-clock budget for an entire agent run. */
   AGENT_LOOP_TIMEOUT_MS: z.coerce.number().default(300_000),
+
+  /**
+   * CEO Command Plane: the principalId granted full authority over `ceo.command.*`
+   * actions (see apps/control-api's createControlApiState). No auth layer exists
+   * yet (@umer/auth is a skeleton) so this is trusted client-supplied identity,
+   * not a verified session — see COMPANY_OPERATING_MODEL milestone notes.
+   */
+  CEO_PRINCIPAL_ID: z.string().default('human.ceo'),
 });
 
 export type Env = z.infer<typeof envSchema>;

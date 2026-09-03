@@ -1,8 +1,9 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AuditContract } from '@umer/contracts';
-import type { ControlPlaneService } from '@umer/control-plane';
+import type { CeoCommandService, ControlPlaneService } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
+import type { TrustRuntime } from '@umer/trust';
 import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '@umer/observability';
 import type { OpportunityPersistence } from '@umer/opportunity-intelligence';
 import {
@@ -13,6 +14,7 @@ import {
 } from '@umer/event-bus';
 import type { ProjectStore } from './project-store.js';
 import type { TaskStore } from './task-store.js';
+import type { AgentControlStore } from './agent-control-store.js';
 import {
   applyEngToProject,
   applyQaToProject,
@@ -98,14 +100,23 @@ export type ControlApiState = {
   projectStore?: ProjectStore;
   /** Work Management Task store — see task-store.ts. */
   taskStore?: TaskStore;
+  /** Agent control-state store (CEO Command Plane) — see agent-control-store.ts. */
+  agentControlStore?: AgentControlStore;
   /**
-   * Opportunity Intelligence read access (packages/opportunity-intelligence).
+   * Opportunity Intelligence access (packages/opportunity-intelligence).
    * In-memory by default; main.ts swaps in the real MySQL-backed adapter when
    * reachable, same fail-open pattern as agentRunReadModel's NATS wiring.
-   * control-api never writes here — Opportunity Intelligence remains its own
-   * system of record (see implementation/COMPANY_OPERATING_MODEL.md §Boundary).
+   * Opportunity Intelligence remains the sole owner of this schema/logic —
+   * control-api never writes here ad hoc. The one sanctioned write path is
+   * the CEO Command Plane's Opportunity command handlers (SelectOpportunity /
+   * RejectOpportunity / CreateProjectFromOpportunity), which call
+   * `saveOpportunity` through this same instance via `commandService`.
    */
   opportunityReader?: OpportunityPersistence;
+  /** Trust Runtime (@umer/trust) — authorizes CEO Command Plane commands. */
+  trustRuntime?: TrustRuntime;
+  /** CEO Command & Decision Plane dispatcher — see @umer/control-plane's commands module. */
+  commandService?: CeoCommandService;
 };
 
 export function resolveCatalogPath(): string {
@@ -199,6 +210,25 @@ export async function enrichAgentWithProject(
   }
   const task = await state.taskStore.get(firstTaskId);
   return task ? { ...agent, currentProjectId: task.projectId } : agent;
+}
+
+/**
+ * Resolves an Agent snapshot's CEO Command Plane control state (paused via
+ * PauseAgent, or the default 'active') — computed at read time from
+ * agentControlStore, same pattern as enrichAgentWithProject above. This is
+ * how PauseAgent/ResumeAgent become observable on GET /v1/agents(/:id)
+ * without duplicating state onto the runtime-events-derived AgentSnapshot.
+ */
+export async function enrichAgentWithControlState(
+  state: ControlApiState,
+  agent: AgentSnapshot,
+): Promise<AgentSnapshot & { controlState: 'active' | 'paused'; controlReason?: string }> {
+  const record = await state.agentControlStore?.get(agent.agentId);
+  return {
+    ...agent,
+    controlState: record?.controlState ?? 'active',
+    controlReason: record?.reason,
+  };
 }
 
 /**

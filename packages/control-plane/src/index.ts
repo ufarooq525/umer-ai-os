@@ -23,3 +23,5 @@ export {
   systemClock,
 } from './service.js';
 export { createControlPlaneService, createControlPlaneStack } from './factory.js';
+
+export * from './commands/index.js';
