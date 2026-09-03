@@ -164,6 +164,9 @@ importers:
       '@umer/control-plane':
         specifier: workspace:*
         version: link:../../packages/control-plane
+      '@umer/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@umer/event-bus':
         specifier: workspace:*
         version: link:../../packages/event-bus
@@ -176,6 +179,9 @@ importers:
       '@umer/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@umer/opportunity-intelligence':
+        specifier: workspace:*
+        version: link:../../packages/opportunity-intelligence
       '@umer/registry':
         specifier: workspace:*
         version: link:../../packages/registry

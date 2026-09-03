@@ -64,6 +64,16 @@ const worker = createAgentWorker({
   fabric,
   producer: serviceName,
   artifactEngine,
+  resolveAgentDisplay: (specialistId) => {
+    const loaded = mandatesById.get(specialistId);
+    return loaded
+      ? {
+          name: loaded.mandate.contract.name,
+          department: loaded.mandate.contract.department,
+          capabilityIds: loaded.mandate.contract.capabilityIds,
+        }
+      : undefined;
+  },
 });
 
 const health = await startHealthServer({

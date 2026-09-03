@@ -3,13 +3,16 @@ import { fileURLToPath } from 'node:url';
 import type { AuditContract } from '@umer/contracts';
 import type { ControlPlaneService } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
-import type { AgentRunReadModelStore } from '@umer/observability';
+import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '@umer/observability';
+import type { OpportunityPersistence } from '@umer/opportunity-intelligence';
 import {
   type BusEvent,
   type BusEventSource,
   type EventBus,
   type QaRequestedPayload,
 } from '@umer/event-bus';
+import type { ProjectStore } from './project-store.js';
+import type { TaskStore } from './task-store.js';
 import {
   applyEngToProject,
   applyQaToProject,
@@ -89,6 +92,20 @@ export type ControlApiState = {
    * in existing tests don't need to set it.
    */
   agentRunReadModel?: AgentRunReadModelStore;
+  /** Agent Registry (Runtime Observability domain) — see agentRunReadModel doc above; same optionality reasoning. */
+  agentRegistry?: AgentRegistryStore;
+  /** Work Management Project store — see project-store.ts. Optional for the same test-compatibility reason. */
+  projectStore?: ProjectStore;
+  /** Work Management Task store — see task-store.ts. */
+  taskStore?: TaskStore;
+  /**
+   * Opportunity Intelligence read access (packages/opportunity-intelligence).
+   * In-memory by default; main.ts swaps in the real MySQL-backed adapter when
+   * reachable, same fail-open pattern as agentRunReadModel's NATS wiring.
+   * control-api never writes here — Opportunity Intelligence remains its own
+   * system of record (see implementation/COMPANY_OPERATING_MODEL.md §Boundary).
+   */
+  opportunityReader?: OpportunityPersistence;
 };
 
 export function resolveCatalogPath(): string {
@@ -164,6 +181,24 @@ export async function seedDemoState(state: ControlApiState): Promise<void> {
 
 export function listProjects(state: ControlApiState): ResolvedProject[] {
   return state.projectRegistry.list();
+}
+
+/**
+ * Resolves an Agent snapshot's `currentProjectId` by joining its first
+ * current Task id against the Task store — computed at read time, never
+ * stored on the runtime read-model itself (Phase D: "don't put
+ * business-domain data into the runtime reducer unnecessarily").
+ */
+export async function enrichAgentWithProject(
+  state: ControlApiState,
+  agent: AgentSnapshot,
+): Promise<AgentSnapshot & { currentProjectId?: string }> {
+  const firstTaskId = agent.currentTaskIds?.[0];
+  if (!firstTaskId || !state.taskStore) {
+    return agent;
+  }
+  const task = await state.taskStore.get(firstTaskId);
+  return task ? { ...agent, currentProjectId: task.projectId } : agent;
 }
 
 /**

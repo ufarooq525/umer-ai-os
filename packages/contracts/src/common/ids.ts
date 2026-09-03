@@ -22,6 +22,8 @@ export const AuditIdSchema = IdSchema.brand<'AuditId'>();
 export const CorrelationIdSchema = IdSchema.brand<'CorrelationId'>();
 export const TenantIdSchema = IdSchema.brand<'TenantId'>();
 export const CapabilityIdSchema = IdSchema.brand<'CapabilityId'>();
+export const AgentIdSchema = IdSchema.brand<'AgentId'>();
+export const AgentRunIdSchema = IdSchema.brand<'AgentRunId'>();
 
 export type RequestId = z.infer<typeof RequestIdSchema>;
 export type ExecId = z.infer<typeof ExecIdSchema>;
@@ -39,3 +41,5 @@ export type AuditId = z.infer<typeof AuditIdSchema>;
 export type CorrelationId = z.infer<typeof CorrelationIdSchema>;
 export type TenantId = z.infer<typeof TenantIdSchema>;
 export type CapabilityId = z.infer<typeof CapabilityIdSchema>;
+export type AgentId = z.infer<typeof AgentIdSchema>;
+export type AgentRunId = z.infer<typeof AgentRunIdSchema>;

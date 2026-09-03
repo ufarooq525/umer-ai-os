@@ -18,10 +18,12 @@
     "@umer/audit": "workspace:*",
     "@umer/config": "workspace:*",
     "@umer/control-plane": "workspace:*",
+    "@umer/db": "workspace:*",
     "@umer/event-bus": "workspace:*",
     "@umer/kernel": "workspace:*",
     "@umer/message-fabric": "workspace:*",
     "@umer/observability": "workspace:*",
+    "@umer/opportunity-intelligence": "workspace:*",
     "@umer/registry": "workspace:*",
     "node-cron": "^4.6.0"
   },

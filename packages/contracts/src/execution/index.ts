@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { withContractHeader } from '../common/envelope.js';
 import {
+  AgentIdSchema,
   ExecIdSchema,
   ProjectIdSchema,
   RequestIdSchema,
@@ -79,6 +80,8 @@ export const TaskContractSchema = withContractHeader({
   acceptanceCriteria: z.array(z.string().min(1)).min(1),
   capabilityIds: z.array(CapabilityIdSchema).default([]),
   owner: z.string().min(1).optional(),
+  /** Agent (worker identity) currently assigned to this Task — distinct from `owner`. */
+  assignedAgentId: AgentIdSchema.optional(),
   sprintId: z.string().optional(),
   workPackageId: z.string().optional(),
 });

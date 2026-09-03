@@ -56,6 +56,15 @@ export type AgentRunSnapshot = {
   runId?: string;
   execId?: string;
   specialistId?: string;
+  /** Worker identity that executed this run — see @umer/observability's agent-registry.ts. */
+  agentId?: string;
+  /**
+   * Task ids this run's Work Package traces back to (IDs only, per the "don't
+   * put business-domain data into the runtime reducer" rule — a project
+   * relationship is resolved by joining these against the Task store at read
+   * time, not baked in here).
+   */
+  taskIds?: string[];
   correlationId: string;
   status: AgentRunStatus;
   currentAction: AgentRunCurrentAction;
@@ -138,6 +147,10 @@ function num(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+function strArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((v) => typeof v === 'string') ? (value as string[]) : undefined;
+}
+
 function findToolCall(snapshot: AgentRunSnapshot, toolCallId: string): ToolCallRecord | undefined {
   return snapshot.toolCalls.find((t) => t.toolCallId === toolCallId);
 }
@@ -177,6 +190,8 @@ export function projectRuntimeEvent(
     ...base,
     execId: str(payload.execId) || base.execId,
     specialistId: str(payload.specialistId) || base.specialistId,
+    agentId: str(payload.agentId) || base.agentId,
+    taskIds: strArray(payload.taskIds) ?? base.taskIds,
     correlationId: event.correlationId,
     updatedAt: event.occurredAt,
   };

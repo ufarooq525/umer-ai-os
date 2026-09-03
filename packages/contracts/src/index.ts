@@ -10,6 +10,8 @@ export * from './common/index.js';
 export * from './requests/index.js';
 export * from './work-packages/index.js';
 export * from './specialists/index.js';
+export * from './agents/index.js';
+export * from './projects/index.js';
 export * from './artifacts/index.js';
 export * from './context/index.js';
 export * from './memory/index.js';

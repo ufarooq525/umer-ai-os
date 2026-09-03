@@ -85,3 +85,11 @@ export {
   type ToolCallRecord,
   type ToolCallStatus,
 } from './agent-run-read-model.js';
+
+export {
+  InMemoryAgentRegistryStore,
+  projectAgentEvent,
+  type AgentRegistryStore,
+  type AgentSnapshot,
+  type AgentSnapshotStatus,
+} from './agent-registry.js';

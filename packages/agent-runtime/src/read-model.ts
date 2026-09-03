@@ -1,5 +1,5 @@
 import type { EventEnvelope } from '@umer/contracts';
-import type { AgentRunReadModelStore } from '@umer/observability';
+import type { AgentRegistryStore, AgentRunReadModelStore } from '@umer/observability';
 import {
   STREAMS,
   SUBJECTS,
@@ -34,11 +34,19 @@ export type SubscribeAgentRunReadModelOptions = {
    * per publish) is the natural dedup key here.
    */
   idempotencyStore?: IdempotencyStore;
+  /**
+   * Optional sibling Agent Registry store (@umer/observability's
+   * agent-registry.ts) — projected from the SAME subscription rather than a
+   * second NATS consumer on the same subject, since both stores key off the
+   * same evt.runtime.agent.> events and share the same idempotency gate.
+   */
+  agentRegistry?: AgentRegistryStore;
 };
 
 /**
  * Wires the Agent Run read-model projector (packages/observability/src/agent-run-read-model.ts)
- * to the real Message Fabric event stream. This is the "smallest architecture-
+ * — and, when supplied, the Agent Registry projector (agent-registry.ts) — to
+ * the real Message Fabric event stream. This is the "smallest architecture-
  * consistent" fix for the read-model gap: no new database, no new transport —
  * it subscribes to the same evt.runtime.agent.> events every agent-worker
  * already publishes, using the existing subscribeEvents API.
@@ -64,6 +72,7 @@ export async function subscribeAgentRunReadModel(
         return;
       }
       await store.project(event);
+      await options.agentRegistry?.project(event);
       await idempotency.mark(event.eventId);
       ctx.ack();
     },

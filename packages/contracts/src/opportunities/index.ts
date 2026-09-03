@@ -6,6 +6,29 @@ import { z } from 'zod';
  * These models deliberately separate markets, problems, businesses and
  * opportunities so discovery is not hard-coded around lead generation.
  */
+/**
+ * Sales/discovery lifecycle (existing) plus two additive bridge statuses that
+ * connect this Opportunity to Work Management execution: `selected_for_execution`
+ * (committed to build; not a sales-funnel state) and `project_created` (a
+ * ProjectContract now exists for it). Both are plain enum values stored in
+ * the existing `status` column — no migration needed, so they round-trip
+ * through the MySQL adapter exactly like every other status value.
+ *
+ * There is deliberately no "executing"/"failed" status here: once a Project
+ * exists, that Project's own status is the source of truth for execution
+ * progress, never duplicated on the Opportunity.
+ *
+ * IMPORTANT — this contract intentionally has NO `projectId` field. The
+ * MySQL-persisted `opportunity_opportunities` table has no column for it and
+ * this milestone adds no migration, so a `projectId` field here would only
+ * round-trip through the in-memory store and silently vanish through MySQL —
+ * a persistence lie. The forward reference is recorded the other way instead:
+ * `ProjectContract.sourceOpportunityId` (control-api's own in-memory store,
+ * honestly documented as in-memory-only, no false persistence claim). Finding
+ * "which Project did opportunity X become" today means querying the Project
+ * store for `sourceOpportunityId === X`, not reading a field off the
+ * Opportunity. See implementation/COMPANY_OPERATING_MODEL.md §Boundary.
+ */
 export const OpportunityStatusSchema = z.enum([
   'discovered',
   'researching',
@@ -16,6 +39,8 @@ export const OpportunityStatusSchema = z.enum([
   'lost',
   'rejected',
   'converted_to_product',
+  'selected_for_execution',
+  'project_created',
 ]);
 
 export const NicheStatusSchema = z.enum([

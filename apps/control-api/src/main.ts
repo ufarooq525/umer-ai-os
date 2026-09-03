@@ -8,6 +8,7 @@ import {
 } from './server.js';
 import { startQaNightlyWatchdogCron } from './qa-nightly-scheduler.js';
 import { startAgentRunReadModelSubscription } from './agent-run-subscription.js';
+import { connectOpportunityReader } from './opportunity-link.js';
 
 const serviceName = 'control-api';
 const log = createLogger(serviceName);
@@ -16,6 +17,7 @@ const env = loadEnv();
 const state = await createControlApiState();
 await bootstrapDemoState(state);
 const agentRunSubscription = await startAgentRunReadModelSubscription(state);
+await connectOpportunityReader(state);
 
 const runtime = await startRuntime({
   serviceName,

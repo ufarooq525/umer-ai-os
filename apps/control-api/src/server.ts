@@ -3,8 +3,12 @@ import { healthCheck } from '@umer/kernel';
 import { createControlPlaneService, type ControlPlaneService } from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
 import { createEventBus } from '@umer/event-bus';
-import { InMemoryAgentRunReadModelStore } from '@umer/observability';
+import type { ProjectStatus, TaskStatus } from '@umer/contracts';
+import { InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
+import { InMemoryOpportunityPersistence } from '@umer/opportunity-intelligence';
 import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
+import { InMemoryProjectStore } from './project-store.js';
+import { InMemoryTaskStore } from './task-store.js';
 import {
   type ControlApiState,
   applyEngOnGatePass,
@@ -13,6 +17,7 @@ import {
   applyPerfOnGatePass,
   applyUxOnGatePass,
   applySeoOnGatePass,
+  enrichAgentWithProject,
   listProjects,
   listRecentAudit,
   loadProjectRegistry,
@@ -61,6 +66,10 @@ export async function createControlApiState(): Promise<ControlApiState> {
     bus: createEventBus(),
     codeProducer: producer,
     agentRunReadModel: new InMemoryAgentRunReadModelStore(),
+    agentRegistry: new InMemoryAgentRegistryStore(),
+    projectStore: new InMemoryProjectStore(),
+    taskStore: new InMemoryTaskStore(),
+    opportunityReader: new InMemoryOpportunityPersistence(),
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
@@ -197,6 +206,99 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       sendJson(res, 200, snapshot);
+      return;
+    }
+
+    // --- Company Operating Model: Agent / Project / Task / Opportunity read
+    // endpoints (implementation/COMPANY_OPERATING_MODEL.md). All read-only in
+    // this milestone — no write/POST routes yet (Phase E scope).
+
+    if (path === '/v1/agents' && req.method === 'GET') {
+      const statusParam = url.searchParams.get('status');
+      const status =
+        statusParam === 'idle' || statusParam === 'active' || statusParam === 'blocked' || statusParam === 'offline'
+          ? statusParam
+          : undefined;
+      const department = url.searchParams.get('department') ?? undefined;
+      const specialistId = url.searchParams.get('specialist') ?? undefined;
+      const agents = (await state.agentRegistry?.list({ status, department, specialistId })) ?? [];
+      sendJson(res, 200, { agents: await Promise.all(agents.map((agent) => enrichAgentWithProject(state, agent))) });
+      return;
+    }
+
+    const agentMatch = path.match(/^\/v1\/agents\/([^/]+)$/);
+    if (agentMatch && req.method === 'GET') {
+      const agentId = decodeURIComponent(agentMatch[1]!);
+      const agent = await state.agentRegistry?.get(agentId);
+      if (!agent) {
+        sendJson(res, 404, { error: `No agent known for id ${agentId}` });
+        return;
+      }
+      sendJson(res, 200, await enrichAgentWithProject(state, agent));
+      return;
+    }
+
+    // Named /v1/work-projects (not /v1/projects — that path already serves the
+    // @umer/registry codebase catalog; this is the Work Management Project
+    // noun instead. See implementation/COMPANY_OPERATING_MODEL.md §Boundary.)
+    if (path === '/v1/work-projects' && req.method === 'GET') {
+      const status = (url.searchParams.get('status') as ProjectStatus | null) ?? undefined;
+      const owner = url.searchParams.get('owner') ?? undefined;
+      const projects = (await state.projectStore?.list({ status, owner })) ?? [];
+      sendJson(res, 200, { projects });
+      return;
+    }
+
+    const workProjectMatch = path.match(/^\/v1\/work-projects\/([^/]+)$/);
+    if (workProjectMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(workProjectMatch[1]!);
+      const project = await state.projectStore?.get(projectId);
+      if (!project) {
+        sendJson(res, 404, { error: `No project known for id ${projectId}` });
+        return;
+      }
+      sendJson(res, 200, project);
+      return;
+    }
+
+    if (path === '/v1/tasks' && req.method === 'GET') {
+      const status = (url.searchParams.get('status') as TaskStatus | null) ?? undefined;
+      const assignedAgentId = url.searchParams.get('agent') ?? undefined;
+      const projectId = url.searchParams.get('project') ?? undefined;
+      const tasks = (await state.taskStore?.list({ status, assignedAgentId, projectId })) ?? [];
+      sendJson(res, 200, { tasks });
+      return;
+    }
+
+    const taskMatch = path.match(/^\/v1\/tasks\/([^/]+)$/);
+    if (taskMatch && req.method === 'GET') {
+      const taskId = decodeURIComponent(taskMatch[1]!);
+      const task = await state.taskStore?.get(taskId);
+      if (!task) {
+        sendJson(res, 404, { error: `No task known for id ${taskId}` });
+        return;
+      }
+      sendJson(res, 200, task);
+      return;
+    }
+
+    if (path === '/v1/opportunities' && req.method === 'GET') {
+      const statusFilter = url.searchParams.get('status') ?? undefined;
+      const all = (await state.opportunityReader?.listOpportunities()) ?? [];
+      const filtered = statusFilter ? all.filter((o) => o.status === statusFilter) : all;
+      sendJson(res, 200, { opportunities: filtered });
+      return;
+    }
+
+    const opportunityMatch = path.match(/^\/v1\/opportunities\/([^/]+)$/);
+    if (opportunityMatch && req.method === 'GET') {
+      const opportunityId = decodeURIComponent(opportunityMatch[1]!);
+      const opportunity = await state.opportunityReader?.getOpportunity(opportunityId);
+      if (!opportunity) {
+        sendJson(res, 404, { error: `No opportunity known for id ${opportunityId}` });
+        return;
+      }
+      sendJson(res, 200, opportunity);
       return;
     }
 

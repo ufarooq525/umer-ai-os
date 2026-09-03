@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SCHEMA_VERSION, type EventEnvelope } from '@umer/contracts';
-import { InMemoryAgentRunReadModelStore } from '@umer/observability';
+import { InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
 import {
   MessageFabricClient,
   STREAMS,
@@ -171,6 +171,34 @@ describe('subscribeAgentRunReadModel', () => {
 
     const snapshot = await store.get('wp-1');
     expect(snapshot?.toolCalls.map((t) => t.toolCallId)).toEqual(['call_1', 'call_2']);
+  });
+
+  it('also projects into the Agent Registry when one is supplied, using the same idempotency gate', async () => {
+    const { fabric, getHandler } = fakeFabric();
+    const runStore = new InMemoryAgentRunReadModelStore();
+    const agentRegistry = new InMemoryAgentRegistryStore();
+    await subscribeAgentRunReadModel(fabric, runStore, { agentRegistry });
+    const handler = getHandler()!;
+
+    const started = makeEvent({
+      name: 'agent.run.started',
+      payload: { workPackageId: 'wp-1', specialistId: 'growth.opportunity-research', agentId: 'agent-1' },
+    });
+    await handler(started, { ack: vi.fn() });
+    await handler(started, { ack: vi.fn() }); // redelivery — must not double-apply to either store
+
+    expect(await runStore.get('wp-1')).toMatchObject({ status: 'running', agentId: 'agent-1' });
+    const agent = await agentRegistry.get('agent-1');
+    expect(agent?.status).toBe('active');
+    expect(agent?.currentWorkPackageId).toBe('wp-1');
+
+    const completed = makeEvent({
+      name: 'agent.run.completed',
+      payload: { workPackageId: 'wp-1', agentId: 'agent-1', runId: 'wp-1:corr-1', artifactId: 'art-1' },
+    });
+    await handler(completed, { ack: vi.fn() });
+    expect((await agentRegistry.get('agent-1'))?.status).toBe('idle');
+    expect((await runStore.get('wp-1'))?.status).toBe('completed');
   });
 
   it('honors a caller-supplied idempotency store', async () => {
