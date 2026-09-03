@@ -12,7 +12,10 @@
       "Bash(pnpm --filter @umer/app-web run test)",
       "Bash(pnpm --filter @umer/app-web run build)",
       "Bash(pnpm run *)",
-      "Bash(curl -s http://127.0.0.1:3001/command-center)"
+      "Bash(curl -s http://127.0.0.1:3001/command-center)",
+      "Bash(wmic process *)",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=40480' | Select-Object ProcessId,ParentProcessId,CommandLine | Format-List\")",
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 40480 -Force\")"
     ],
     "additionalDirectories": [
       "C:\\laragon\\www\\umer-ai-os\\apps\\web\\apps\\web\\src\\app\\company\\opportunities"
