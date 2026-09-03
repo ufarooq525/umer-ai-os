@@ -63,13 +63,21 @@ export class AgentWorker {
   }
 
   private async handleDispatch(command: CommandEnvelope): Promise<void> {
-    const workPackageId = String(
-      (command.payload as { workPackage?: { workPackageId?: string } }).workPackage?.workPackageId ??
-        '',
-    );
+    const rawWorkPackage = (
+      command.payload as {
+        workPackage?: { workPackageId?: string; execId?: string; specialistId?: string };
+      }
+    ).workPackage;
+    const workPackageId = String(rawWorkPackage?.workPackageId ?? '');
 
+    // Best-effort correlation fields straight off the raw dispatch payload —
+    // read before contract validation so the very first agent.run.started
+    // event a CEO read model sees already knows which specialist/exec this is,
+    // instead of only finding out once agent.llm.requested fires.
     await this.publishAgentEvent('agent.run.started', command.correlationId, {
       workPackageId,
+      ...(rawWorkPackage?.execId ? { execId: rawWorkPackage.execId } : {}),
+      ...(rawWorkPackage?.specialistId ? { specialistId: rawWorkPackage.specialistId } : {}),
     });
 
     try {

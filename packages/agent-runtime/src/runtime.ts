@@ -6,10 +6,12 @@ import type { SpecialistMandate, RuntimeBinding } from '@umer/specialist-sdk';
 import { evaluateRefusal } from '@umer/specialist-sdk';
 import { assertMandateBinding } from './bind.js';
 import { AgentRuntimeError } from './errors.js';
+import { createNoopAgentEventPublisher, type AgentEventPublisher } from './events.js';
 import {
   runEngineeringApplicationDelivery,
   type SpecialistRunResult,
 } from './handlers/engineering.js';
+import { runLlmAgent, type LlmAgentDependencies } from './handlers/llm-agent.js';
 
 export type AgentRunResult = {
   workPackageId: string;
@@ -18,6 +20,9 @@ export type AgentRunResult = {
   summary: string;
   artifact: SpecialistRunResult['artifact'];
 };
+
+/** Specialists whose mandate forbids LLM-invented content and must stay deterministic. */
+const DETERMINISTIC_SPECIALISTS = new Set(['eng.app-delivery']);
 
 export type AgentRuntimeOptions = {
   resolveMandate: (specialistId: string) => Promise<{
@@ -28,6 +33,9 @@ export type AgentRuntimeOptions = {
   memoryPrincipal?: MemoryAccessPrincipal;
   trustRuntime?: TrustRuntime;
   auditService?: AuditService;
+  events?: AgentEventPublisher;
+  /** Model Routing + Extension wiring for the generic LLM agent loop. */
+  llm?: LlmAgentDependencies;
 };
 
 export class AgentRuntime {
@@ -36,6 +44,8 @@ export class AgentRuntime {
   private readonly memoryPrincipal?: MemoryAccessPrincipal;
   private readonly trustRuntime?: TrustRuntime;
   private readonly auditService?: AuditService;
+  private readonly events: AgentEventPublisher;
+  private readonly llm?: LlmAgentDependencies;
 
   constructor(options: AgentRuntimeOptions) {
     this.resolveMandate = options.resolveMandate;
@@ -43,9 +53,15 @@ export class AgentRuntime {
     this.memoryPrincipal = options.memoryPrincipal;
     this.trustRuntime = options.trustRuntime;
     this.auditService = options.auditService;
+    this.events = options.events ?? createNoopAgentEventPublisher();
+    this.llm = options.llm;
   }
 
-  async execute(commandPayload: unknown, correlationId: string): Promise<AgentRunResult> {
+  async execute(
+    commandPayload: unknown,
+    correlationId: string,
+    signal?: AbortSignal,
+  ): Promise<AgentRunResult> {
     const workPackage = parseContract(
       WorkPackageContractSchema,
       (commandPayload as { workPackage?: unknown }).workPackage,
@@ -115,7 +131,13 @@ export class AgentRuntime {
               correlationId,
             )
           : undefined;
-      const result = await this.runSpecialist(workPackage, resolved.mandate, retrievalBundle);
+      const result = await this.runSpecialist(
+        workPackage,
+        resolved.mandate,
+        correlationId,
+        retrievalBundle,
+        signal,
+      );
       await this.auditService?.append(
         {
           action: 'agent.run.completed',
@@ -136,6 +158,9 @@ export class AgentRuntime {
         artifact: result.artifact,
       };
     } catch (err) {
+      if (err instanceof AgentRuntimeError) {
+        throw err;
+      }
       throw new AgentRuntimeError(
         'HANDLER_FAILED',
         err instanceof Error ? err.message : String(err),
@@ -147,11 +172,27 @@ export class AgentRuntime {
   private async runSpecialist(
     workPackage: WorkPackageContract,
     mandate: SpecialistMandate,
+    correlationId: string,
     retrievalBundle?: Awaited<ReturnType<MemoryAccessService['retrieve']>>,
+    signal?: AbortSignal,
   ): Promise<SpecialistRunResult> {
-    if (mandate.contract.specialistId === 'eng.app-delivery') {
+    if (DETERMINISTIC_SPECIALISTS.has(mandate.contract.specialistId)) {
       return runEngineeringApplicationDelivery(workPackage, mandate, { retrievalBundle });
     }
-    return runEngineeringApplicationDelivery(workPackage, mandate, { retrievalBundle });
+
+    if (!this.llm) {
+      throw new AgentRuntimeError(
+        'LLM_NOT_CONFIGURED',
+        `No Model Routing / LLM provider configured for specialist ${mandate.contract.specialistId}`,
+      );
+    }
+
+    return runLlmAgent(
+      workPackage,
+      mandate,
+      { ...this.llm, events: this.llm.events ?? this.events },
+      correlationId,
+      { retrievalBundle, signal },
+    );
   }
 }

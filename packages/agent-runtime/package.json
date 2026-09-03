@@ -27,7 +27,11 @@
     "@umer/memory-access": "workspace:*",
     "@umer/specialist-sdk": "workspace:*",
     "@umer/trust": "workspace:*",
-    "@umer/audit": "workspace:*"
+    "@umer/audit": "workspace:*",
+    "@umer/model-routing": "workspace:*",
+    "@umer/extension": "workspace:*",
+    "@umer/resilience": "workspace:*",
+    "@umer/observability": "workspace:*"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.8",

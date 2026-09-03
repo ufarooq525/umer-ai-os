@@ -10,3 +10,14 @@ export { WORK_PACKAGE_DISPATCH_COMMAND } from './constants.js';
 export { AgentWorker, createAgentWorker, type AgentWorkerOptions } from './worker.js';
 export { createAgentRuntime, createAgentStack, type CreateAgentRuntimeOptions } from './factory.js';
 export { runEngineeringApplicationDelivery, type SpecialistRunResult } from './handlers/engineering.js';
+export { runLlmAgent, type LlmAgentDependencies, type LlmAgentRunOptions } from './handlers/llm-agent.js';
+export {
+  createNoopAgentEventPublisher,
+  createMessageFabricAgentEventPublisher,
+  type AgentEventPublisher,
+} from './events.js';
+export {
+  subscribeAgentRunReadModel,
+  type RuntimeEventSource,
+  type SubscribeAgentRunReadModelOptions,
+} from './read-model.js';

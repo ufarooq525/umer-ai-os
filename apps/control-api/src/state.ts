@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type { AuditContract } from '@umer/contracts';
 import type { ControlPlaneService } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
+import type { AgentRunReadModelStore } from '@umer/observability';
 import {
   type BusEvent,
   type BusEventSource,
@@ -80,6 +81,14 @@ export type ControlApiState = {
   codeProducer?: CodeProducer;
   /** Internal: QA shim subscribed once. */
   qaBusShimRegistered?: boolean;
+  /**
+   * Agent Run read model (Runtime Observability domain) — control-api is the
+   * blueprint's designated read-model owner. Always present and safe to read
+   * even when no live Message Fabric subscription is wired (see main.ts):
+   * it just stays empty. Optional only so hand-built ControlApiState literals
+   * in existing tests don't need to set it.
+   */
+  agentRunReadModel?: AgentRunReadModelStore;
 };
 
 export function resolveCatalogPath(): string {

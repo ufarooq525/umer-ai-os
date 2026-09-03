@@ -19,7 +19,9 @@
     "@umer/observability": "workspace:*",
     "@umer/kernel": "workspace:*",
     "@umer/message-fabric": "workspace:*",
-    "@umer/specialist-sdk": "workspace:*"
+    "@umer/specialist-sdk": "workspace:*",
+    "@umer/model-routing": "workspace:*",
+    "@umer/extension": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

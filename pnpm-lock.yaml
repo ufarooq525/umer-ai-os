@@ -77,12 +77,18 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@umer/extension':
+        specifier: workspace:*
+        version: link:../../packages/extension
       '@umer/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
       '@umer/message-fabric':
         specifier: workspace:*
         version: link:../../packages/message-fabric
+      '@umer/model-routing':
+        specifier: workspace:*
+        version: link:../../packages/model-routing
       '@umer/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -146,6 +152,9 @@ importers:
 
   apps/control-api:
     dependencies:
+      '@umer/agent-runtime':
+        specifier: workspace:*
+        version: link:../../packages/agent-runtime
       '@umer/audit':
         specifier: workspace:*
         version: link:../../packages/audit
@@ -161,6 +170,9 @@ importers:
       '@umer/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@umer/message-fabric':
+        specifier: workspace:*
+        version: link:../../packages/message-fabric
       '@umer/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -282,12 +294,24 @@ importers:
       '@umer/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@umer/extension':
+        specifier: workspace:*
+        version: link:../extension
       '@umer/memory-access':
         specifier: workspace:*
         version: link:../memory-access
       '@umer/message-fabric':
         specifier: workspace:*
         version: link:../message-fabric
+      '@umer/model-routing':
+        specifier: workspace:*
+        version: link:../model-routing
+      '@umer/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@umer/resilience':
+        specifier: workspace:*
+        version: link:../resilience
       '@umer/specialist-sdk':
         specifier: workspace:*
         version: link:../specialist-sdk
@@ -436,10 +460,20 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
   packages/extension:
+    dependencies:
+      '@umer/model-routing':
+        specifier: workspace:*
+        version: link:../model-routing
+      '@umer/resilience':
+        specifier: workspace:*
+        version: link:../resilience
     devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/kernel:
     dependencies:
@@ -511,10 +545,20 @@ importers:
         version: 2.1.9(@types/node@22.20.1)
 
   packages/model-routing:
+    dependencies:
+      '@umer/config':
+        specifier: workspace:*
+        version: link:../config
+      '@umer/resilience':
+        specifier: workspace:*
+        version: link:../resilience
     devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/observability:
     dependencies:
@@ -539,6 +583,9 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../config
+      '@umer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       pino:
         specifier: ^9.6.0
         version: 9.14.0
@@ -546,6 +593,9 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/opportunity-intelligence:
     dependencies:
@@ -612,6 +662,9 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/resource-economy:
     devDependencies:

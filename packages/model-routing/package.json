@@ -16,11 +16,15 @@
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --max-warnings=0",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@umer/config": "workspace:*",
+    "@umer/resilience": "workspace:*"
+  },
   "devDependencies": {
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   }
 }

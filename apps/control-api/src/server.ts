@@ -3,6 +3,7 @@ import { healthCheck } from '@umer/kernel';
 import { createControlPlaneService, type ControlPlaneService } from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
 import { createEventBus } from '@umer/event-bus';
+import { InMemoryAgentRunReadModelStore } from '@umer/observability';
 import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
 import {
   type ControlApiState,
@@ -59,6 +60,7 @@ export async function createControlApiState(): Promise<ControlApiState> {
     controlPlane: null as unknown as ControlPlaneService,
     bus: createEventBus(),
     codeProducer: producer,
+    agentRunReadModel: new InMemoryAgentRunReadModelStore(),
   };
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
@@ -170,6 +172,31 @@ export function createControlApiServer(state: ControlApiState) {
 
     if (path === '/v1/work-packages' && req.method === 'GET') {
       sendJson(res, 200, { workPackages: state.workPackages });
+      return;
+    }
+
+    // Agent Run read model — Runtime Observability domain (MONOREPO_BLUEPRINT.md
+    // §15 / implementation/LLM_AGENT_EXECUTION.md §8b). Backed by an in-memory
+    // projection of evt.runtime.agent.> events; empty until a live Message
+    // Fabric subscription is wired in main.ts (see startAgentRunReadModelSubscription).
+    if (path === '/v1/agent-runs' && req.method === 'GET') {
+      const store = state.agentRunReadModel ?? new InMemoryAgentRunReadModelStore();
+      const statusParam = url.searchParams.get('status');
+      const status = statusParam === 'running' || statusParam === 'completed' || statusParam === 'failed' ? statusParam : undefined;
+      sendJson(res, 200, { agentRuns: await store.list(status ? { status } : undefined) });
+      return;
+    }
+
+    const agentRunMatch = path.match(/^\/v1\/agent-runs\/([^/]+)$/);
+    if (agentRunMatch && req.method === 'GET') {
+      const workPackageId = decodeURIComponent(agentRunMatch[1]!);
+      const store = state.agentRunReadModel ?? new InMemoryAgentRunReadModelStore();
+      const snapshot = await store.get(workPackageId);
+      if (!snapshot) {
+        sendJson(res, 404, { error: `No agent run known for work package ${workPackageId}` });
+        return;
+      }
+      sendJson(res, 200, snapshot);
       return;
     }
 

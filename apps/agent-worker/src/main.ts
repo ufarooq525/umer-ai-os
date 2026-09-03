@@ -4,28 +4,62 @@ import { loadEnv } from '@umer/config';
 import { startRuntime, startHealthServer, healthCheck } from '@umer/kernel';
 import { createMessageFabric } from '@umer/message-fabric';
 import { createLogger } from '@umer/observability';
-import { createAgentRuntime, createAgentWorker } from '@umer/agent-runtime';
+import {
+  createAgentRuntime,
+  createAgentWorker,
+  createMessageFabricAgentEventPublisher,
+} from '@umer/agent-runtime';
 import { InMemoryRegistryAdapter, loadSpecFromFile } from '@umer/specialist-sdk';
 import { createArtifactStack } from '@umer/artifacts';
+import { createLLMProviderFromEnv } from '@umer/model-routing';
+import { createSearchWebTool, createToolRegistry, createToolRouter } from '@umer/extension';
 
 const serviceName = 'agent-worker';
 const log = createLogger(serviceName);
 const env = loadEnv();
 
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
-const specPath = join(repoRoot, 'specialists', 'engineering', 'application-delivery.md');
-const loaded = await loadSpecFromFile(specPath);
+const specialistsDir = join(repoRoot, 'specialists');
+
+// Every registered Specialist mandate this worker can execute Work Packages for.
+// eng.app-delivery stays on the deterministic structured-change-set handler
+// (its own mandate forbids invented content); every other specialist below runs
+// through the generic Model Routing → LLM Provider → Tool Router agent loop.
+const specPaths = [
+  join(specialistsDir, 'engineering', 'application-delivery.md'),
+  join(specialistsDir, 'growth', 'opportunity-research.md'),
+];
+
+const loadedSpecs = await Promise.all(specPaths.map((path) => loadSpecFromFile(path)));
 const registry = new InMemoryRegistryAdapter();
-await registry.register(loaded.binding);
+for (const loaded of loadedSpecs) {
+  await registry.register(loaded.binding);
+}
+const mandatesById = new Map(loadedSpecs.map((loaded) => [loaded.binding.specialistId, loaded]));
+
+const toolRegistry = createToolRegistry();
+toolRegistry.register(createSearchWebTool());
+const toolRouter = createToolRouter({ registry: toolRegistry });
+const llmProvider = createLLMProviderFromEnv({ env });
 
 const fabric = await createMessageFabric({ producer: serviceName });
 const { engine: artifactEngine } = createArtifactStack();
 const worker = createAgentWorker({
   runtime: createAgentRuntime({
-    resolveMandate: async (specialistId) =>
-      specialistId === loaded.binding.specialistId
-        ? { mandate: loaded.mandate, binding: loaded.binding }
-        : undefined,
+    resolveMandate: async (specialistId) => {
+      const loaded = mandatesById.get(specialistId);
+      return loaded ? { mandate: loaded.mandate, binding: loaded.binding } : undefined;
+    },
+    events: createMessageFabricAgentEventPublisher(fabric, serviceName),
+    llm: {
+      provider: llmProvider,
+      toolRegistry,
+      toolRouter,
+      maxIterations: env.AGENT_LOOP_MAX_ITERATIONS,
+      runTimeoutMs: env.AGENT_LOOP_TIMEOUT_MS,
+      temperature: env.LLM_TEMPERATURE,
+      maxTokens: env.LLM_MAX_TOKENS,
+    },
   }),
   fabric,
   producer: serviceName,
@@ -49,7 +83,12 @@ await startRuntime({
 
 await worker.start();
 log.info(
-  { specialistId: loaded.binding.specialistId, healthPort: health.port },
+  {
+    specialistIds: [...mandatesById.keys()],
+    llmProvider: env.LLM_PROVIDER,
+    llmModel: env.LLM_MODEL,
+    healthPort: health.port,
+  },
   'agent-worker consuming cmd.agent.dispatch',
 );
 

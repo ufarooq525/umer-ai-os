@@ -71,3 +71,17 @@ export function getTracer(name: string) {
 }
 
 export type { Logger } from 'pino';
+
+export {
+  InMemoryAgentRunReadModelStore,
+  projectRuntimeEvent,
+  type ActionLogEntry,
+  type AgentRunCurrentAction,
+  type AgentRunReadModelStore,
+  type AgentRunSnapshot,
+  type AgentRunStatus,
+  type DecisionRecord,
+  type FailureRecord,
+  type ToolCallRecord,
+  type ToolCallStatus,
+} from './agent-run-read-model.js';

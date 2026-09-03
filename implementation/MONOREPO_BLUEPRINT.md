@@ -6,6 +6,9 @@
 
 Architecture SoR remains the markdown tree. This document is the software plan to build Version 1.
 
+**Companion:** `implementation/LLM_AGENT_EXECUTION.md` documents how `@umer/model-routing` and
+`@umer/extension` implement real LLM + tool-calling execution inside the Agent Runtime described here.
+
 ---
 
 ## 0. Implementation principles

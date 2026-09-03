@@ -4,7 +4,12 @@ export type AgentRuntimeErrorCode =
   | 'HANDLER_FAILED'
   | 'INVALID_WORK_PACKAGE'
   | 'SPECIALIST_NOT_FOUND'
-  | 'TRUST_DENIED';
+  | 'TRUST_DENIED'
+  | 'LLM_NOT_CONFIGURED'
+  | 'LLM_PROVIDER_ERROR'
+  | 'MAX_ITERATIONS_EXCEEDED'
+  | 'RUN_TIMEOUT'
+  | 'RUN_CANCELLED';
 
 export class AgentRuntimeError extends Error {
   readonly code: AgentRuntimeErrorCode;

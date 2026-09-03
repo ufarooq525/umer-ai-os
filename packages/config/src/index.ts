@@ -42,6 +42,21 @@ export const envSchema = z.object({
   UMER_PROJECTS_ROOT: z.string().default('C:/laragon/www'),
   /** Optional absolute path to projects/catalog.json */
   UMER_PROJECTS_CATALOG: z.string().optional(),
+
+  /** Model Routing — LLM provider selection (Runtime Model Routing domain). */
+  LLM_PROVIDER: z.enum(['lmstudio', 'openai-compatible']).default('lmstudio'),
+  /** OpenAI-compatible base URL (no trailing /chat/completions). */
+  LLM_BASE_URL: z.string().default('http://localhost:1234/v1'),
+  LLM_MODEL: z.string().default('qwen/qwen3-8b'),
+  /** Local LM Studio does not require a key; set for hosted OpenAI-compatible providers. */
+  LLM_API_KEY: z.string().optional(),
+  LLM_REQUEST_TIMEOUT_MS: z.coerce.number().default(60_000),
+  LLM_MAX_TOKENS: z.coerce.number().default(2048),
+  LLM_TEMPERATURE: z.coerce.number().default(0.2),
+  /** Agent loop safeguard: hard ceiling on model↔tool round trips per run. */
+  AGENT_LOOP_MAX_ITERATIONS: z.coerce.number().default(8),
+  /** Agent loop safeguard: wall-clock budget for an entire agent run. */
+  AGENT_LOOP_TIMEOUT_MS: z.coerce.number().default(300_000),
 });
 
 export type Env = z.infer<typeof envSchema>;
