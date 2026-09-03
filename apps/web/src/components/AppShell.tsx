@@ -1,23 +1,8 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
-import { Shell } from '@umer/ui';
 import type { ReactNode } from 'react';
-
-const navItems = [
-  { href: '/', label: 'Dashboard' },
-  { href: '/decisions', label: 'Decisions' },
-  { href: '/projects', label: 'Projects' },
-  { href: '/gates', label: 'Gates' },
-  { href: '/audit', label: 'Audit' },
-  { href: '/guide', label: 'Guide' },
-];
+import { OSShell } from './os/OSShell';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const items = navItems.map((item) => ({
-    ...item,
-    active: item.href === '/' ? pathname === '/' : pathname.startsWith(item.href),
-  }));
-  return <Shell navItems={items}>{children}</Shell>;
+  return <OSShell>{children}</OSShell>;
 }

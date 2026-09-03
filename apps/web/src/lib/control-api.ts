@@ -319,6 +319,16 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+export type RuntimeHealth = { status: string; service: string; ts: string; details?: Record<string, unknown> };
+
+export async function getHealth(): Promise<RuntimeHealth | null> {
+  try {
+    return await fetchJson<RuntimeHealth>('/health');
+  } catch {
+    return null;
+  }
+}
+
 export async function getDashboard(): Promise<DashboardSummary> {
   return fetchJson<DashboardSummary>('/v1/dashboard');
 }
@@ -411,16 +421,33 @@ export async function submitIntake(input: {
 // implementation/COMPANY_OPERATING_MODEL.md and the CeoCommandService in
 // @umer/control-plane for the full command → event → read-model contract.
 
+export type OpportunityScore = {
+  problemSeverity: number;
+  demandEvidence: number;
+  abilityToPay: number;
+  reachability: number;
+  solutionFit: number;
+  competitiveGap: number;
+  deliveryFeasibility: number;
+  evidenceConfidence: number;
+  overall: number;
+  recommendation: 'reject' | 'watch' | 'research_more' | 'outreach_ready' | 'product_candidate';
+};
+
 export type OpportunityRecord = {
   id: string;
   type: string;
   title: string;
   geography: string;
   market: string;
+  problemIds?: string[];
+  score?: OpportunityScore;
   status: string;
   estimatedValueMin?: number;
   estimatedValueMax?: number;
   currency?: string;
+  timeToRevenueDays?: number;
+  evidenceRefs?: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -431,6 +458,7 @@ export type WorkProjectRecord = {
   status: string;
   owner?: string;
   sourceOpportunityId?: string;
+  registryProjectId?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -442,7 +470,10 @@ export type WorkTaskRecord = {
   title: string;
   description: string;
   status: string;
+  workClass?: string;
+  capabilityIds?: string[];
   assignedAgentId?: string;
+  workPackageId?: string;
   acceptanceCriteria: string[];
   createdAt: string;
   updatedAt: string;
@@ -453,12 +484,72 @@ export type AgentRecord = {
   specialistId: string;
   name?: string;
   department?: string;
+  capabilityIds?: string[];
   status: string;
   controlState: 'active' | 'paused';
   controlReason?: string;
   currentProjectId?: string;
   currentTaskIds?: string[];
+  currentWorkPackageId?: string;
+  currentAgentRunId?: string;
+  correlationId?: string;
   lastSeenAt: string;
+};
+
+// --- Runtime Observability — Agent Run read model --------------------------
+
+export type ToolCallRecord = {
+  toolCallId: string;
+  tool: string;
+  input?: unknown;
+  status: 'requested' | 'started' | 'completed' | 'failed';
+  error?: string;
+  durationMs?: number;
+  requestedAt: string;
+  updatedAt: string;
+};
+
+export type DecisionRecord = {
+  action: string;
+  tool?: string;
+  reason?: string;
+  at: string;
+};
+
+export type FailureRecord = {
+  source: 'llm' | 'tool' | 'run';
+  message: string;
+  at: string;
+};
+
+export type ActionLogEntry = {
+  at: string;
+  event: string;
+  summary: string;
+};
+
+export type AgentRunRecord = {
+  workPackageId: string;
+  runId?: string;
+  execId?: string;
+  specialistId?: string;
+  agentId?: string;
+  taskIds?: string[];
+  correlationId: string;
+  status: 'running' | 'completed' | 'failed';
+  currentAction: 'waiting_on_model' | 'executing_tool' | 'idle';
+  currentTool?: string;
+  currentToolInput?: unknown;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  toolCalls: ToolCallRecord[];
+  decisions: DecisionRecord[];
+  actionLog: ActionLogEntry[];
+  failures: FailureRecord[];
+  artifactId?: string;
+  summary?: string;
+  errorMessage?: string;
 };
 
 export type CeoActorKind = 'human' | 'specialist_run' | 'system';
@@ -491,9 +582,25 @@ export async function getOpportunities(): Promise<OpportunityRecord[]> {
   return body.opportunities;
 }
 
+export async function getOpportunity(id: string): Promise<OpportunityRecord | null> {
+  try {
+    return await fetchJson<OpportunityRecord>(`/v1/opportunities/${id}`);
+  } catch {
+    return null;
+  }
+}
+
 export async function getWorkProjects(): Promise<WorkProjectRecord[]> {
   const body = await fetchJson<{ projects: WorkProjectRecord[] }>('/v1/work-projects');
   return body.projects;
+}
+
+export async function getWorkProject(id: string): Promise<WorkProjectRecord | null> {
+  try {
+    return await fetchJson<WorkProjectRecord>(`/v1/work-projects/${id}`);
+  } catch {
+    return null;
+  }
 }
 
 export async function getTasks(): Promise<WorkTaskRecord[]> {
@@ -501,9 +608,40 @@ export async function getTasks(): Promise<WorkTaskRecord[]> {
   return body.tasks;
 }
 
+export async function getTask(id: string): Promise<WorkTaskRecord | null> {
+  try {
+    return await fetchJson<WorkTaskRecord>(`/v1/tasks/${id}`);
+  } catch {
+    return null;
+  }
+}
+
 export async function getAgents(): Promise<AgentRecord[]> {
   const body = await fetchJson<{ agents: AgentRecord[] }>('/v1/agents');
   return body.agents;
+}
+
+export async function getAgent(id: string): Promise<AgentRecord | null> {
+  try {
+    return await fetchJson<AgentRecord>(`/v1/agents/${id}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getAgentRuns(status?: 'running' | 'completed' | 'failed'): Promise<AgentRunRecord[]> {
+  const body = await fetchJson<{ agentRuns: AgentRunRecord[] }>(
+    `/v1/agent-runs${status ? `?status=${status}` : ''}`,
+  );
+  return body.agentRuns;
+}
+
+export async function getAgentRun(workPackageId: string): Promise<AgentRunRecord | null> {
+  try {
+    return await fetchJson<AgentRunRecord>(`/v1/agent-runs/${workPackageId}`);
+  } catch {
+    return null;
+  }
 }
 
 /** The single write path for the CEO Command Plane. `actor` is trusted client input — see the milestone's auth-boundary notes. */

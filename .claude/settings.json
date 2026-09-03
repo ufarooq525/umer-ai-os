@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vitest *)",
+      "Bash(mkdir -p apps/web/src/app/command-center apps/web/src/app/company/opportunities/'[id]' apps/web/src/app/company/projects/'[id]' apps/web/src/app/company/tasks apps/web/src/app/company/agents/'[id]' apps/web/src/app/activity apps/web/src/app/attention apps/web/src/app/agent-runs apps/web/src/app/artifacts apps/web/src/app/autonomy apps/web/src/app/events apps/web/src/app/system-health apps/web/src/app/settings apps/web/src/app/company *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm --filter @umer/contracts run build)",
+      "Bash(pnpm --filter @umer/ui run build)",
+      "Bash(pnpm --filter @umer/app-web run typecheck)",
+      "Bash(pnpm --filter @umer/app-web run lint)",
+      "Bash(grep -E \"os\\\\\\\\\\\\\\\\|company-derive|use-polling|command-center|company\\\\\\\\\\\\\\\\page|activity\\\\\\\\\\\\\\\\page|attention\\\\\\\\\\\\\\\\page|agent-runs\\\\\\\\\\\\\\\\page|artifacts\\\\\\\\\\\\\\\\page|autonomy\\\\\\\\\\\\\\\\page|events\\\\\\\\\\\\\\\\page|system-health\\\\\\\\\\\\\\\\page|settings\\\\\\\\\\\\\\\\page|AppShell\")",
+      "Bash(pnpm --filter @umer/app-web run test)",
+      "Bash(pnpm --filter @umer/app-web run build)",
+      "Bash(pnpm run *)",
+      "Bash(curl -s http://127.0.0.1:3001/command-center)"
+    ],
+    "additionalDirectories": [
+      "C:\\laragon\\www\\umer-ai-os\\apps\\web\\apps\\web\\src\\app\\company\\opportunities"
+    ]
+  }
+}

@@ -1,0 +1,203 @@
+'use client';
+
+import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { Card, colors, fonts, radii, spacing } from '@umer/ui';
+import type { AgentRecord, AgentRunRecord, OpportunityRecord, WorkProjectRecord, WorkTaskRecord } from '@/lib/control-api';
+import { StatusBadge } from './StatusBadge';
+import { agentTone, projectTone, taskTone } from './status';
+
+export type LiveCompanyMapProps = {
+  opportunities: OpportunityRecord[];
+  projects: WorkProjectRecord[];
+  tasks: WorkTaskRecord[];
+  agents: AgentRecord[];
+  agentRuns: AgentRunRecord[];
+};
+
+type MapNode = { key: string; label: string; sublabel?: string; href: string; tone?: ReturnType<typeof agentTone>; active: boolean };
+
+function Node({ node }: { node: MapNode }) {
+  return (
+    <Link
+      href={node.href}
+      style={{
+        display: 'block',
+        minWidth: 140,
+        maxWidth: 200,
+        padding: '8px 10px',
+        borderRadius: radii.md,
+        border: `1px solid ${node.active ? colors.accent : colors.border}`,
+        background: colors.surfaceRaised,
+        textDecoration: 'none',
+        color: colors.text,
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {node.label}
+      </div>
+      {node.sublabel ? (
+        <div style={{ fontSize: 10, color: colors.muted, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {node.sublabel}
+        </div>
+      ) : null}
+      {node.tone ? (
+        <div style={{ marginTop: 4 }}>
+          <StatusBadge tone={node.tone} />
+        </div>
+      ) : null}
+    </Link>
+  );
+}
+
+function Edge({ active }: { active: boolean }) {
+  return (
+    <div style={{ position: 'relative', width: 28, height: 2, flexShrink: 0, background: colors.border, alignSelf: 'center' }}>
+      {active ? (
+        <motion.div
+          animate={{ left: [0, 22] }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+          style={{ position: 'absolute', top: -2, width: 6, height: 6, borderRadius: 999, background: colors.accent }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function NodeColumn({ nodes, edgeActive }: { nodes: MapNode[]; edgeActive: boolean }) {
+  if (nodes.length === 0) {
+    return (
+      <>
+        <Edge active={false} />
+        <div style={{ fontSize: 11, color: colors.muted, alignSelf: 'center', flexShrink: 0 }}>—</div>
+      </>
+    );
+  }
+  return (
+    <>
+      <Edge active={edgeActive} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {nodes.map((node) => (
+          <Node key={node.key} node={node} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRuns }: LiveCompanyMapProps) {
+  const activeProjects = projects.filter((p) => p.status === 'Active' || p.status === 'Forming' || p.status === 'Stabilizing');
+
+  if (activeProjects.length === 0) {
+    return (
+      <Card title="Live Company Map">
+        <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
+          No active projects yet. Once a project starts in{' '}
+          <Link href="/decisions" style={{ color: colors.accent }}>
+            Decisions
+          </Link>
+          , its opportunity → agents → tasks chain will appear here in real time.
+        </p>
+      </Card>
+    );
+  }
+
+  const runByWorkPackageId = new Map(agentRuns.map((r) => [r.workPackageId, r]));
+
+  return (
+    <Card title="Live Company Map">
+      <div style={{ display: 'grid', gap: spacing.lg }}>
+        {activeProjects.map((project) => {
+          const opportunity = project.sourceOpportunityId
+            ? opportunities.find((o) => o.id === project.sourceOpportunityId)
+            : undefined;
+          const projectTasks = tasks.filter((t) => t.projectId === project.projectId);
+          const projectAgentIds = new Set(projectTasks.map((t) => t.assignedAgentId).filter(Boolean) as string[]);
+          const projectAgents = agents.filter((a) => projectAgentIds.has(a.agentId) || a.currentProjectId === project.projectId);
+          const anyAgentWorking = projectAgents.some((a) => a.status === 'active' && a.controlState === 'active');
+
+          const oppNodes: MapNode[] = opportunity
+            ? [
+                {
+                  key: opportunity.id,
+                  label: opportunity.title,
+                  sublabel: opportunity.score ? `Score ${opportunity.score.overall}/100` : undefined,
+                  href: `/company/opportunities/${opportunity.id}`,
+                  active: false,
+                },
+              ]
+            : [];
+
+          const projectNodes: MapNode[] = [
+            {
+              key: project.projectId,
+              label: project.name,
+              sublabel: project.status,
+              href: `/company/projects/${project.projectId}`,
+              tone: projectTone(project.status),
+              active: project.status === 'Active',
+            },
+          ];
+
+          const agentNodes: MapNode[] = projectAgents.map((agent) => {
+            const run = agent.currentWorkPackageId ? runByWorkPackageId.get(agent.currentWorkPackageId) : undefined;
+            return {
+              key: agent.agentId,
+              label: agent.name ?? agent.agentId,
+              sublabel: run?.currentTool ? `using ${run.currentTool}` : agent.department,
+              href: `/company/agents/${agent.agentId}`,
+              tone: agentTone(agent.status, agent.controlState),
+              active: agent.status === 'active' && agent.controlState === 'active',
+            };
+          });
+
+          const visibleTasks = projectTasks.slice(0, 4);
+          const taskNodes: MapNode[] = visibleTasks.map((task) => ({
+            key: task.taskId,
+            label: task.title,
+            sublabel: task.status,
+            href: `/company/tasks`,
+            tone: taskTone(task.status),
+            active: task.status === 'InProgress',
+          }));
+          if (projectTasks.length > visibleTasks.length) {
+            taskNodes.push({
+              key: `${project.projectId}-more`,
+              label: `+${projectTasks.length - visibleTasks.length} more`,
+              href: `/company/projects/${project.projectId}`,
+              active: false,
+            });
+          }
+
+          return (
+            <div key={project.projectId} style={{ overflowX: 'auto', paddingBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, minWidth: 'max-content' }}>
+                {oppNodes.length > 0 ? (
+                  <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {oppNodes.map((n) => (
+                        <Node key={n.key} node={n} />
+                      ))}
+                    </div>
+                    <Edge active={false} />
+                  </>
+                ) : null}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {projectNodes.map((n) => (
+                    <Node key={n.key} node={n} />
+                  ))}
+                </div>
+                <NodeColumn nodes={agentNodes} edgeActive={anyAgentWorking} />
+                <NodeColumn nodes={taskNodes} edgeActive={anyAgentWorking} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p style={{ margin: `${spacing.md}px 0 0`, fontSize: 11, color: colors.muted, fontFamily: fonts.mono }}>
+        {activeProjects.length} active {activeProjects.length === 1 ? 'project' : 'projects'} shown
+      </p>
+    </Card>
+  );
+}
