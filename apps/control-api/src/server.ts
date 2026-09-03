@@ -108,7 +108,17 @@ export async function createControlApiState(): Promise<ControlApiState> {
   };
   state.commandService = createCeoCommandService(
     {
-      opportunities: state.opportunityReader!,
+      // Delegates through `state.opportunityReader` on every call rather than
+      // capturing today's instance: main.ts's connectOpportunityReader() runs
+      // AFTER createControlApiState() returns and best-effort swaps
+      // state.opportunityReader from the in-memory default to the real
+      // MySQL-backed adapter. Capturing the reference here would have frozen
+      // Opportunity commands onto the pre-swap (empty) in-memory store even
+      // once GET /v1/opportunities was reading real MySQL data.
+      opportunities: {
+        getOpportunity: (id) => state.opportunityReader!.getOpportunity(id),
+        saveOpportunity: (opportunity) => state.opportunityReader!.saveOpportunity(opportunity),
+      },
       projects: state.projectStore!,
       tasks: state.taskStore!,
       agentControl: state.agentControlStore!,
