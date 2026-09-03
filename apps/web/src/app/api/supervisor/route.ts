@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { recordWorkerHeartbeat, superviseWorkers } from '@/lib/ai-worker-supervisor';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 export const revalidate = 0;
 
 export async function GET() {

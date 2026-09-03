@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createMySqlExecutor } from '@umer/db';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 const MAX_LIMIT = 200;
 
