@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createMySqlExecutor } from '@umer/db';
-import { recoverExpiredKernelTasks } from './ai-kernel-runtime.js';
+import { recoverExpiredKernelTasks } from './ai-kernel-runtime';
 
 const HEARTBEAT_TIMEOUT_SECONDS = Math.max(60, Number(process.env.AI_WORKER_HEARTBEAT_TIMEOUT_SECONDS ?? 180) || 180);
 

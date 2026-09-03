@@ -138,8 +138,8 @@ async function execute(runId: string, live: boolean) {
       requiredCapability: 'opportunity', tokenBudget: 6000, costBudget: 0.40,
     });
 
-    const discoveryTask = await claimNextKernelTask('discovery', 'discovery');
-    if (!discoveryTask || discoveryTask.taskId !== taskIds.discovery) throw new Error('Discovery worker could not claim its durable task');
+    const discoveryTask = await claimNextKernelTask('discovery', 'discovery', taskIds.discovery);
+    if (!discoveryTask) throw new Error('Discovery worker could not claim its durable task');
     taskLeases.discovery = { token: discoveryTask.leaseToken };
 
     const discoveryLimit = Math.max(1, Math.min(Number(process.env.OPPORTUNITY_DISCOVERY_LIMIT ?? 20) || 20, 20));
@@ -204,13 +204,13 @@ async function execute(runId: string, live: boolean) {
     };
 
     await completeKernelTask(taskIds.discovery, 'discovery', taskLeases.discovery.token, { businesses: result.metrics.businessesDiscovered });
-    const researchTask = await claimNextKernelTask('research', 'research');
-    if (researchTask && researchTask.taskId === taskIds.research) {
+    const researchTask = await claimNextKernelTask('research', 'research', taskIds.research);
+    if (researchTask) {
       taskLeases.research = { token: researchTask.leaseToken };
       await completeKernelTask(taskIds.research, 'research', taskLeases.research.token, { researched: result.metrics.businessesResearched, qualified: result.metrics.qualifiedBusinesses });
     }
-    const opportunityTask = await claimNextKernelTask('opportunity', 'opportunity');
-    if (opportunityTask && opportunityTask.taskId === taskIds.opportunity) {
+    const opportunityTask = await claimNextKernelTask('opportunity', 'opportunity', taskIds.opportunity);
+    if (opportunityTask) {
       taskLeases.opportunity = { token: opportunityTask.leaseToken };
       await completeKernelTask(taskIds.opportunity, 'opportunity', taskLeases.opportunity.token, { opportunities: result.metrics.opportunitiesFound, highValue: result.metrics.highValueOpportunities });
     }

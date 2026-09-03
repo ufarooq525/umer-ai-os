@@ -38,6 +38,10 @@ export const OPPORTUNITY_MIGRATIONS: readonly MySqlMigration[] = [
       `CREATE TABLE IF NOT EXISTS opportunity_outreach_drafts (id VARCHAR(191) PRIMARY KEY, opportunity_id VARCHAR(191) NOT NULL, business_id VARCHAR(191) NOT NULL, niche_id VARCHAR(191) NOT NULL, channel VARCHAR(32) NOT NULL, recipient VARCHAR(255) NULL, subject VARCHAR(500) NULL, body TEXT NOT NULL, language VARCHAR(16) NOT NULL DEFAULT 'en', value_proposition TEXT NOT NULL, evidence_refs_json JSON NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'drafted', created_at DATETIME(3) NOT NULL, updated_at DATETIME(3) NOT NULL, INDEX idx_opportunity_outreach_opp (opportunity_id), INDEX idx_opportunity_outreach_business (business_id), INDEX idx_opportunity_outreach_status (status, created_at))`,
     ],
   },
+];
+
+export const ALL_MYSQL_MIGRATIONS: readonly MySqlMigration[] = [
+  ...OPPORTUNITY_MIGRATIONS,
   ...WORKFORCE_MIGRATIONS,
   ...AI_OS_KERNEL_MIGRATIONS,
   ...AI_KERNEL_TELEMETRY_MIGRATIONS,

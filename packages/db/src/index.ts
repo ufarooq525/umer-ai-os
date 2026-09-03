@@ -3,6 +3,24 @@ import { Redis } from 'ioredis';
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 import postgres from 'postgres';
 import { OPPORTUNITY_MIGRATIONS } from './migrations.js';
+import { WORKFORCE_MIGRATIONS } from './workforce-migrations.js';
+import { AI_OS_KERNEL_MIGRATIONS } from './ai-os-kernel-migrations.js';
+import { AI_KERNEL_TELEMETRY_MIGRATIONS } from './ai-kernel-telemetry-migrations.js';
+import { AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS } from './ai-kernel-runtime-hardening-migration.js';
+import { AI_KERNEL_EXPLAINABILITY_MIGRATIONS } from './ai-kernel-explainability-migration.js';
+import { AI_OS_CONTROL_LINEAGE_MIGRATIONS } from './ai-os-control-lineage-migration.js';
+import { AI_WORKER_SUPERVISOR_MIGRATIONS } from './ai-worker-supervisor-migration.js';
+
+export const ALL_MYSQL_MIGRATIONS = [
+  ...OPPORTUNITY_MIGRATIONS,
+  ...WORKFORCE_MIGRATIONS,
+  ...AI_OS_KERNEL_MIGRATIONS,
+  ...AI_KERNEL_TELEMETRY_MIGRATIONS,
+  ...AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS,
+  ...AI_KERNEL_EXPLAINABILITY_MIGRATIONS,
+  ...AI_OS_CONTROL_LINEAGE_MIGRATIONS,
+  ...AI_WORKER_SUPERVISOR_MIGRATIONS,
+];
 
 export const packageName = '@umer/db' as const;
 
@@ -102,14 +120,25 @@ export async function migrate(client: MySqlClient = createMySqlClient()): Promis
   await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       id VARCHAR(191) PRIMARY KEY,
-      checksum CHAR(64) NOT NULL,
+      checksum VARCHAR(191) NOT NULL,
       applied_at DATETIME(3) NOT NULL
     )
   `);
+  try {
+    await client.query('ALTER TABLE schema_migrations MODIFY checksum VARCHAR(191) NOT NULL');
+  } catch {
+    // ignore if already modified
+  }
 
-  for (const migration of OPPORTUNITY_MIGRATIONS) {
+  for (const migration of ALL_MYSQL_MIGRATIONS) {
     for (const statement of migration.statements) {
-      await client.query(statement);
+      try {
+        await client.query(statement);
+      } catch (err: any) {
+        if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME', '1060', '1061'].includes(err?.code || String(err?.errno))) {
+          throw err;
+        }
+      }
     }
 
     const [rows] = await client.query<RowDataPacket[]>(

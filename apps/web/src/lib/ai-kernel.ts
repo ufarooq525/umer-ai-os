@@ -54,7 +54,6 @@ export async function claimNextTask(agentId: string, leaseSeconds = DEFAULT_LEAS
   const db = createMySqlExecutor();
   const pool = db as unknown as { execute: <T = unknown>(sql: string, params?: readonly unknown[]) => Promise<T> };
   const leaseToken = randomUUID();
-  const taskId = randomUUID();
 
   // Use a single UPDATE with an ordered derived table. The task id is selected
   // by MySQL and immediately transitioned, avoiding a read-then-write race.

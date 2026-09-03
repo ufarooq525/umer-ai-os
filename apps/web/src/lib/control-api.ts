@@ -309,8 +309,8 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     let detail = '';
     try {
-      const body = (await response.json()) as { error?: string };
-      detail = body.error ? `: ${body.error}` : '';
+      const body = (await response.json()) as { error?: string; message?: string };
+      detail = body.message ? `: ${body.message}` : body.error ? `: ${body.error}` : '';
     } catch {
       /* ignore */
     }
@@ -401,6 +401,119 @@ export async function submitIntake(input: {
   doneWhen?: string;
 }): Promise<IntakeRecord> {
   return fetchJson('/v1/intake', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+// --- CEO Command & Decision Plane -----------------------------------------
+// Read models (GET) and the single write path (POST /v1/commands). See
+// implementation/COMPANY_OPERATING_MODEL.md and the CeoCommandService in
+// @umer/control-plane for the full command → event → read-model contract.
+
+export type OpportunityRecord = {
+  id: string;
+  type: string;
+  title: string;
+  geography: string;
+  market: string;
+  status: string;
+  estimatedValueMin?: number;
+  estimatedValueMax?: number;
+  currency?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkProjectRecord = {
+  projectId: string;
+  name: string;
+  status: string;
+  owner?: string;
+  sourceOpportunityId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkTaskRecord = {
+  taskId: string;
+  epicId: string;
+  projectId: string;
+  title: string;
+  description: string;
+  status: string;
+  assignedAgentId?: string;
+  acceptanceCriteria: string[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentRecord = {
+  agentId: string;
+  specialistId: string;
+  name?: string;
+  department?: string;
+  status: string;
+  controlState: 'active' | 'paused';
+  controlReason?: string;
+  currentProjectId?: string;
+  currentTaskIds?: string[];
+  lastSeenAt: string;
+};
+
+export type CeoActorKind = 'human' | 'specialist_run' | 'system';
+export type CeoActor = { principalId: string; kind: CeoActorKind };
+
+export type CeoCommandName =
+  | 'SelectOpportunity'
+  | 'RejectOpportunity'
+  | 'CreateProject'
+  | 'CreateProjectFromOpportunity'
+  | 'PauseProject'
+  | 'ResumeProject'
+  | 'CancelProject'
+  | 'CreateTask'
+  | 'AssignTask'
+  | 'ReassignTask'
+  | 'PauseAgent'
+  | 'ResumeAgent'
+  | 'CancelWork';
+
+export type CeoCommandResult = {
+  commandId: string;
+  status: 'applied' | 'duplicate';
+  data?: unknown;
+  events: Array<{ name: string; payload: Record<string, unknown> }>;
+};
+
+export async function getOpportunities(): Promise<OpportunityRecord[]> {
+  const body = await fetchJson<{ opportunities: OpportunityRecord[] }>('/v1/opportunities');
+  return body.opportunities;
+}
+
+export async function getWorkProjects(): Promise<WorkProjectRecord[]> {
+  const body = await fetchJson<{ projects: WorkProjectRecord[] }>('/v1/work-projects');
+  return body.projects;
+}
+
+export async function getTasks(): Promise<WorkTaskRecord[]> {
+  const body = await fetchJson<{ tasks: WorkTaskRecord[] }>('/v1/tasks');
+  return body.tasks;
+}
+
+export async function getAgents(): Promise<AgentRecord[]> {
+  const body = await fetchJson<{ agents: AgentRecord[] }>('/v1/agents');
+  return body.agents;
+}
+
+/** The single write path for the CEO Command Plane. `actor` is trusted client input — see the milestone's auth-boundary notes. */
+export async function executeCommand(input: {
+  name: CeoCommandName;
+  actor: CeoActor;
+  payload: Record<string, unknown>;
+  target?: { entityType: 'opportunity' | 'project' | 'task' | 'agent'; entityId: string };
+}): Promise<CeoCommandResult> {
+  return fetchJson('/v1/commands', {
     method: 'POST',
     body: JSON.stringify(input),
   });
