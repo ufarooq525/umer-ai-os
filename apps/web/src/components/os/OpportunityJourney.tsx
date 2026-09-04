@@ -36,7 +36,7 @@ export function recommendationLabel(recommendation: string): string {
 export function OpportunityJourney({ status }: { status: string }) {
   const current = opportunityStageIndex(status);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', rowGap: 6 }}>
       {STAGES.map((stage, idx) => (
         <div key={stage} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span

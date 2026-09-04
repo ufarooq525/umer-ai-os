@@ -386,13 +386,24 @@ function DecisionCenterPanel({ opportunities, busyKey, errors, run }: PanelBaseP
             No opportunities are awaiting a decision right now.
           </p>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-            <div style={{ flex: '1 1 280px', display: 'grid', gap: 6, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+            <div
+              style={{
+                flex: '1 1 280px',
+                maxWidth: 440,
+                minWidth: 0,
+                display: 'grid',
+                gap: 6,
+                maxHeight: '70vh',
+                overflowY: 'auto',
+                paddingRight: 4,
+              }}
+            >
               {queue.map((opp) => (
                 <DecisionRow key={opp.id} opportunity={opp} active={opp.id === selected?.id} onSelect={() => setSelected(opp)} />
               ))}
             </div>
-            <div style={{ flex: '1 1 380px', minWidth: 0 }}>
+            <div style={{ flex: '1 1 380px', maxWidth: 560, minWidth: 0, position: 'sticky', top: 20, maxHeight: '80vh', overflowY: 'auto' }}>
               {effectiveSelected ? (
                 <DecisionDetail opportunity={effectiveSelected} busyKey={busyKey} errors={errors} run={run} />
               ) : null}
