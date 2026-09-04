@@ -3,8 +3,8 @@
  * here is a pure reducer over real read-model data already fetched from
  * control-api (@see control-api.ts) — nothing here invents entities, counts,
  * or reasoning. Where a signal genuinely doesn't exist yet (e.g. a stored
- * decision confidence score), the caller simply omits it rather than this
- * module fabricating one.
+ * decision confidence score, or a task dependency chain), the caller simply
+ * omits it rather than this module fabricating one.
  */
 
 import { describeAuditRecord, isDemoAuditRecord, type AuditRecordLike } from './audit-story';
@@ -20,6 +20,14 @@ function plural(n: number, word: string, pluralWord = `${word}s`): string {
   return `${n} ${n === 1 ? word : pluralWord}`;
 }
 
+function formatDuration(ms: number): string {
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
+}
+
 // --- Company Pulse ----------------------------------------------------------
 
 export type CompanyPulse = {
@@ -31,8 +39,10 @@ export type CompanyPulse = {
 };
 
 const PROMISING_SCORE_THRESHOLD = 70;
+const HIGH_PRIORITY_SCORE_THRESHOLD = 85;
 const DECIDABLE_OPPORTUNITY_STATUSES = new Set(['researching', 'validated', 'outreach_ready', 'in_sales']);
 const ACTIVE_TASK_STATUSES = new Set(['Ready', 'Assigned', 'InProgress', 'InReview']);
+const OPEN_TASK_STATUSES = new Set(['Ready', 'Assigned', 'InProgress', 'InReview']);
 
 export function deriveCompanyPulse(
   agents: AgentRecord[],
@@ -75,103 +85,277 @@ export function deriveCompanyPulse(
   };
 }
 
-export function deriveCompanySummary(pulse: CompanyPulse, attentionCount: number): string {
-  const parts: string[] = [];
+// --- CEO Attention — explainable cases ---------------------------------------
+//
+// Every case here is backed by a real, currently-reachable signal:
+//   - repeated_failure: an agent run's own `failures[]` (Runtime Observability)
+//   - decision_required: opportunities sitting in a decidable status with a
+//     real score (Opportunity Intelligence) — aggregated into ONE case so a
+//     pipeline of 50 viable opportunities reads as "one decision queue," not
+//     50 separate alerts (this was the actual bug behind the old raw count)
+//   - waiting_too_long: real `startedAt`/`updatedAt` timestamps aging past a
+//     threshold
+//
+// Deliberately NOT modeled: a "blocked on a missing artifact/dependency"
+// case. Investigation confirmed `TaskStatus: 'Blocked'` and
+// `DependencyContractSchema` are schema-only — no command handler in this
+// codebase ever sets a task Blocked or records what it depends on. Building
+// that case would mean fabricating the dependency chain, which the product
+// brief explicitly forbids. Revisit once that backend state is real.
 
-  if (pulse.opportunities.promising > 0) {
-    parts.push(
-      `validating ${plural(pulse.opportunities.promising, 'promising opportunity', 'promising opportunities')}` +
-        (pulse.projects.active > 0 ? ` across ${plural(pulse.projects.active, 'active project')}` : ''),
-    );
-  } else if (pulse.projects.active > 0) {
-    parts.push(`running ${plural(pulse.projects.active, 'active project')}`);
-  }
+export type AttentionSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type AttentionCategory = 'repeated_failure' | 'decision_required' | 'waiting_too_long';
 
-  if (pulse.agents.working > 0) {
-    parts.push(`${plural(pulse.agents.working, 'agent')} working`);
-  } else if (pulse.agents.total > 0) {
-    parts.push('no agents currently working');
-  }
-
-  const lead = parts.length > 0 ? `The company is currently ${parts.join(', ')}.` : 'The company has no active work yet.';
-  const tail =
-    attentionCount > 0
-      ? ` ${plural(attentionCount, 'item')} require${attentionCount === 1 ? 's' : ''} your attention.`
-      : ' Nothing requires your attention right now.';
-
-  return lead + tail;
-}
-
-// --- CEO Attention -----------------------------------------------------------
-
-export type AttentionSeverity = 'critical' | 'decision' | 'blocked';
-
-export type AttentionItem = {
+export type AttentionSourceLink = {
+  label: string;
+  type: 'opportunity' | 'project' | 'task' | 'agent' | 'run';
   id: string;
-  severity: AttentionSeverity;
-  title: string;
-  detail: string;
   href: string;
 };
 
-const FAILURE_STREAK_THRESHOLD = 2;
+export type AttentionCase = {
+  id: string;
+  category: AttentionCategory;
+  severity: AttentionSeverity;
+  /** Why this severity was assigned — always a real, computed reason, never an unexplained score. */
+  severityReason: string;
+  title: string;
+  whatHappened: string;
+  source: AttentionSourceLink[];
+  evidence: string[];
+  currentState: Array<{ label: string; value: string }>;
+  recommendedNextAction: string;
+  ceoActionNeeded: boolean;
+  occurredAt: string;
+  technical: Record<string, unknown>;
+};
 
-export function deriveAttention(
+const FAILURE_STREAK_THRESHOLD = 2;
+const STALE_RUN_MS = 30 * 60 * 1000; // 30 minutes
+const STALE_TASK_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+function agentLabel(agent: AgentRecord | undefined, fallback: string): string {
+  return agent?.name ?? fallback;
+}
+
+function taskSourceLink(task: WorkTaskRecord, projects: WorkProjectRecord[]): AttentionSourceLink | undefined {
+  const project = projects.find((p) => p.projectId === task.projectId);
+  return project
+    ? { label: project.name, type: 'project', id: project.projectId, href: `/company/projects/${project.projectId}` }
+    : undefined;
+}
+
+export function deriveAttentionCases(
   agents: AgentRecord[],
   agentRuns: AgentRunRecord[],
   projects: WorkProjectRecord[],
   tasks: WorkTaskRecord[],
   opportunities: OpportunityRecord[],
-): AttentionItem[] {
+  now: number = Date.now(),
+): AttentionCase[] {
   const agentById = new Map(agents.map((a) => [a.agentId, a]));
-  const items: AttentionItem[] = [];
+  const cases: AttentionCase[] = [];
 
+  // --- repeated_failure ------------------------------------------------------
   for (const run of agentRuns) {
     if (!run.agentId || run.failures.length < FAILURE_STREAK_THRESHOLD) continue;
     const agent = agentById.get(run.agentId);
-    const label = agent?.name ?? run.agentId;
-    const lastFailure = run.failures[run.failures.length - 1];
-    items.push({
-      id: `critical:${run.workPackageId}`,
+    const label = agentLabel(agent, run.agentId);
+    const lastFailure = run.failures[run.failures.length - 1]!;
+    const activeAgentTasks = tasks.filter(
+      (t) => t.assignedAgentId === run.agentId && OPEN_TASK_STATUSES.has(t.status),
+    );
+    const source: AttentionSourceLink[] = [
+      { label, type: 'agent', id: run.agentId, href: `/company/agents/${run.agentId}` },
+    ];
+    const relatedProject = activeAgentTasks.length > 0 ? taskSourceLink(activeAgentTasks[0]!, projects) : undefined;
+    if (relatedProject) source.unshift(relatedProject);
+
+    cases.push({
+      id: `repeated-failure:${run.workPackageId}`,
+      category: 'repeated_failure',
       severity: 'critical',
+      severityReason:
+        activeAgentTasks.length > 0
+          ? `Blocks ${plural(activeAgentTasks.length, 'active task')} assigned to ${label}.`
+          : `${label} cannot make progress on its current run.`,
       title: `${label} failed ${run.failures.length} times`,
-      detail: lastFailure?.message ?? 'Repeated failures in the current run.',
-      href: `/company/agents/${run.agentId}`,
+      whatHappened: `${label}'s run ${run.workPackageId} has failed ${run.failures.length} times. Latest: ${lastFailure.message}`,
+      source,
+      evidence: run.failures.map((f) => `${f.source} failure at ${f.at}: ${f.message}`),
+      currentState: [
+        { label: 'Agent', value: agent?.controlState === 'paused' ? 'paused' : agent?.status ?? 'unknown' },
+        { label: 'Run', value: run.status },
+      ],
+      recommendedNextAction:
+        'Investigate the run — repeated failures usually mean a bad tool input or an unrecoverable error, not a transient one.',
+      ceoActionNeeded: true,
+      occurredAt: lastFailure.at,
+      technical: {
+        workPackageId: run.workPackageId,
+        correlationId: run.correlationId,
+        runId: run.runId,
+        failures: run.failures,
+      },
     });
   }
 
-  for (const opp of opportunities) {
-    if ((opp.score?.overall ?? 0) < PROMISING_SCORE_THRESHOLD) continue;
-    if (!DECIDABLE_OPPORTUNITY_STATUSES.has(opp.status)) continue;
-    items.push({
-      id: `decision:${opp.id}`,
-      severity: 'decision',
-      title: opp.title,
-      detail: `Score ${opp.score!.overall}/100 — CEO decision required.`,
-      href: `/company/opportunities/${opp.id}`,
+  // --- decision_required (aggregated) ----------------------------------------
+  const decidable = opportunities.filter(
+    (o) => (o.score?.overall ?? 0) >= PROMISING_SCORE_THRESHOLD && DECIDABLE_OPPORTUNITY_STATUSES.has(o.status),
+  );
+  if (decidable.length > 0) {
+    const sorted = [...decidable].sort((a, b) => (b.score!.overall ?? 0) - (a.score!.overall ?? 0));
+    const top = sorted.slice(0, 5);
+    const highPriorityCount = decidable.filter((o) => (o.score?.overall ?? 0) >= HIGH_PRIORITY_SCORE_THRESHOLD).length;
+    const mostRecent = [...decidable].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))[0]!;
+
+    cases.push({
+      id: 'decision-required:opportunities',
+      category: 'decision_required',
+      severity: highPriorityCount > 0 ? 'high' : 'medium',
+      severityReason:
+        highPriorityCount > 0
+          ? `${plural(highPriorityCount, 'opportunity', 'opportunities')} scored ${HIGH_PRIORITY_SCORE_THRESHOLD}+ and ${highPriorityCount === 1 ? 'is' : 'are'} ready to act on.`
+          : `${plural(decidable.length, 'opportunity', 'opportunities')} ready for a decision.`,
+      title: `${plural(decidable.length, 'opportunity', 'opportunities')} awaiting your decision`,
+      whatHappened: `${decidable.length} ${decidable.length === 1 ? 'opportunity has' : 'opportunities have'} cleared research and ${decidable.length === 1 ? 'is' : 'are'} ready to select or reject.`,
+      source: top.map((o) => ({
+        label: o.title,
+        type: 'opportunity' as const,
+        id: o.id,
+        href: `/company/opportunities/${o.id}`,
+      })),
+      evidence: top.map((o) => `"${o.title}" — score ${o.score!.overall}/100 (${o.status})`),
+      currentState: [{ label: 'Queue', value: plural(decidable.length, 'opportunity', 'opportunities') }],
+      recommendedNextAction: 'Review and select or reject the highest-scoring opportunities in Decisions.',
+      ceoActionNeeded: true,
+      occurredAt: mostRecent.updatedAt,
+      technical: { opportunityIds: decidable.map((o) => o.id) },
     });
   }
 
-  const projectById = new Map(projects.map((p) => [p.projectId, p]));
+  // --- waiting_too_long --------------------------------------------------------
+  for (const run of agentRuns) {
+    if (run.status !== 'running') continue;
+    const ageMs = now - new Date(run.startedAt).getTime();
+    if (!(ageMs > STALE_RUN_MS)) continue;
+    const agent = run.agentId ? agentById.get(run.agentId) : undefined;
+    const label = agentLabel(agent, run.agentId ?? run.workPackageId);
+    cases.push({
+      id: `waiting-too-long:run:${run.workPackageId}`,
+      category: 'waiting_too_long',
+      severity: ageMs > STALE_RUN_MS * 2 ? 'high' : 'medium',
+      severityReason: `Running for ${formatDuration(ageMs)} without completing or failing.`,
+      title: `${label} has been running for ${formatDuration(ageMs)}`,
+      whatHappened: `${label}'s run ${run.workPackageId} started ${formatDuration(ageMs)} ago and hasn't finished.`,
+      source: run.agentId
+        ? [{ label, type: 'agent', id: run.agentId, href: `/company/agents/${run.agentId}` }]
+        : [],
+      evidence: [
+        `Started at ${run.startedAt}`,
+        `Current action: ${run.currentAction}${run.currentTool ? ` (${run.currentTool})` : ''}`,
+      ],
+      currentState: [
+        { label: 'Status', value: run.status },
+        { label: 'Current action', value: run.currentAction },
+      ],
+      recommendedNextAction: 'Check whether the agent is stuck; cancel the work if it does not recover.',
+      ceoActionNeeded: false,
+      occurredAt: run.updatedAt,
+      technical: { workPackageId: run.workPackageId, correlationId: run.correlationId, startedAt: run.startedAt },
+    });
+  }
+
   for (const task of tasks) {
-    if (task.status !== 'Blocked') continue;
-    const project = projectById.get(task.projectId);
-    items.push({
-      id: `blocked:${task.taskId}`,
-      severity: 'blocked',
-      title: project ? project.name : task.projectId,
-      detail: task.assignedAgentId
-        ? `Task "${task.title}" is blocked.`
-        : `Task "${task.title}" is blocked and unassigned.`,
-      href: project ? `/company/projects/${project.projectId}` : '/company/tasks',
+    if (!OPEN_TASK_STATUSES.has(task.status) || task.status === 'Ready') continue;
+    const ageMs = now - new Date(task.updatedAt).getTime();
+    if (!(ageMs > STALE_TASK_MS)) continue;
+    const project = projects.find((p) => p.projectId === task.projectId);
+    const agent = task.assignedAgentId ? agentById.get(task.assignedAgentId) : undefined;
+    cases.push({
+      id: `waiting-too-long:task:${task.taskId}`,
+      category: 'waiting_too_long',
+      severity: ageMs > STALE_TASK_MS * 2 ? 'high' : 'medium',
+      severityReason: `Hasn't changed status in ${formatDuration(ageMs)}.`,
+      title: `"${task.title}" has been ${task.status.toLowerCase()} for ${formatDuration(ageMs)}`,
+      whatHappened: `Task "${task.title}" has stayed in ${task.status} for ${formatDuration(ageMs)} with no recorded status change.`,
+      source: project
+        ? [{ label: project.name, type: 'project', id: project.projectId, href: `/company/projects/${project.projectId}` }]
+        : [],
+      evidence: [`Last updated at ${task.updatedAt}`, `Assigned to: ${agent?.name ?? task.assignedAgentId ?? 'unassigned'}`],
+      currentState: [{ label: 'Status', value: task.status }],
+      recommendedNextAction: 'Check in with the assigned agent or reassign the task.',
+      ceoActionNeeded: false,
+      occurredAt: task.updatedAt,
+      technical: { taskId: task.taskId, projectId: task.projectId },
     });
   }
 
-  const severityOrder: Record<AttentionSeverity, number> = { critical: 0, decision: 1, blocked: 2 };
-  return items.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+  const severityOrder: Record<AttentionSeverity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+  return cases.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 }
 
-// --- Company Activity Timeline ----------------------------------------------
+export const deriveAttention = deriveAttentionCases;
+export type AttentionItem = AttentionCase;
+
+export function deriveCompanySummary(pulse: CompanyPulse, attentionCount: number): string {
+  if (attentionCount > 0) {
+    return `${pulse.agents.working} agents operating across ${pulse.projects.active} projects. ${attentionCount} attention ${attentionCount === 1 ? 'case requires' : 'cases require'} CEO review.`;
+  }
+  return `${pulse.agents.working} agents operating across ${pulse.projects.active} active projects with operations running smoothly.`;
+}
+
+// --- Company Story -----------------------------------------------------------
+
+export function deriveCompanyStory(
+  pulse: CompanyPulse,
+  attentionCases: AttentionCase[],
+  projects: WorkProjectRecord[],
+  tasks: WorkTaskRecord[],
+  agents: AgentRecord[],
+): string {
+  const sentences: string[] = [];
+
+  if (pulse.opportunities.promising > 0) {
+    sentences.push(
+      `The company is currently validating ${plural(pulse.opportunities.promising, 'high-potential opportunity', 'high-potential opportunities')}.`,
+    );
+  } else {
+    sentences.push('The company has no high-potential opportunities queued right now.');
+  }
+
+  const activeProjects = projects.filter((p) => p.status === 'Active');
+  if (activeProjects.length > 0) {
+    const byTaskCount = activeProjects
+      .map((p) => ({ project: p, taskCount: tasks.filter((t) => t.projectId === p.projectId).length }))
+      .sort((a, b) => b.taskCount - a.taskCount);
+    const top = byTaskCount[0]!.project;
+    const workingOnTop = agents.filter(
+      (a) =>
+        (a.currentProjectId === top.projectId || tasks.some((t) => t.projectId === top.projectId && t.assignedAgentId === a.agentId)) &&
+        a.status === 'active',
+    ).length;
+    sentences.push(
+      `"${top.name}" is the highest-priority project${workingOnTop > 0 ? `, with ${plural(workingOnTop, 'agent')} actively working on it` : ''}.`,
+    );
+  }
+
+  const critical = attentionCases.filter((c) => c.severity === 'critical').length;
+  if (critical > 0) {
+    sentences.push(`${plural(critical, 'critical issue')} ${critical === 1 ? 'needs' : 'need'} your attention.`);
+  } else if (attentionCases.length > 0) {
+    sentences.push(
+      `No critical company-wide issues detected — ${plural(attentionCases.length, 'lower-priority item')} worth a look when you have time.`,
+    );
+  } else {
+    sentences.push('No issues detected — operations are running normally.');
+  }
+
+  return sentences.join(' ');
+}
+
+// --- Company Activity Timeline (CEO command audit trail) -------------------
 
 export type AuditRecordWithDetail = AuditRecordLike & { detail?: Record<string, unknown> };
 
@@ -319,6 +503,33 @@ export function deriveActivityFeed(
   }
 
   return entries.sort((a, b) => (a.at < b.at ? 1 : -1));
+}
+
+// --- Live Company Activity (agent-run operational play-by-play) -------------
+//
+// Sourced from AgentRunSnapshot.actionLog — real, structural sentences
+// already produced by the Runtime Observability reducer ("Requested tool
+// 'search_web'", "Tool 'search_web' completed in 340ms", "Run completed
+// (artifact art-123)"). Never a fabricated first-person quote.
+
+export type LiveActivityEntry = {
+  id: string;
+  at: string;
+  agentLabel: string;
+  summary: string;
+};
+
+export function deriveLiveActivity(agentRuns: AgentRunRecord[], agents: AgentRecord[], limit = 15): LiveActivityEntry[] {
+  const agentById = new Map(agents.map((a) => [a.agentId, a]));
+  const entries: LiveActivityEntry[] = [];
+  for (const run of agentRuns) {
+    const agent = run.agentId ? agentById.get(run.agentId) : undefined;
+    const label = agentLabel(agent, run.specialistId ?? run.agentId ?? run.workPackageId);
+    run.actionLog.forEach((log, idx) => {
+      entries.push({ id: `${run.workPackageId}:${idx}`, at: log.at, agentLabel: label, summary: log.summary });
+    });
+  }
+  return entries.sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, limit);
 }
 
 // --- While You Were Away -----------------------------------------------------

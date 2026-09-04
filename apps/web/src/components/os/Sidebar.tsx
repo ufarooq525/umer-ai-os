@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { brandName, colors, fonts, radii, spacing } from '@umer/ui';
 import { getAgentRuns, getAgents, getOpportunities, getTasks, getWorkProjects } from '@/lib/control-api';
-import { deriveAttention } from '@/lib/company-derive';
+import { deriveAttentionCases } from '@/lib/company-derive';
 
 type NavEntry = { href: string; label: string; icon: string; badgeKey?: 'attention' };
 type NavSection = { title: string; items: NavEntry[] };
@@ -74,7 +74,7 @@ function useAttentionCount(): number {
           getTasks(),
           getOpportunities(),
         ]);
-        if (alive) setCount(deriveAttention(agents, agentRuns, projects, tasks, opportunities).length);
+        if (alive) setCount(deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities).length);
       } catch {
         /* sidebar badge is best-effort; a control-api hiccup shouldn't break navigation */
       }

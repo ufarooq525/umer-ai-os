@@ -1,23 +1,24 @@
 import { colors } from '@umer/ui';
-import { getAgentRuns, getAgents, getOpportunities, getTasks, getWorkProjects } from '@/lib/control-api';
-import { deriveAttention, deriveCompanyPulse } from '@/lib/company-derive';
+import { getAgentRuns, getAgents, getArtifacts, getOpportunities, getTasks, getWorkProjects } from '@/lib/control-api';
+import { deriveAttentionCases, deriveCompanyPulse } from '@/lib/company-derive';
 import { LiveCompanyMap } from '@/components/os/LiveCompanyMap';
 import { EntityNarrative, type NarrativeField } from '@/components/os/EntityNarrative';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CompanyPage() {
-  const [opportunities, projects, tasks, agents, agentRuns] = await Promise.all([
+  const [opportunities, projects, tasks, agents, agentRuns, artifacts] = await Promise.all([
     getOpportunities(),
     getWorkProjects(),
     getTasks(),
     getAgents(),
     getAgentRuns(),
+    getArtifacts(),
   ]);
 
   const pulse = deriveCompanyPulse(agents, projects, tasks, opportunities);
-  const attention = deriveAttention(agents, agentRuns, projects, tasks, opportunities);
-  const critical = attention.filter((a) => a.severity === 'critical');
+  const attentionCases = deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities);
+  const critical = attentionCases.filter((a) => a.severity === 'critical');
 
   const fields: NarrativeField[] = [
     {
@@ -53,7 +54,7 @@ export default async function CompanyPage() {
         </p>
       </header>
       <EntityNarrative fields={fields} />
-      <LiveCompanyMap opportunities={opportunities} projects={projects} tasks={tasks} agents={agents} agentRuns={agentRuns} />
+      <LiveCompanyMap opportunities={opportunities} projects={projects} tasks={tasks} agents={agents} agentRuns={agentRuns} artifacts={artifacts} />
     </div>
   );
 }

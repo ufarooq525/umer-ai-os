@@ -22,6 +22,7 @@ import {
 } from '@umer/contracts';
 import { InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
 import { InMemoryOpportunityPersistence } from '@umer/opportunity-intelligence';
+import { InMemoryArtifactStore } from '@umer/artifacts';
 import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
 import { InMemoryProjectStore } from './project-store.js';
 import { InMemoryTaskStore } from './task-store.js';
@@ -104,6 +105,7 @@ export async function createControlApiState(): Promise<ControlApiState> {
     taskStore: new InMemoryTaskStore(),
     agentControlStore: new InMemoryAgentControlStore(),
     opportunityReader: new InMemoryOpportunityPersistence(),
+    artifactStore: new InMemoryArtifactStore(),
     trustRuntime,
   };
   state.commandService = createCeoCommandService(
@@ -359,6 +361,29 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       sendJson(res, 200, opportunity);
+      return;
+    }
+
+    // Artifact Runtime (@umer/artifacts) — read-only. Sealed by whichever
+    // ArtifactEngine a live agent worker uses; this store is control-api's
+    // own instance, so it's honestly empty until wired to that same engine.
+    if (path === '/v1/artifacts' && req.method === 'GET') {
+      const execId = url.searchParams.get('execId') ?? undefined;
+      const all = (await state.artifactStore?.list()) ?? [];
+      const filtered = execId ? all.filter((a) => a.producedFor === execId) : all;
+      sendJson(res, 200, { artifacts: filtered });
+      return;
+    }
+
+    const artifactMatch = path.match(/^\/v1\/artifacts\/([^/]+)$/);
+    if (artifactMatch && req.method === 'GET') {
+      const artifactId = decodeURIComponent(artifactMatch[1]!);
+      const artifact = await state.artifactStore?.get(artifactId);
+      if (!artifact) {
+        sendJson(res, 404, { error: `No artifact known for id ${artifactId}` });
+        return;
+      }
+      sendJson(res, 200, artifact);
       return;
     }
 

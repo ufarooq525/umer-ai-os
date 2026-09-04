@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Card, colors, fonts, radii, spacing } from '@umer/ui';
-import type { AgentRecord, AgentRunRecord, OpportunityRecord, WorkProjectRecord, WorkTaskRecord } from '@/lib/control-api';
+import type {
+  AgentRecord,
+  AgentRunRecord,
+  ArtifactRecord,
+  OpportunityRecord,
+  WorkProjectRecord,
+  WorkTaskRecord,
+} from '@/lib/control-api';
 import { StatusBadge } from './StatusBadge';
 import { agentTone, projectTone, taskTone } from './status';
 
@@ -13,6 +20,8 @@ export type LiveCompanyMapProps = {
   tasks: WorkTaskRecord[];
   agents: AgentRecord[];
   agentRuns: AgentRunRecord[];
+  /** Optional — resolves an artifact node's opaque id to real content when the Artifact Runtime store has it. */
+  artifacts?: ArtifactRecord[];
 };
 
 type MapNode = { key: string; label: string; sublabel?: string; href: string; tone?: ReturnType<typeof agentTone>; active: boolean };
@@ -86,7 +95,7 @@ function NodeColumn({ nodes, edgeActive }: { nodes: MapNode[]; edgeActive: boole
   );
 }
 
-export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRuns }: LiveCompanyMapProps) {
+export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRuns, artifacts = [] }: LiveCompanyMapProps) {
   const activeProjects = projects.filter((p) => p.status === 'Active' || p.status === 'Forming' || p.status === 'Stabilizing');
 
   if (activeProjects.length === 0) {
@@ -104,6 +113,7 @@ export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRu
   }
 
   const runByWorkPackageId = new Map(agentRuns.map((r) => [r.workPackageId, r]));
+  const artifactById = new Map(artifacts.map((a) => [a.artifactId, a]));
 
   return (
     <Card title="Live Company Map">
@@ -170,6 +180,33 @@ export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRu
             });
           }
 
+          const projectAgentRuns = projectAgents
+            .map((a) => (a.currentWorkPackageId ? runByWorkPackageId.get(a.currentWorkPackageId) : undefined))
+            .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+          const toolNodes: MapNode[] = projectAgentRuns
+            .filter((run) => run.status === 'running' && run.currentTool)
+            .map((run) => ({
+              key: `tool:${run.workPackageId}`,
+              label: run.currentTool!,
+              sublabel: 'tool call',
+              href: `/company/agents/${run.agentId}`,
+              active: true,
+            }));
+
+          const artifactNodes: MapNode[] = projectAgentRuns
+            .filter((run) => Boolean(run.artifactId))
+            .map((run) => {
+              const artifact = artifactById.get(run.artifactId!);
+              return {
+                key: `artifact:${run.workPackageId}`,
+                label: artifact ? artifact.artifactType : run.artifactId!,
+                sublabel: artifact ? artifact.acceptanceStatus : (run.summary ?? 'artifact produced'),
+                href: `/company/agents/${run.agentId}`,
+                active: false,
+              };
+            });
+
           return (
             <div key={project.projectId} style={{ overflowX: 'auto', paddingBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, minWidth: 'max-content' }}>
@@ -190,6 +227,8 @@ export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRu
                 </div>
                 <NodeColumn nodes={agentNodes} edgeActive={anyAgentWorking} />
                 <NodeColumn nodes={taskNodes} edgeActive={anyAgentWorking} />
+                {toolNodes.length > 0 ? <NodeColumn nodes={toolNodes} edgeActive /> : null}
+                {artifactNodes.length > 0 ? <NodeColumn nodes={artifactNodes} edgeActive={false} /> : null}
               </div>
             </div>
           );

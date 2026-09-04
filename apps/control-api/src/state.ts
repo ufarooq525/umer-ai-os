@@ -6,6 +6,7 @@ import type { AuditService } from '@umer/audit';
 import type { TrustRuntime } from '@umer/trust';
 import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '@umer/observability';
 import type { OpportunityPersistence } from '@umer/opportunity-intelligence';
+import type { ArtifactStore } from '@umer/artifacts';
 import {
   type BusEvent,
   type BusEventSource,
@@ -117,6 +118,15 @@ export type ControlApiState = {
   trustRuntime?: TrustRuntime;
   /** CEO Command & Decision Plane dispatcher — see @umer/control-plane's commands module. */
   commandService?: CeoCommandService;
+  /**
+   * Artifact Runtime store (@umer/artifacts) — read-only from control-api's
+   * perspective. Artifacts are sealed by whichever ArtifactEngine instance
+   * the agent worker/runtime uses (see packages/agent-runtime); this store
+   * is control-api's own in-memory instance, so it starts empty until wired
+   * to the same engine a live worker uses. Optional for the same
+   * test-compatibility reason as the stores above.
+   */
+  artifactStore?: ArtifactStore;
 };
 
 export function resolveCatalogPath(): string {

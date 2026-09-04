@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveActivityFeed,
-  deriveAttention,
+  deriveAttentionCases,
   deriveCompanyPulse,
-  deriveCompanySummary,
+  deriveCompanyStory,
+  deriveLiveActivity,
   deriveWhileYouWereAway,
   type AuditRecordWithDetail,
-} from './company-derive.js';
-import type { AgentRecord, AgentRunRecord, OpportunityRecord, WorkProjectRecord, WorkTaskRecord } from './control-api.js';
+} from './company-derive';
+import type { AgentRecord, AgentRunRecord, OpportunityRecord, WorkProjectRecord, WorkTaskRecord } from './control-api';
 
 const opportunity = (over: Partial<OpportunityRecord> = {}): OpportunityRecord => ({
   id: 'opp-1',
@@ -65,6 +66,23 @@ const agent = (over: Partial<AgentRecord> = {}): AgentRecord => ({
   ...over,
 });
 
+const run = (over: Partial<AgentRunRecord> = {}): AgentRunRecord => ({
+  workPackageId: 'wp-1',
+  agentId: 'agent-1',
+  correlationId: 'corr-1',
+  status: 'running',
+  currentAction: 'idle',
+  startedAt: '2026-09-03T00:00:00.000Z',
+  updatedAt: '2026-09-03T00:00:00.000Z',
+  toolCalls: [],
+  decisions: [],
+  actionLog: [],
+  failures: [],
+  ...over,
+});
+
+const NOW = new Date('2026-09-03T12:00:00.000Z').getTime();
+
 describe('deriveCompanyPulse', () => {
   it('counts promising opportunities, active projects, working agents and blocked tasks from real records', () => {
     const pulse = deriveCompanyPulse(
@@ -82,77 +100,125 @@ describe('deriveCompanyPulse', () => {
   });
 });
 
-describe('deriveCompanySummary', () => {
-  it('produces a plain-language sentence and flags attention items', () => {
-    const pulse = deriveCompanyPulse([agent()], [project()], [task()], [opportunity()]);
-    const summary = deriveCompanySummary(pulse, 2);
-    expect(summary).toContain('validating 1 promising opportunity');
-    expect(summary).toContain('1 agent working');
-    expect(summary).toContain('2 items require your attention');
+describe('deriveAttentionCases', () => {
+  it('aggregates every decidable high-score opportunity into ONE case, not one per opportunity', () => {
+    const opportunities = Array.from({ length: 52 }, (_, i) =>
+      opportunity({ id: `opp-${i}`, title: `Opportunity ${i}`, status: 'validated' }),
+    );
+    const cases = deriveAttentionCases([], [], [], [], opportunities, NOW);
+    const decisionCases = cases.filter((c) => c.category === 'decision_required');
+    expect(decisionCases).toHaveLength(1);
+    expect(decisionCases[0]?.title).toBe('52 opportunities awaiting your decision');
+    expect(decisionCases[0]?.source).toHaveLength(5);
   });
 
-  it('says nothing requires attention when there is nothing to flag', () => {
-    const pulse = deriveCompanyPulse([], [], [], []);
-    expect(deriveCompanySummary(pulse, 0)).toContain('Nothing requires your attention');
+  it('marks the decision case high severity when any opportunity scores 85+', () => {
+    const cases = deriveAttentionCases([], [], [], [], [opportunity()], NOW);
+    expect(cases[0]).toMatchObject({ category: 'decision_required', severity: 'high' });
+    expect(cases[0]?.severityReason).toContain('85+');
+  });
+
+  it('surfaces a critical repeated_failure case for an agent with 2+ failures, with a real source chain', () => {
+    const failingRun = run({
+      failures: [
+        { source: 'tool', message: 'timeout', at: '2026-09-03T00:05:00.000Z' },
+        { source: 'run', message: 'gave up after 2 retries', at: '2026-09-03T00:10:00.000Z' },
+      ],
+    });
+    const cases = deriveAttentionCases(
+      [agent({ name: 'Engineering-01' })],
+      [failingRun],
+      [project()],
+      [task({ assignedAgentId: 'agent-1', status: 'InProgress' })],
+      [],
+      NOW,
+    );
+    const failureCase = cases.find((c) => c.category === 'repeated_failure');
+    expect(failureCase).toMatchObject({ severity: 'critical', title: 'Engineering-01 failed 2 times' });
+    expect(failureCase?.severityReason).toContain('1 active task');
+    expect(failureCase?.source.some((s) => s.type === 'project')).toBe(true);
+    expect(failureCase?.evidence).toHaveLength(2);
+  });
+
+  it('flags a run that has been running well past the staleness threshold', () => {
+    const staleRun = run({ status: 'running', startedAt: '2026-09-03T11:00:00.000Z' }); // 1h before NOW
+    const cases = deriveAttentionCases([agent()], [staleRun], [], [], [], NOW);
+    const waiting = cases.find((c) => c.category === 'waiting_too_long');
+    expect(waiting).toBeDefined();
+    expect(waiting?.title).toContain('Growth-01 has been running for');
+  });
+
+  it('does not flag a run within the staleness threshold', () => {
+    const freshRun = run({ status: 'running', startedAt: '2026-09-03T11:55:00.000Z' }); // 5m before NOW
+    const cases = deriveAttentionCases([agent()], [freshRun], [], [], [], NOW);
+    expect(cases.filter((c) => c.category === 'waiting_too_long')).toHaveLength(0);
+  });
+
+  it('never produces a blocked/dependency case — that backend state does not exist', () => {
+    const cases = deriveAttentionCases(
+      [],
+      [],
+      [project()],
+      [task({ status: 'Blocked' })],
+      [],
+      NOW,
+    );
+    expect(cases.every((c) => (c.category as string) !== 'blocked')).toBe(true);
+  });
+
+  it('orders critical before high before medium', () => {
+    const failingRun = run({
+      status: 'failed',
+      failures: [
+        { source: 'tool', message: 'a', at: '2026-09-03T00:00:00.000Z' },
+        { source: 'tool', message: 'b', at: '2026-09-03T00:00:00.000Z' },
+      ],
+    });
+    const cases = deriveAttentionCases([agent()], [failingRun], [], [], [opportunity()], NOW);
+    expect(cases.map((c) => c.severity)).toEqual(['critical', 'high']);
   });
 });
 
-describe('deriveAttention', () => {
-  it('surfaces a critical alert for an agent with repeated failures', () => {
+describe('deriveCompanyStory', () => {
+  it('names the top project and folds in critical attention count', () => {
+    const pulse = deriveCompanyPulse([agent()], [project()], [task()], [opportunity()]);
+    const cases = deriveAttentionCases(
+      [agent()],
+      [run({ failures: [{ source: 'tool', message: 'x', at: '2026-09-03T00:00:00.000Z' }, { source: 'tool', message: 'y', at: '2026-09-03T00:00:00.000Z' }] })],
+      [project()],
+      [task()],
+      [],
+      NOW,
+    );
+    const story = deriveCompanyStory(pulse, cases, [project()], [task()], [agent()]);
+    expect(story).toContain('validating 1 high-potential opportunity');
+    expect(story).toContain('"Healthcare Scheduling SaaS" is the highest-priority project');
+    expect(story).toContain('critical issue');
+  });
+
+  it('says operations are running normally when there is nothing to flag', () => {
+    const pulse = deriveCompanyPulse([], [], [], []);
+    const story = deriveCompanyStory(pulse, [], [], [], []);
+    expect(story).toContain('running normally');
+  });
+});
+
+describe('deriveLiveActivity', () => {
+  it('merges actionLog entries across runs, newest first, attributed to the real agent name', () => {
     const runs: AgentRunRecord[] = [
-      {
+      run({
         workPackageId: 'wp-1',
         agentId: 'agent-1',
-        correlationId: 'corr-1',
-        status: 'failed',
-        currentAction: 'idle',
-        startedAt: '2026-09-01T00:00:00.000Z',
-        updatedAt: '2026-09-01T00:10:00.000Z',
-        toolCalls: [],
-        decisions: [],
-        actionLog: [],
-        failures: [
-          { source: 'tool', message: 'timeout', at: '2026-09-01T00:05:00.000Z' },
-          { source: 'run', message: 'gave up after 2 retries', at: '2026-09-01T00:10:00.000Z' },
+        actionLog: [
+          { at: '2026-09-03T00:00:00.000Z', event: 'agent.run.started', summary: 'Run started for specialist growth.opportunity-research' },
+          { at: '2026-09-03T00:01:00.000Z', event: 'agent.tool.completed', summary: 'Tool "search_web" completed in 340ms' },
         ],
-      },
+      }),
     ];
-    const items = deriveAttention([agent({ name: 'Engineering-01' })], runs, [], [], []);
-    expect(items[0]).toMatchObject({ severity: 'critical', title: 'Engineering-01 failed 2 times' });
-  });
-
-  it('surfaces a decision-required alert for a high-scoring undecided opportunity', () => {
-    const items = deriveAttention([], [], [], [], [opportunity()]);
-    expect(items[0]).toMatchObject({ severity: 'decision', title: 'Healthcare Scheduling SaaS' });
-    expect(items[0]?.detail).toContain('91/100');
-  });
-
-  it('surfaces a blocked alert for a blocked task and links to its project', () => {
-    const items = deriveAttention([], [], [project()], [task({ status: 'Blocked' })], []);
-    expect(items[0]).toMatchObject({ severity: 'blocked', href: '/company/projects/proj-1' });
-  });
-
-  it('orders critical before decision before blocked', () => {
-    const runs: AgentRunRecord[] = [
-      {
-        workPackageId: 'wp-1',
-        agentId: 'agent-1',
-        correlationId: 'corr-1',
-        status: 'failed',
-        currentAction: 'idle',
-        startedAt: '2026-09-01T00:00:00.000Z',
-        updatedAt: '2026-09-01T00:00:00.000Z',
-        toolCalls: [],
-        decisions: [],
-        actionLog: [],
-        failures: [
-          { source: 'tool', message: 'a', at: '2026-09-01T00:00:00.000Z' },
-          { source: 'tool', message: 'b', at: '2026-09-01T00:00:00.000Z' },
-        ],
-      },
-    ];
-    const items = deriveAttention([agent()], runs, [project()], [task({ status: 'Blocked' })], [opportunity()]);
-    expect(items.map((i) => i.severity)).toEqual(['critical', 'decision', 'blocked']);
+    const entries = deriveLiveActivity(runs, [agent({ name: 'Growth-01' })]);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.summary).toContain('search_web');
+    expect(entries[0]?.agentLabel).toBe('Growth-01');
   });
 });
 
@@ -223,20 +289,7 @@ describe('deriveWhileYouWereAway', () => {
       },
     ];
     const runs: AgentRunRecord[] = [
-      {
-        workPackageId: 'wp-1',
-        agentId: 'agent-1',
-        correlationId: 'corr-1',
-        status: 'completed',
-        currentAction: 'idle',
-        startedAt: '2026-09-03T10:00:00.000Z',
-        updatedAt: '2026-09-03T12:00:00.000Z',
-        finishedAt: '2026-09-03T12:00:00.000Z',
-        toolCalls: [],
-        decisions: [],
-        actionLog: [],
-        failures: [],
-      },
+      run({ status: 'completed', finishedAt: '2026-09-03T12:00:00.000Z' }),
     ];
     const result = deriveWhileYouWereAway(audit, runs, '2026-09-03T00:00:00.000Z');
     expect(result.agentRunsCompleted).toBe(1);

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@umer/agent-runtime": "workspace:*",
+    "@umer/artifacts": "workspace:*",
     "@umer/audit": "workspace:*",
     "@umer/config": "workspace:*",
     "@umer/control-plane": "workspace:*",

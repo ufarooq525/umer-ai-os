@@ -582,6 +582,35 @@ export async function getOpportunities(): Promise<OpportunityRecord[]> {
   return body.opportunities;
 }
 
+export type ArtifactRecord = {
+  id: string;
+  artifactId: string;
+  artifactType: string;
+  version: string;
+  producedBy: string;
+  producedFor: string;
+  acceptanceStatus: 'draft' | 'submitted' | 'accepted' | 'rejected';
+  sourceTaskId?: string;
+  contentRef: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getArtifacts(execId?: string): Promise<ArtifactRecord[]> {
+  const body = await fetchJson<{ artifacts: ArtifactRecord[] }>(
+    `/v1/artifacts${execId ? `?execId=${encodeURIComponent(execId)}` : ''}`,
+  );
+  return body.artifacts;
+}
+
+export async function getArtifact(id: string): Promise<ArtifactRecord | null> {
+  try {
+    return await fetchJson<ArtifactRecord>(`/v1/artifacts/${id}`);
+  } catch {
+    return null;
+  }
+}
+
 export async function getOpportunity(id: string): Promise<OpportunityRecord | null> {
   try {
     return await fetchJson<OpportunityRecord>(`/v1/opportunities/${id}`);

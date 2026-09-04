@@ -1,57 +1,71 @@
 'use client';
 
-import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { colors, fonts, radii, spacing } from '@umer/ui';
-import type { AttentionItem, AttentionSeverity } from '@/lib/company-derive';
+import type { AttentionCase, AttentionSeverity } from '@/lib/company-derive';
 
 const SEVERITY_META: Record<AttentionSeverity, { icon: string; label: string; color: string }> = {
   critical: { icon: '🔴', label: 'CRITICAL', color: colors.danger },
-  decision: { icon: '🟡', label: 'DECISION REQUIRED', color: colors.warning },
-  blocked: { icon: '🟡', label: 'BLOCKED', color: colors.warning },
+  high: { icon: '🟠', label: 'HIGH', color: colors.warning },
+  medium: { icon: '🟡', label: 'MEDIUM', color: colors.warning },
+  low: { icon: '🔵', label: 'LOW', color: colors.muted },
 };
 
-export function AttentionCard({ item }: { item: AttentionItem }) {
-  const meta = SEVERITY_META[item.severity];
+const CATEGORY_LABEL: Record<AttentionCase['category'], string> = {
+  repeated_failure: 'REPEATED FAILURE',
+  decision_required: 'DECISION REQUIRED',
+  waiting_too_long: 'WAITING TOO LONG',
+};
+
+export function AttentionCard({
+  attentionCase,
+  active,
+  onSelect,
+}: {
+  attentionCase: AttentionCase;
+  active?: boolean;
+  onSelect?: () => void;
+}) {
+  const meta = SEVERITY_META[attentionCase.severity];
   return (
-    <motion.div
+    <motion.button
+      type="button"
       layout
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.2 }}
+      onClick={onSelect}
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        padding: spacing.md,
+        borderRadius: radii.lg,
+        border: `1px solid ${active ? meta.color : `${meta.color}44`}`,
+        background: active ? colors.surfaceRaised : colors.surface,
+        color: colors.text,
+        cursor: onSelect ? 'pointer' : 'default',
+        font: 'inherit',
+      }}
     >
-      <Link
-        href={item.href}
+      <div
         style={{
-          display: 'block',
-          padding: spacing.md,
-          borderRadius: radii.lg,
-          border: `1px solid ${meta.color}44`,
-          background: colors.surface,
-          textDecoration: 'none',
-          color: colors.text,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          fontFamily: fonts.mono,
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          color: meta.color,
+          marginBottom: 6,
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontFamily: fonts.mono,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: '0.08em',
-            color: meta.color,
-            marginBottom: 6,
-          }}
-        >
-          <span aria-hidden>{meta.icon}</span>
-          {meta.label}
-        </div>
-        <strong style={{ fontSize: 14 }}>{item.title}</strong>
-        <p style={{ margin: '4px 0 8px', fontSize: 12, color: colors.muted, lineHeight: 1.4 }}>{item.detail}</p>
-        <span style={{ fontSize: 12, color: colors.accent }}>Review →</span>
-      </Link>
-    </motion.div>
+        <span aria-hidden>{meta.icon}</span>
+        {meta.label} · {CATEGORY_LABEL[attentionCase.category]}
+      </div>
+      <strong style={{ fontSize: 14 }}>{attentionCase.title}</strong>
+      <p style={{ margin: '4px 0 0', fontSize: 12, color: colors.muted, lineHeight: 1.4 }}>{attentionCase.severityReason}</p>
+    </motion.button>
   );
 }

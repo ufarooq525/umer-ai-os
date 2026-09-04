@@ -2,15 +2,23 @@ import { colors, fonts } from '@umer/ui';
 import {
   getAgentRuns,
   getAgents,
+  getArtifacts,
   getOpportunities,
   getRecentAudit,
   getTasks,
   getWorkProjects,
 } from '@/lib/control-api';
-import { deriveActivityFeed, deriveAttention, deriveCompanyPulse, deriveCompanySummary } from '@/lib/company-derive';
+import {
+  deriveActivityFeed,
+  deriveAttentionCases,
+  deriveCompanyPulse,
+  deriveCompanyStory,
+  deriveLiveActivity,
+} from '@/lib/company-derive';
 import { MetricTile } from '@/components/os/MetricTile';
 import { LiveCompanyMap } from '@/components/os/LiveCompanyMap';
-import { AttentionCard } from '@/components/os/AttentionCard';
+import { LiveActivityStream } from '@/components/os/LiveActivityStream';
+import { CeoAttentionSummary } from '@/components/os/CeoAttentionSummary';
 import { ActivityFeed } from '@/components/os/ActivityFeed';
 import { AgentCard } from '@/components/os/AgentCard';
 import { WhileYouWereAway } from '@/components/os/WhileYouWereAway';
@@ -20,19 +28,21 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 
 export default async function CommandCenterPage() {
-  const [opportunities, projects, tasks, agents, agentRuns, auditRecords] = await Promise.all([
+  const [opportunities, projects, tasks, agents, agentRuns, auditRecords, artifacts] = await Promise.all([
     getOpportunities(),
     getWorkProjects(),
     getTasks(),
     getAgents(),
     getAgentRuns(),
     getRecentAudit(),
+    getArtifacts(),
   ]);
 
   const pulse = deriveCompanyPulse(agents, projects, tasks, opportunities);
-  const attention = deriveAttention(agents, agentRuns, projects, tasks, opportunities);
-  const summary = deriveCompanySummary(pulse, attention.length);
+  const attentionCases = deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities);
+  const story = deriveCompanyStory(pulse, attentionCases, projects, tasks, agents);
   const activity = deriveActivityFeed(auditRecords, opportunities, projects, tasks, agents);
+  const liveActivity = deriveLiveActivity(agentRuns, agents);
   const isOperating = pulse.agents.working > 0 || pulse.projects.active > 0;
 
   const workingAgents = agents
@@ -62,7 +72,7 @@ export default async function CommandCenterPage() {
             {isOperating ? 'COMPANY OPERATING' : 'COMPANY IDLE'}
           </span>
         </div>
-        <p style={{ margin: '14px 0 0', color: colors.text, fontSize: 15, maxWidth: 760, lineHeight: 1.6 }}>{summary}</p>
+        <p style={{ margin: '14px 0 0', color: colors.text, fontSize: 15, maxWidth: 760, lineHeight: 1.6 }}>{story}</p>
       </header>
 
       <section>
@@ -77,7 +87,9 @@ export default async function CommandCenterPage() {
         </div>
       </section>
 
-      <LiveCompanyMap opportunities={opportunities} projects={projects} tasks={tasks} agents={agents} agentRuns={agentRuns} />
+      <LiveActivityStream entries={liveActivity} />
+
+      <LiveCompanyMap opportunities={opportunities} projects={projects} tasks={tasks} agents={agents} agentRuns={agentRuns} artifacts={artifacts} />
 
       {workingAgents.length > 0 ? (
         <section>
@@ -96,20 +108,13 @@ export default async function CommandCenterPage() {
         </section>
       ) : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 20 }}>
-        <section>
-          <SectionTitle href="/attention">Attention {attention.length > 0 ? `(${attention.length})` : ''}</SectionTitle>
-          {attention.length === 0 ? (
-            <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>Nothing needs your attention right now.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {attention.slice(0, 3).map((item) => (
-                <AttentionCard key={item.id} item={item} />
-              ))}
-            </div>
-          )}
-        </section>
-        <WhileYouWereAway auditRecords={auditRecords} agentRuns={agentRuns} />
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <CeoAttentionSummary cases={attentionCases} />
+        </div>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <WhileYouWereAway auditRecords={auditRecords} agentRuns={agentRuns} />
+        </div>
       </div>
 
       <section>
