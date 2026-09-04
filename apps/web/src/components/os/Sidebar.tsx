@@ -5,9 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { brandName, colors, fonts, radii, spacing } from '@umer/ui';
-import { getAgentRuns, getAgents, getCommercialIntelligenceSummary, getOpportunities, getTasks, getWorkProjects } from '@/lib/control-api';
-import { deriveAttentionCases } from '@/lib/company-derive';
-import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
 
 type NavEntry = { href: string; label: string; icon: string; badgeKey?: 'attention' };
 type NavSection = { title: string; items: NavEntry[] };
@@ -22,6 +19,7 @@ const SECTIONS: NavSection[] = [
       { href: '/company/projects', label: 'Projects', icon: '▦' },
       { href: '/company/tasks', label: 'Tasks', icon: '☑' },
       { href: '/company/agents', label: 'Agents', icon: '◆' },
+      { href: '/seo', label: 'SEO Sites', icon: '◈' },
     ],
   },
   {
@@ -29,11 +27,14 @@ const SECTIONS: NavSection[] = [
     items: [
       { href: '/decisions', label: 'CEO Decisions', icon: '⚖' },
       { href: '/attention', label: 'Attention', icon: '⚠', badgeKey: 'attention' },
+      { href: '/gates', label: 'Gates', icon: '▣' },
     ],
   },
   {
-    title: 'Operations',
+    title: 'Work',
     items: [
+      { href: '/projects', label: 'Codebases', icon: '▦' },
+      { href: '/operations', label: 'Operations', icon: '▷' },
       { href: '/activity', label: 'Live Activity', icon: '▷' },
       { href: '/agent-runs', label: 'Agent Work', icon: '⏱' },
       { href: '/artifacts', label: 'Artifacts', icon: '✦' },
@@ -52,19 +53,11 @@ const SECTIONS: NavSection[] = [
     items: [
       { href: '/events', label: 'Events', icon: '⚙' },
       { href: '/system-health', label: 'System Health', icon: '❤' },
-    ],
-  },
-  { title: '', items: [{ href: '/settings', label: 'Settings', icon: '⚙' }] },
-  {
-    title: 'Legacy',
-    items: [
-      { href: '/', label: 'Legacy Console', icon: '□' },
-      { href: '/projects', label: 'Codebases', icon: '□' },
-      { href: '/gates', label: 'Gates', icon: '□' },
       { href: '/audit', label: 'Audit Log', icon: '□' },
       { href: '/guide', label: 'Guide', icon: '□' },
     ],
   },
+  { title: '', items: [{ href: '/settings', label: 'Settings', icon: '⚙' }] },
 ];
 
 function useAttentionCount(): number {
@@ -73,23 +66,15 @@ function useAttentionCount(): number {
     let alive = true;
     const load = async () => {
       try {
-        const [agents, agentRuns, projects, tasks, opportunities, commercialSummary] = await Promise.all([
-          getAgents(),
-          getAgentRuns(),
-          getWorkProjects(),
-          getTasks(),
-          getOpportunities(),
-          getCommercialIntelligenceSummary(),
-        ]);
-        const cases = deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities);
-        const commercialCases = deriveCommercialAttentionCases(commercialSummary);
-        if (alive) setCount(cases.length + commercialCases.length);
+        const response = await fetch('/api/attention-count', { cache: 'no-store' });
+        const payload = (await response.json()) as { count?: number };
+        if (alive) setCount(payload.count ?? 0);
       } catch {
-        /* sidebar badge is best-effort; a control-api hiccup shouldn't break navigation */
+        /* sidebar badge is best-effort */
       }
     };
     void load();
-    const timer = window.setInterval(() => void load(), 20000);
+    const timer = window.setInterval(() => void load(), 45000);
     return () => {
       alive = false;
       window.clearInterval(timer);
@@ -254,8 +239,10 @@ export function Sidebar() {
                           minWidth: 16,
                           height: 16,
                           padding: '0 4px',
-                          display: 'grid',
-                          placeItems: 'center',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 3,
                           position: collapsed ? 'absolute' : 'static',
                           top: collapsed ? 2 : undefined,
                           right: collapsed ? 2 : undefined,

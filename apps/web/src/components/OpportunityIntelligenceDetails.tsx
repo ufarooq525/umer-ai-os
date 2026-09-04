@@ -54,7 +54,7 @@ export function OpportunityIntelligenceDetails({ runId }: { runId: string | null
       }
     };
     void refresh();
-    const timer = setInterval(() => void refresh(), 2000);
+    const timer = setInterval(() => void refresh(), 10000);
     return () => { alive = false; clearInterval(timer); };
   }, [runId]);
 

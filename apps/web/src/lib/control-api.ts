@@ -71,6 +71,12 @@ export type ProjectRecord = {
   defaultSpecialists: string[];
   constraints: string[];
   tags: string[];
+  /** Production URL for SEO verify (optional). */
+  seoBaseUrl?: string;
+  /** Local dev URL for SEO verify (optional). */
+  seoLocalUrl?: string;
+  /** True when the catalog path exists under Laragon www. */
+  onDisk?: boolean;
   /** Opt-in digital-product eng auto-apply; always present after catalog parse (default false). */
   autoApplyEng: boolean;
 };

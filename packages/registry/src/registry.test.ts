@@ -19,13 +19,20 @@ describe('project registry', () => {
     expect(projects).toHaveLength(8);
   });
 
+  it('marks missing Laragon folders as not on disk', async () => {
+    const registry = await createProjectRegistry({ catalogPath });
+    const portfolio = registry.get('umer-portfolio');
+    expect(portfolio.seoBaseUrl).toBe('https://umerfarooqtech.com');
+    expect(portfolio.onDisk).toBe(false);
+  });
+
   it('resolves absolute path under projects root', async () => {
     const registry = await createProjectRegistry({
       catalogPath,
       env: { UMER_PROJECTS_ROOT: 'D:/apps' },
     });
     const nitro = registry.get('nitrotickets-new');
-    expect(nitro.absolutePath.replace(/\\/g, '/')).toBe('D:/apps/nitrotickets-new');
+    expect(nitro.absolutePath.replace(/\\/g, '/')).toBe('D:/apps/Nitro_New');
   });
 
   it('plans PM intake for a known project', async () => {

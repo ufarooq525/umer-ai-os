@@ -34,9 +34,10 @@ export function OpportunityControlCenter() {
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 1000);
+    const ms = status?.running ? 2500 : 12000;
+    const timer = setInterval(() => void refresh(), ms);
     return () => clearInterval(timer);
-  }, []);
+  }, [status?.running]);
 
   async function startRun() {
     setBusy(true);

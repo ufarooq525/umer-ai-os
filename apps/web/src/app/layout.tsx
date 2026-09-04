@@ -16,8 +16,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         style={{
           margin: 0,
           fontFamily: '"Sora", "Segoe UI", system-ui, sans-serif',
-          background: '#12141a',
-          color: '#f2f0eb',
+          background: '#0e1016',
+          color: '#f4f1ea',
           WebkitFontSmoothing: 'antialiased',
         }}
       >

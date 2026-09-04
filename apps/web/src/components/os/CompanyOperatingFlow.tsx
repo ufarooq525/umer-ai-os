@@ -1,6 +1,3 @@
-'use client';
-
-import { motion } from 'framer-motion';
 import { Card, colors, fonts, radii, spacing } from '@umer/ui';
 import type { CompanyPulse } from '@/lib/company-derive';
 
@@ -14,9 +11,7 @@ type Stage = {
 
 /**
  * A real operating loop, not a literal onboarding sequence — every metric
- * and every pulse comes straight from CompanyPulse (already fetched on the
- * Command Center). A stage only glows/pulses when its own real count is
- * nonzero; nothing here animates without a real signal behind it.
+ * comes straight from CompanyPulse. Active stages get a copper border, not a glow loop.
  */
 export function CompanyOperatingFlow({ pulse }: { pulse: CompanyPulse }) {
   const stages: Stage[] = [
@@ -68,10 +63,7 @@ export function CompanyOperatingFlow({ pulse }: { pulse: CompanyPulse }) {
 
 function StageCard({ stage }: { stage: Stage }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: stage.n * 0.06 }}
+    <div
       style={{
         width: 220,
         flexShrink: 0,
@@ -79,13 +71,10 @@ function StageCard({ stage }: { stage: Stage }) {
         borderRadius: radii.lg,
         border: `1px solid ${stage.active ? colors.accent : colors.border}`,
         background: colors.surface,
-        boxShadow: stage.active ? `0 0 0 1px ${colors.accent}33` : 'none',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <motion.div
-          animate={stage.active ? { scale: [1, 1.1, 1] } : {}}
-          transition={stage.active ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } : {}}
+        <div
           style={{
             width: 24,
             height: 24,
@@ -101,7 +90,7 @@ function StageCard({ stage }: { stage: Stage }) {
           }}
         >
           {stage.n}
-        </motion.div>
+        </div>
         <strong style={{ fontSize: 13, color: stage.active ? colors.text : colors.muted }}>{stage.title}</strong>
       </div>
       <div
@@ -115,20 +104,22 @@ function StageCard({ stage }: { stage: Stage }) {
         {stage.metric}
       </div>
       <p style={{ margin: 0, fontSize: 11, color: colors.muted, lineHeight: 1.5 }}>{stage.description}</p>
-    </motion.div>
+    </div>
   );
 }
 
 function Connector({ active }: { active: boolean }) {
   return (
-    <div style={{ position: 'relative', width: 32, height: 2, flexShrink: 0, background: colors.border, margin: '0 4px' }}>
-      {active ? (
-        <motion.div
-          animate={{ left: [0, 26] }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-          style={{ position: 'absolute', top: -2, width: 6, height: 6, borderRadius: 999, background: colors.accent }}
-        />
-      ) : null}
-    </div>
+    <div
+      style={{
+        width: 36,
+        height: 2,
+        flexShrink: 0,
+        background: active ? colors.accent : colors.border,
+        margin: '0 4px',
+        borderRadius: 99,
+        opacity: active ? 0.7 : 1,
+      }}
+    />
   );
 }

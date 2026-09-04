@@ -8,7 +8,7 @@
       "projectId": "nitrotickets-new",
       "name": "NitroTickets",
       "slug": "nitrotickets-new",
-      "path": "nitrotickets-new",
+      "path": "Nitro_New",
       "status": "active",
       "category": "client-task",
       "stack": ["laravel", "php", "fullstack"],
@@ -67,7 +67,10 @@
       "category": "seo-project",
       "stack": ["fullstack", "tooling"],
       "defaultSpecialists": ["pm.intake", "seo.audit", "eng.app-delivery", "ux.design", "perf.optimize", "qa.verify"],
-      "constraints": ["SEO is an active priority for discovery and landing pages"],
+      "constraints": [
+        "SEO is an active priority for discovery and landing pages",
+        "Local folder is not on this machine as of 2026-09-04 — do not apply code until the repo is present"
+      ],
       "tags": ["tools", "workflow", "seo"],
       "seoBaseUrl": "https://toolworks.app",
       "seoLocalUrl": "http://127.0.0.1:5173"
@@ -95,8 +98,12 @@
       "category": "seo-project",
       "stack": ["frontend", "marketing"],
       "defaultSpecialists": ["pm.intake", "seo.audit", "ux.design", "perf.optimize"],
-      "constraints": [],
-      "tags": ["portfolio", "seo", "marketing"]
+      "constraints": [
+        "Live site only — there is no Laragon app at this path. Public site is https://umerfarooqtech.com",
+        "Do not invent a local repo or apply code patches until a checkout exists"
+      ],
+      "tags": ["portfolio", "seo", "marketing", "remote-only"],
+      "seoBaseUrl": "https://umerfarooqtech.com"
     },
     {
       "projectId": "HR-farabi",
@@ -107,7 +114,10 @@
       "category": "client-task",
       "stack": ["fullstack", "hr"],
       "defaultSpecialists": ["pm.intake", "security.review", "eng.app-delivery", "qa.verify"],
-      "constraints": ["PII and HR records require security review before any public exposure"],
+      "constraints": [
+        "PII and HR records require security review before any public exposure",
+        "Local folder is not on this machine as of 2026-09-04 — do not apply code until the repo is present"
+      ],
       "tags": ["hr", "sensitive", "internal"]
     }
   ]

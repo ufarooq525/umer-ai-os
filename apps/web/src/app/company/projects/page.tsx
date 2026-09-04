@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Card, colors, radii } from '@umer/ui';
 import { getTasks, getWorkProjects } from '@/lib/control-api';
 import { StatusBadge } from '@/components/os/StatusBadge';
+import { PagedChildren } from '@/components/os/PagedChildren';
 import { projectTone } from '@/components/os/status';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +30,7 @@ export default async function ProjectsPage() {
           <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>No projects yet.</p>
         </Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+        <PagedChildren pageSize={12} minItemWidth={260}>
           {projects.map((project) => {
             const projectTasks = tasks.filter((t) => t.projectId === project.projectId);
             const done = projectTasks.filter((t) => t.status === 'Done').length;
@@ -63,7 +64,7 @@ export default async function ProjectsPage() {
               </Link>
             );
           })}
-        </div>
+        </PagedChildren>
       )}
     </div>
   );

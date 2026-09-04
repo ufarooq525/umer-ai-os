@@ -1,17 +1,11 @@
-'use client';
-
-import { motion } from 'framer-motion';
 import { colors, fonts, radii } from '@umer/ui';
 import { statusMeta, type StatusTone } from './status';
 
 export function StatusBadge({ tone, label }: { tone: StatusTone; label?: string }) {
   const meta = statusMeta(tone);
+
   return (
-    <motion.span
-      key={tone}
-      initial={{ opacity: 0, y: -2 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+    <span
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -28,8 +22,18 @@ export function StatusBadge({ tone, label }: { tone: StatusTone; label?: string 
         whiteSpace: 'nowrap',
       }}
     >
-      <span aria-hidden>{meta.icon}</span>
+      <span
+        aria-hidden
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: 999,
+          background: meta.color,
+          flexShrink: 0,
+        }}
+      />
       {label ?? meta.label}
-    </motion.span>
+    </span>
   );
 }
+

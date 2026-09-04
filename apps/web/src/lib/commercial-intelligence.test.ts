@@ -84,6 +84,21 @@ describe('deriveContactChannels', () => {
     expect(byType.website).toMatchObject({ value: 'https://al-haramain-transport.example', confidence: 'high', source: 'Google Places' });
     expect(byType.phone).toMatchObject({ value: '+966501234567', confidence: 'high', verified: false });
     expect(byType.address).toMatchObject({ value: 'Makkah, Saudi Arabia', confidence: 'high' });
+    expect(byType.address?.href).toContain('google.com/maps');
+    expect(byType.maps?.href).toContain('google.com/maps');
+  });
+
+  it('exposes the real Google Maps listing URL from sourceRefs so the founder can cross-check', () => {
+    const maps = 'https://maps.google.com/?cid=433693025369287885';
+    const channels = deriveContactChannels(
+      business({
+        sourceRefs: ['google-places:ChIJB55wMTAFwhURzWyzPoLJBAY', maps, 'phone:+966 59 026 1106', 'address:Alaziziyyah, Makkah'],
+      }),
+      candidate({ websiteUrl: undefined, sourceRefs: ['google-places:ChIJB55wMTAFwhURzWyzPoLJBAY', maps] }),
+    );
+    const mapsChannel = channels.find((c) => c.type === 'maps');
+    expect(mapsChannel?.value).toBe(maps);
+    expect(mapsChannel?.href).toBe(maps);
   });
 
   it('never invents an email or marks anything verified when no discovery candidate exists', () => {

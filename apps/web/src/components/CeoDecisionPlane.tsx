@@ -350,8 +350,8 @@ function DecisionDetail({ opportunity, busyKey, errors, run }: { opportunity: Op
       <RowError message={errors[selectKey] || errors[rejectKey]} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <Link href={`/company/opportunities/${opportunity.id}`} style={{ fontSize: 12, color: colors.accent }}>
-          View full opportunity →
+        <Link href={`/company/opportunities?open=${opportunity.id}`} style={{ fontSize: 12, color: colors.accent }}>
+          View opportunity →
         </Link>
         <div style={{ flex: 1 }} />
         <Button

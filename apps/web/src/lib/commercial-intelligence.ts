@@ -20,7 +20,7 @@ import type {
 
 // --- Contact Intelligence ----------------------------------------------------
 
-export type ContactChannelType = 'website' | 'phone' | 'whatsapp' | 'email' | 'address';
+export type ContactChannelType = 'website' | 'phone' | 'whatsapp' | 'email' | 'address' | 'maps';
 export type ContactConfidence = 'high' | 'medium' | 'low' | 'unknown';
 
 export type ContactChannel = {
@@ -28,9 +28,30 @@ export type ContactChannel = {
   value: string | null;
   source: string | null;
   confidence: ContactConfidence;
-  /** Never true today — nothing in the pipeline verifies a channel is reachable, only that it was observed. */
+  /** Live HTTP probe can set this later for websites. Maps/phone stay observational. */
   verified: boolean;
+  href?: string | null;
 };
+
+export function deriveMapsUrl(sourceRefs?: string[], address?: string | null): string | null {
+  const refs = sourceRefs ?? [];
+  const maps = refs.find((r) => /^https?:\/\/(www\.)?(google\.com\/maps|maps\.google\.com|maps\.app\.goo\.gl)/i.test(r));
+  if (maps) return maps;
+  const place = refs.find((r) => r.startsWith('google-places:'));
+  const placeId = place?.slice('google-places:'.length).trim();
+  if (placeId) return `https://www.google.com/maps/place/?q=place_id:${placeId}`;
+  if (address?.trim()) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address.trim())}`;
+  return null;
+}
+
+function telHref(phone: string): string {
+  return `tel:${phone.replace(/[^\d+]/g, '')}`;
+}
+
+function waHref(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits ? `https://wa.me/${digits}` : `https://wa.me/`;
+}
 
 function extractPrefixed(sourceRefs: string[] | undefined, prefix: string): string | undefined {
   const ref = sourceRefs?.find((r) => r.startsWith(prefix));
@@ -49,16 +70,19 @@ export function deriveContactChannels(
   // populates it), sourceRefs prefix as the real-world fallback.
   const website = business.website ?? candidate?.websiteUrl ?? null;
   const phone = candidate?.phone ?? extractPrefixed(candidate?.sourceRefs, 'phone:') ?? extractPrefixed(business.sourceRefs, 'phone:') ?? null;
-  const address = candidate?.address ?? extractPrefixed(candidate?.sourceRefs, 'address:') ?? null;
+  const address = candidate?.address ?? extractPrefixed(candidate?.sourceRefs, 'address:') ?? extractPrefixed(business.sourceRefs, 'address:') ?? null;
   const email = extractPrefixed(candidate?.sourceRefs, 'email:') ?? extractPrefixed(business.sourceRefs, 'email:') ?? null;
+  const refs = [...(candidate?.sourceRefs ?? []), ...(business.sourceRefs ?? [])];
+  const mapsUrl = deriveMapsUrl(refs, address);
 
   return [
     {
       type: 'website',
       value: website,
-      source: website ? (business.website ? 'Business profile' : 'Google Places') : null,
+      source: website ? (business.website ? 'Business profile' : 'Google Places') : 'Not on the Google listing — URLs in Maps photos are not checked',
       confidence: website ? 'high' : 'unknown',
       verified: false,
+      href: website,
     },
     {
       type: 'phone',
@@ -66,6 +90,7 @@ export function deriveContactChannels(
       source: phone ? 'Google Places' : null,
       confidence: phone ? 'high' : 'unknown',
       verified: false,
+      href: phone ? telHref(phone) : null,
     },
     {
       type: 'whatsapp',
@@ -73,6 +98,7 @@ export function deriveContactChannels(
       source: phone ? 'Inferred from phone number — not verified as WhatsApp-capable' : null,
       confidence: phone ? 'low' : 'unknown',
       verified: false,
+      href: phone ? waHref(phone) : null,
     },
     {
       type: 'email',
@@ -80,6 +106,7 @@ export function deriveContactChannels(
       source: email ? 'Discovered reference' : null,
       confidence: email ? 'medium' : 'unknown',
       verified: false,
+      href: email ? `mailto:${email}` : null,
     },
     {
       type: 'address',
@@ -87,6 +114,15 @@ export function deriveContactChannels(
       source: address ? 'Google Places' : null,
       confidence: address ? 'high' : 'unknown',
       verified: false,
+      href: mapsUrl,
+    },
+    {
+      type: 'maps',
+      value: mapsUrl,
+      source: mapsUrl ? 'Google Places listing' : null,
+      confidence: mapsUrl ? 'high' : 'unknown',
+      verified: false,
+      href: mapsUrl,
     },
   ];
 }

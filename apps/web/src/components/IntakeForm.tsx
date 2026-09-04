@@ -19,6 +19,7 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
     projects[0]?.projectId ??
     '';
   const [projectId, setProjectId] = useState(defaultProject);
+  const selected = projects.find((p) => p.projectId === projectId);
   const [type, setType] = useState<(typeof TYPES)[number]>('qa');
   const [goal, setGoal] = useState('');
   const [doneWhen, setDoneWhen] = useState('');
@@ -30,6 +31,10 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
     e.preventDefault();
     if (!projectId || goal.trim().length < 8) {
       setError('Pick a project and write a goal (at least 8 characters).');
+      return;
+    }
+    if (selected?.onDisk === false && type !== 'seo' && type !== 'brainstorm') {
+      setError(`${selected.name} is not on disk. Only SEO (live URL) or brainstorm is allowed until the repo exists.`);
       return;
     }
     setBusy(true);
@@ -80,12 +85,20 @@ export function IntakeForm({ projects }: { projects: ProjectRecord[] }) {
               {projects.map((p) => (
                 <option key={p.projectId} value={p.projectId}>
                   {p.name} ({p.projectId})
+                  {p.onDisk === false ? ' · not on disk' : ''}
                   {p.tags.includes('seo') ? ' · SEO' : ''}
                   {p.defaultSpecialists.includes('qa.verify') ? ' · QA' : ''}
                 </option>
               ))}
             </select>
           </label>
+          {selected?.onDisk === false ? (
+            <p style={{ margin: 0, fontSize: 13, color: colors.warning, lineHeight: 1.45 }}>
+              {selected.name} is not under Laragon www.
+              {selected.seoBaseUrl ? ` Live site: ${selected.seoBaseUrl}. SEO checks can use the public URL.` : ''}{' '}
+              Do not run feature/bug apply — there is no local repo to write into.
+            </p>
+          ) : null}
           <label style={{ display: 'grid', gap: 4, fontSize: 14 }}>
             Type
             <select

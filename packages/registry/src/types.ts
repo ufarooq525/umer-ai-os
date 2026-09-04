@@ -50,6 +50,8 @@ export type ProjectCatalog = {
 
 export type ResolvedProject = ProjectRecord & {
   absolutePath: string;
+  /** True when the catalog path exists under the projects root. Set by the registry list/get path. */
+  onDisk?: boolean;
 };
 
 export type IntakeInstruction = {

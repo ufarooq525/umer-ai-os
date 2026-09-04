@@ -230,7 +230,7 @@ export function deriveAttentionCases(
         label: o.title,
         type: 'opportunity' as const,
         id: o.id,
-        href: `/company/opportunities/${o.id}`,
+        href: `/company/opportunities?open=${o.id}`,
       })),
       evidence: top.map((o) => `"${o.title}" — score ${o.score!.overall}/100 (${o.status})`),
       currentState: [{ label: 'Queue', value: plural(decidable.length, 'opportunity', 'opportunities') }],

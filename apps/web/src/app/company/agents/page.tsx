@@ -1,6 +1,7 @@
 import { Card, colors } from '@umer/ui';
 import { getAgentRuns, getAgents, getTasks, getWorkProjects } from '@/lib/control-api';
 import { AgentCard } from '@/components/os/AgentCard';
+import { PagedChildren } from '@/components/os/PagedChildren';
 import { agentCurrentRun, agentCurrentTask, agentProjectName } from '@/components/os/joins';
 
 export const dynamic = 'force-dynamic';
@@ -46,7 +47,7 @@ export default async function AgentsPage() {
           </div>
         </Card>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+        <PagedChildren pageSize={12} minItemWidth={280}>
           {agents.map((agent) => (
             <AgentCard
               key={agent.agentId}
@@ -56,7 +57,7 @@ export default async function AgentsPage() {
               projectName={agentProjectName(agent, tasks, projects)}
             />
           ))}
-        </div>
+        </PagedChildren>
       )}
     </div>
   );

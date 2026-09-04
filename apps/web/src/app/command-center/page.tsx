@@ -4,10 +4,17 @@ import {
   getAgents,
   getArtifacts,
   getCommercialIntelligenceSummary,
+  getDashboard,
   getOpportunities,
+  getPendingGates,
+  getProjects,
   getRecentAudit,
   getTasks,
+  getWorkPackages,
   getWorkProjects,
+  type OpportunityRecord,
+  type WorkProjectRecord,
+  type WorkTaskRecord,
 } from '@/lib/control-api';
 import {
   deriveActivityFeed,
@@ -17,6 +24,9 @@ import {
   deriveLiveActivity,
 } from '@/lib/company-derive';
 import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
+import { deriveMorningBrief } from '@/lib/morning-brief';
+import { deriveSeoOwnerBoard } from '@/lib/seo-owner';
+import { probeRuntimeTruth } from '@/lib/runtime-truth';
 import { MetricTile } from '@/components/os/MetricTile';
 import { CompanyOperatingFlow } from '@/components/os/CompanyOperatingFlow';
 import { LiveCompanyMap } from '@/components/os/LiveCompanyMap';
@@ -29,21 +39,63 @@ import { agentCurrentRun, agentCurrentTask, agentProjectName } from '@/component
 import { OPPORTUNITY_STAGES, opportunityStageIndex } from '@/components/os/OpportunityJourney';
 import { StatusBadge } from '@/components/os/StatusBadge';
 import { projectTone } from '@/components/os/status';
+import { MorningBrief } from '@/components/os/MorningBrief';
+import { SeoOwnerBoard } from '@/components/os/SeoOwnerBoard';
+import { RuntimeTruthStrip } from '@/components/os/RuntimeTruthStrip';
+import { PulseDot } from '@/components/os/PulseDot';
+import { GlobalAISearch } from '@/components/GlobalAISearch';
+import { WorkerSupervisor } from '@/components/WorkerSupervisor';
+import { OpportunityControlCenter } from '@/components/OpportunityControlCenter';
+import { CEOControlCenter } from '@/components/CEOControlCenter';
+import { MCPControlCenter } from '@/components/MCPControlCenter';
+import { RevenueLineage } from '@/components/RevenueLineage';
+import { WatchdogFindingsBanner } from '@/components/WatchdogFindingsBanner';
 import Link from 'next/link';
-import type { OpportunityRecord, WorkProjectRecord, WorkTaskRecord } from '@/lib/control-api';
 
 export const dynamic = 'force-dynamic';
 
+async function settled<T>(task: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await task;
+  } catch {
+    return fallback;
+  }
+}
+
 export default async function CommandCenterPage() {
-  const [opportunities, projects, tasks, agents, agentRuns, auditRecords, artifacts, commercialSummary] = await Promise.all([
-    getOpportunities(),
-    getWorkProjects(),
-    getTasks(),
-    getAgents(),
-    getAgentRuns(),
-    getRecentAudit(),
-    getArtifacts(),
-    getCommercialIntelligenceSummary(),
+  const [
+    opportunities,
+    projects,
+    tasks,
+    agents,
+    agentRuns,
+    auditRecords,
+    artifacts,
+    commercialSummary,
+    dashboard,
+    gates,
+    catalog,
+    workPackages,
+    runtime,
+  ] = await Promise.all([
+    settled(getOpportunities(), []),
+    settled(getWorkProjects(), []),
+    settled(getTasks(), []),
+    settled(getAgents(), []),
+    settled(getAgentRuns(), []),
+    settled(getRecentAudit(), []),
+    settled(getArtifacts(), []),
+    settled(getCommercialIntelligenceSummary(), {
+      niches: [],
+      outreachDraftsAwaitingReview: 0,
+      businessesConsidered: 0,
+      cap: 0,
+    }),
+    settled(getDashboard(), null),
+    settled(getPendingGates(), []),
+    settled(getProjects(), { projectsRoot: '', projects: [] }),
+    settled(getWorkPackages(), []),
+    probeRuntimeTruth(),
   ]);
 
   const pulse = deriveCompanyPulse(agents, projects, tasks, opportunities);
@@ -54,7 +106,19 @@ export default async function CommandCenterPage() {
   const story = deriveCompanyStory(pulse, attentionCases, projects, tasks, agents);
   const activity = deriveActivityFeed(auditRecords, opportunities, projects, tasks, agents);
   const liveActivity = deriveLiveActivity(agentRuns, agents);
-  const isOperating = pulse.agents.working > 0 || pulse.projects.active > 0;
+  const seoBoard = deriveSeoOwnerBoard({ projects: catalog.projects, gates });
+  const brief = deriveMorningBrief({
+    pulse,
+    attentionCases,
+    opportunities,
+    gates,
+    dashboard,
+    agentRuns,
+    auditRecords,
+    controlApiUp: runtime.controlApi.status === 'up',
+    llm: { status: runtime.llm.status, label: runtime.llm.label },
+  });
+  const watchdogFindings = dashboard?.watchdogFindings ?? [];
 
   const workingAgents = agents
     .filter((a) => a.status === 'active' && a.controlState === 'active')
@@ -67,24 +131,32 @@ export default async function CommandCenterPage() {
           Umer AI OS
         </p>
         <h1 style={{ fontSize: 'clamp(1.75rem, 3vw, 2.4rem)', fontWeight: 650, margin: '8px 0 0', letterSpacing: '-0.03em' }}>
-          Company Operating
+          Command Center
         </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 0' }}>
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 999,
-              background: isOperating ? colors.success : colors.muted,
-              display: 'inline-block',
-            }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+          <PulseDot
+            tone={
+              brief.companyState === 'broken' ? 'danger' : brief.companyState === 'needs_you' ? 'wait' : brief.companyState === 'operating' ? 'live' : 'idle'
+            }
           />
           <span style={{ fontFamily: fonts.mono, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: colors.muted }}>
-            {isOperating ? 'COMPANY OPERATING' : 'COMPANY IDLE'}
+            {brief.companyState === 'broken'
+              ? 'COMPANY BROKEN'
+              : brief.companyState === 'needs_you'
+                ? 'NEEDS YOU'
+                : brief.companyState === 'operating'
+                  ? 'COMPANY OPERATING'
+                  : 'COMPANY IDLE'}
           </span>
         </div>
         <p style={{ margin: '14px 0 0', color: colors.text, fontSize: 15, maxWidth: 760, lineHeight: 1.6 }}>{story}</p>
       </header>
+
+      <WatchdogFindingsBanner findings={watchdogFindings} />
+      <RuntimeTruthStrip truth={runtime} />
+      <GlobalAISearch compact />
+      <MorningBrief brief={brief} />
+      <SeoOwnerBoard board={seoBoard} compact />
 
       <CompanyOperatingFlow pulse={pulse} />
 
@@ -97,6 +169,8 @@ export default async function CommandCenterPage() {
           <MetricTile label="Active Tasks" value={pulse.tasks.active} href="/company/tasks" sublines={[`${pulse.tasks.total} total`]} />
           <MetricTile label="Blocked Work" value={pulse.tasks.blocked} href="/company/tasks" sublines={['Needs unblocking']} />
           <MetricTile label="Decisions Required" value={pulse.decisionsRequired} href="/decisions" sublines={['High-score opportunities']} />
+          <MetricTile label="Pending gates" value={dashboard?.pendingGates ?? gates.length} href="/gates" sublines={[`${dashboard?.workPackagesAwaitingReview ?? workPackages.filter((w) => w.status === 'AwaitingReview').length} awaiting review`]} />
+          <MetricTile label="SEO approvals" value={brief.seoApprovals} href="/seo" sublines={['Owner board']} />
         </div>
       </section>
 
@@ -152,6 +226,20 @@ export default async function CommandCenterPage() {
         <SectionTitle href="/activity">Recent Activity</SectionTitle>
         <ActivityFeed entries={activity} limit={6} />
       </section>
+
+      <OpportunityControlCenter />
+      <WorkerSupervisor />
+
+      <details>
+        <summary style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: colors.muted }}>
+          Controls, tools, and revenue lineage
+        </summary>
+        <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>
+          <CEOControlCenter />
+          <MCPControlCenter />
+          <RevenueLineage />
+        </div>
+      </details>
     </div>
   );
 }

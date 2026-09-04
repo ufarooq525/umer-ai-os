@@ -1,11 +1,19 @@
 import { Card, colors, fonts } from '@umer/ui';
 import { getAgents, getHealth, getTasks, getWorkProjects } from '@/lib/control-api';
+import { probeRuntimeTruth } from '@/lib/runtime-truth';
 import { StatusBadge } from '@/components/os/StatusBadge';
+import { RuntimeTruthStrip } from '@/components/os/RuntimeTruthStrip';
 
 export const dynamic = 'force-dynamic';
 
 export default async function SystemHealthPage() {
-  const [health, agents, projects, tasks] = await Promise.all([getHealth(), getAgents(), getWorkProjects(), getTasks()]);
+  const [health, agents, projects, tasks, runtime] = await Promise.all([
+    getHealth(),
+    getAgents(),
+    getWorkProjects(),
+    getTasks(),
+    probeRuntimeTruth(),
+  ]);
 
   const workingAgents = agents.filter((a) => a.status === 'active' && a.controlState === 'active').length;
   const blockedTasks = tasks.filter((t) => t.status === 'Blocked').length;
@@ -17,10 +25,12 @@ export default async function SystemHealthPage() {
           System Health
         </h1>
         <p style={{ margin: '8px 0 0', color: colors.muted, fontSize: 14, maxWidth: 640, lineHeight: 1.5 }}>
-          There is no infrastructure metrics endpoint (CPU, queue depth, latency) yet — this page shows control-api
-          liveness plus stats derived from the entities already on this dashboard.
+          Control API and the local model are probed live. There is still no CPU, queue-depth, or latency endpoint —
+          those stay unknown rather than shown as zero.
         </p>
       </header>
+
+      <RuntimeTruthStrip truth={runtime} />
 
       <Card title="control-api">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -31,6 +41,21 @@ export default async function SystemHealthPage() {
             </span>
           ) : null}
         </div>
+      </Card>
+
+      <Card title="Local model (LM Studio)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <StatusBadge tone={runtime.llm.status === 'up' ? 'working' : 'failed'} label={runtime.llm.label} />
+          <span style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.muted }}>
+            {runtime.llm.url}
+            {runtime.llm.model ? ` · ${runtime.llm.model}` : ''}
+          </span>
+        </div>
+        {runtime.llm.status === 'down' ? (
+          <p style={{ margin: '10px 0 0', fontSize: 13, color: colors.muted }}>
+            Specialists that need a model will fail closed until this endpoint answers.
+          </p>
+        ) : null}
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>

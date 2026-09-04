@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join, normalize } from 'node:path';
 import { ProjectCatalogSchema } from './schema.js';
@@ -47,8 +48,10 @@ export async function loadCatalogFromFile(catalogPath: string): Promise<ProjectC
 }
 
 export function toResolved(root: string, project: ProjectRecord): ResolvedProject {
+  const absolutePath = resolveProjectPath(root, project);
   return {
     ...project,
-    absolutePath: resolveProjectPath(root, project),
+    absolutePath,
+    onDisk: existsSync(absolutePath),
   };
 }

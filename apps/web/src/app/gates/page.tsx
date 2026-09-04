@@ -44,7 +44,9 @@ export default async function GatesPage() {
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           {gates.map((gate, index) => (
-            <GateResolvePanel key={gate.waitId} gate={gate} review={reviews[index] ?? null} />
+            <div key={gate.waitId} id={gate.waitId}>
+              <GateResolvePanel gate={gate} review={reviews[index] ?? null} />
+            </div>
           ))}
         </div>
       )}

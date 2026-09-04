@@ -1,6 +1,3 @@
-'use client';
-
-import { motion } from 'framer-motion';
 import { colors, fonts, radii, spacing } from '@umer/ui';
 import type { AttentionCase, AttentionSeverity } from '@/lib/company-derive';
 
@@ -30,12 +27,8 @@ export function AttentionCard({
 }) {
   const meta = SEVERITY_META[attentionCase.severity];
   return (
-    <motion.button
+    <button
       type="button"
-      layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
       onClick={onSelect}
       style={{
         display: 'block',
@@ -68,6 +61,6 @@ export function AttentionCard({
       </div>
       <strong style={{ fontSize: 14 }}>{attentionCase.title}</strong>
       <p style={{ margin: '4px 0 0', fontSize: 12, color: colors.muted, lineHeight: 1.4 }}>{attentionCase.severityReason}</p>
-    </motion.button>
+    </button>
   );
 }

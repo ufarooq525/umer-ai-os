@@ -40,7 +40,7 @@ export class DefaultOutreachGenerator implements OutreachGenerator {
       recipient: this.extractPhone(business),
       body: waBody,
       language: hasArabicContext ? 'bilingual' : 'en',
-      valueProposition: `Eliminate ${primaryProblem.toLowerCase()} with automated booking & direct payments.`,
+      valueProposition: `Fix the recorded gap: ${primaryProblem}`,
       evidenceRefs: evidence.map((e) => e.id),
       status: 'drafted',
       createdAt: now,
@@ -59,7 +59,7 @@ export class DefaultOutreachGenerator implements OutreachGenerator {
       subject: emailDraft.subject,
       body: emailDraft.body,
       language: 'en',
-      valueProposition: `Implement ${opportunity.title} to increase direct digital revenue.`,
+      valueProposition: `Scoped job: ${opportunity.title}. No invented conversion lift.`,
       evidenceRefs: evidence.map((e) => e.id),
       status: 'drafted',
       createdAt: now,
@@ -75,7 +75,7 @@ export class DefaultOutreachGenerator implements OutreachGenerator {
         `السلام عليكم فريق ${businessName}،\n\n` +
         `لاحظنا في تحليلنا الرقمي لخدمات العمرة أن موقعكم يواجه: "${primaryProblem}".\n` +
         `نساعد المشغلين في مكة والمدينة على أتمتة حجوزات المعتمرين والدفع الإلكتروني المباشر (مدى / فيزا) وتوفير نظام متابعة ذكي.\n\n` +
-        `هل يناسبكم استعراض تجريبي سريع لمدة 5 دقائق لمعرفة كيف يمكن زيادة الحجوزات المباشرة بنسبة 25-35%؟`
+        `هل يناسبكم مكالمة قصيرة لمدة 10 دقائق لتأكيد نطاق العمل فقط — بدون وعود بنسبة تحويل؟`
       );
     }
     return (
@@ -95,11 +95,11 @@ export class DefaultOutreachGenerator implements OutreachGenerator {
       `• ${primaryProblem}\n\n` +
       `Proposed Value Solution:\n` +
       `• ${solutionTitle}\n` +
-      `• Estimated pipeline efficiency increase: 20% – 35% in direct transactional conversion\n` +
-      `• Fully integrated payment and automated follow-up workflow\n\n` +
-      `We have already prepared an implementation blueprint tailored to your operations. When would be a convenient time for a brief 10-minute discovery call?\n\n` +
-      `Best regards,\n` +
-      `Umer AI OS — Revenue & Opportunity Operations`
+      `• Price and timeline only after a short call — no conversion percentage is claimed\n\n` +
+      `If this gap is real on your side, I can walk the scope in 10 minutes.\n\n` +
+      `Umer Farooq\n` +
+      `founder@umerfarooqtech.com\n` +
+      `https://umerfarooqtech.com`
     );
     return { subject, body };
   }

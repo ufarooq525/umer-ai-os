@@ -3,7 +3,9 @@
 import type { ReactNode } from 'react';
 import { colors, fonts } from '@umer/ui';
 import { GridBackground } from './GridBackground';
+import { PageEnter } from './PageEnter';
 import { Sidebar } from './Sidebar';
+import { FounderChat } from './FounderChat';
 
 export function OSShell({ children }: { children: ReactNode }) {
   return (
@@ -21,6 +23,7 @@ export function OSShell({ children }: { children: ReactNode }) {
     >
       <GridBackground />
       <Sidebar />
+      <FounderChat />
       <main
         style={{
           position: 'relative',
@@ -30,7 +33,9 @@ export function OSShell({ children }: { children: ReactNode }) {
           padding: '32px clamp(16px, 3vw, 40px) 64px',
         }}
       >
-        <div style={{ maxWidth: 1280, margin: '0 auto' }}>{children}</div>
+        <div style={{ maxWidth: 1280, margin: '0 auto' }}>
+          <PageEnter>{children}</PageEnter>
+        </div>
       </main>
     </div>
   );

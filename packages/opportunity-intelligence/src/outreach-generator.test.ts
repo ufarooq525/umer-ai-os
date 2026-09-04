@@ -91,6 +91,7 @@ describe('DefaultOutreachGenerator', () => {
     expect(emailDraft?.recipient).toBe('booking@alansar-tours.example.com');
     expect(emailDraft?.subject).toContain('Al-Ansar Umrah Transport & Tours');
     expect(emailDraft?.body).toContain('Automated Instant Umrah Booking');
-    expect(emailDraft?.body).toContain('20% – 35%');
+    expect(emailDraft?.body).not.toMatch(/\d+\s*[–-]\s*\d+\s*%/);
+    expect(emailDraft?.body).toContain('founder@umerfarooqtech.com');
   });
 });

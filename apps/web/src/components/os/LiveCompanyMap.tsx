@@ -1,7 +1,4 @@
-'use client';
-
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { Card, colors, fonts, radii, spacing } from '@umer/ui';
 import type {
   AgentRecord,
@@ -62,15 +59,17 @@ function Node({ node }: { node: MapNode }) {
 
 function Edge({ active }: { active: boolean }) {
   return (
-    <div style={{ position: 'relative', width: 28, height: 2, flexShrink: 0, background: colors.border, alignSelf: 'center' }}>
-      {active ? (
-        <motion.div
-          animate={{ left: [0, 22] }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-          style={{ position: 'absolute', top: -2, width: 6, height: 6, borderRadius: 999, background: colors.accent }}
-        />
-      ) : null}
-    </div>
+    <div
+      style={{
+        width: 28,
+        height: 2,
+        flexShrink: 0,
+        background: active ? colors.accent : colors.border,
+        alignSelf: 'center',
+        borderRadius: 99,
+        opacity: active ? 0.7 : 1,
+      }}
+    />
   );
 }
 
@@ -133,7 +132,7 @@ export function LiveCompanyMap({ opportunities, projects, tasks, agents, agentRu
                   key: opportunity.id,
                   label: opportunity.title,
                   sublabel: opportunity.score ? `Score ${opportunity.score.overall}/100` : undefined,
-                  href: `/company/opportunities/${opportunity.id}`,
+                  href: `/company/opportunities?open=${opportunity.id}`,
                   active: false,
                 },
               ]

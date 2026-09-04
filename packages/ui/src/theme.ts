@@ -1,14 +1,14 @@
 export const colors = {
   /** Page wash — cool graphite, not flat black */
-  bg: '#12141a',
+  bg: '#0e1016',
   /** Raised panels */
-  surface: '#1c1f28',
+  surface: '#171b24',
   /** Slightly higher panels / inputs */
-  surfaceRaised: '#242833',
-  border: '#323846',
-  borderStrong: '#454d5e',
-  text: '#f2f0eb',
-  muted: '#9aa3b5',
+  surfaceRaised: '#1f2430',
+  border: '#2c3342',
+  borderStrong: '#4a5368',
+  text: '#f4f1ea',
+  muted: '#8f98ab',
   /** Copper accent — distinct from default blue SaaS */
   accent: '#e8a054',
   accentSoft: 'rgba(232, 160, 84, 0.14)',
