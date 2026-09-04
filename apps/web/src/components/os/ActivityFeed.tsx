@@ -6,10 +6,42 @@ import type { ActivityEntry } from '@/lib/company-derive';
 import { formatDateLabel, formatTime } from './format';
 import { TechnicalDetailsDrawer } from './TechnicalDetailsDrawer';
 
+const EXAMPLE_EVENTS = [
+  '🧠 CEO selected an opportunity',
+  '◆ Project created',
+  '✓ Research agent completed competitor research',
+  '⚙ Engineering agent started architecture',
+];
+
 export function ActivityFeed({ entries, limit }: { entries: ActivityEntry[]; limit?: number }) {
   const shown = limit ? entries.slice(0, limit) : entries;
   if (shown.length === 0) {
-    return <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>No company activity recorded yet.</p>;
+    return (
+      <div>
+        <p style={{ margin: '0 0 12px', color: colors.text, fontSize: 13, lineHeight: 1.6 }}>
+          No company activity recorded yet. Every CEO decision and workflow milestone will appear here as it happens.
+        </p>
+        <p
+          style={{
+            margin: '0 0 6px',
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: colors.muted,
+          }}
+        >
+          A real entry will look like
+        </p>
+        <div style={{ display: 'grid', gap: 4, opacity: 0.5 }}>
+          {EXAMPLE_EVENTS.map((event) => (
+            <div key={event} style={{ fontSize: 12, color: colors.muted, fontStyle: 'italic' }}>
+              {event}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   const groups: Array<{ label: string; entries: ActivityEntry[] }> = [];

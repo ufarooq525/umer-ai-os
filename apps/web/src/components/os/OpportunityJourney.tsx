@@ -1,6 +1,7 @@
 import { colors, fonts } from '@umer/ui';
 
-const STAGES = ['Discovered', 'Evaluating', 'Selected', 'Project', 'Outcome'] as const;
+export const OPPORTUNITY_STAGES = ['Discovered', 'Evaluating', 'Selected', 'Project', 'Outcome'] as const;
+const STAGES = OPPORTUNITY_STAGES;
 
 const STATUS_TO_STAGE_INDEX: Record<string, number> = {
   discovered: 0,

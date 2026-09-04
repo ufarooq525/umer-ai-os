@@ -38,9 +38,10 @@ export type CompanyPulse = {
   decisionsRequired: number;
 };
 
-const PROMISING_SCORE_THRESHOLD = 70;
-const HIGH_PRIORITY_SCORE_THRESHOLD = 85;
-const DECIDABLE_OPPORTUNITY_STATUSES = new Set(['researching', 'validated', 'outreach_ready', 'in_sales']);
+/** Shared with decision-center.ts — the Decision Center is the itemized triage view this same threshold's aggregate Attention case links out to. */
+export const PROMISING_SCORE_THRESHOLD = 70;
+export const HIGH_PRIORITY_SCORE_THRESHOLD = 85;
+export const DECIDABLE_OPPORTUNITY_STATUSES = new Set(['researching', 'validated', 'outreach_ready', 'in_sales']);
 const ACTIVE_TASK_STATUSES = new Set(['Ready', 'Assigned', 'InProgress', 'InReview']);
 const OPEN_TASK_STATUSES = new Set(['Ready', 'Assigned', 'InProgress', 'InReview']);
 

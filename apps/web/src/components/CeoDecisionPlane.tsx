@@ -1,18 +1,24 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Badge, Button, Card, colors, radii } from '@umer/ui';
 import {
   executeCommand,
+  getNicheProspects,
   type AgentRecord,
   type CeoActor,
   type CeoActorKind,
   type CeoCommandName,
+  type NicheProspectSummary,
   type OpportunityRecord,
   type WorkProjectRecord,
   type WorkTaskRecord,
 } from '@/lib/control-api';
+import { deriveCompanyPulse } from '@/lib/company-derive';
+import { deriveDecisionQueue, deriveDecisionTier, DECISION_CONSEQUENCE, type DecisionTier } from '@/lib/decision-center';
+import { OpportunityJourney, recommendationLabel } from '@/components/os/OpportunityJourney';
 
 /**
  * CEO Command & Decision Plane console. Every button here is a thin wrapper
@@ -25,15 +31,6 @@ import {
  * succeeding.
  */
 
-const SELECTABLE_FROM = new Set(['discovered', 'researching', 'validated', 'outreach_ready', 'in_sales']);
-const REJECTABLE_FROM = new Set([
-  'discovered',
-  'researching',
-  'validated',
-  'outreach_ready',
-  'in_sales',
-  'selected_for_execution',
-]);
 const PAUSABLE_PROJECT_FROM = new Set(['Forming', 'Active', 'Stabilizing']);
 const TERMINAL_PROJECT = new Set(['Archived', 'Abandoned']);
 
@@ -53,6 +50,7 @@ export function CeoDecisionPlane({ opportunities, projects, tasks, agents }: Pro
   const [lastResult, setLastResult] = useState<string | null>(null);
 
   const actor: CeoActor = { principalId: principalId.trim() || 'human.ceo', kind };
+  const pulse = useMemo(() => deriveCompanyPulse(agents, projects, tasks, opportunities), [agents, projects, tasks, opportunities]);
 
   async function run(
     key: string,
@@ -77,6 +75,8 @@ export function CeoDecisionPlane({ opportunities, projects, tasks, agents }: Pro
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
+      <DecisionCenterSummary pulse={pulse} />
+
       <Card title="Acting as">
         <p style={{ margin: '0 0 12px', color: colors.muted, fontSize: 12 }}>
           Every command below is sent as this actor and authorized by @umer/trust — only the
@@ -107,7 +107,7 @@ export function CeoDecisionPlane({ opportunities, projects, tasks, agents }: Pro
         ) : null}
       </Card>
 
-      <OpportunitiesPanel opportunities={opportunities} busyKey={busyKey} errors={errors} run={run} />
+      <DecisionCenterPanel opportunities={opportunities} busyKey={busyKey} errors={errors} run={run} />
       <ProjectsPanel projects={projects} busyKey={busyKey} errors={errors} run={run} />
       <TasksPanel tasks={tasks} projects={projects} busyKey={busyKey} errors={errors} run={run} />
       <AgentsPanel agents={agents} busyKey={busyKey} errors={errors} run={run} />
@@ -133,83 +133,299 @@ function RowError({ message }: { message?: string }) {
   return <p style={{ margin: '4px 0 0', fontSize: 12, color: colors.danger }}>{message}</p>;
 }
 
-function OpportunitiesPanel({
-  opportunities,
-  busyKey,
-  errors,
-  run,
-}: PanelBaseProps & { opportunities: OpportunityRecord[] }) {
-  const [statusFilter, setStatusFilter] = useState('all');
-  const statuses = useMemo(
-    () => Array.from(new Set(opportunities.map((o) => o.status))).sort(),
-    [opportunities],
+function DecisionCenterSummary({ pulse }: { pulse: ReturnType<typeof deriveCompanyPulse> }) {
+  return (
+    <Card>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          color: colors.muted,
+          marginBottom: 8,
+        }}
+      >
+        CEO Decision Center
+      </div>
+      <p style={{ margin: 0, fontSize: 15, color: colors.text, lineHeight: 1.6 }}>
+        <strong>{pulse.decisionsRequired}</strong> decision{pulse.decisionsRequired === 1 ? '' : 's'} require your
+        attention · <strong>{pulse.opportunities.promising}</strong> opportunit
+        {pulse.opportunities.promising === 1 ? 'y' : 'ies'} being evaluated · <strong>{pulse.projects.active}</strong>{' '}
+        active project{pulse.projects.active === 1 ? '' : 's'} · <strong>{pulse.agents.working}</strong> agent
+        {pulse.agents.working === 1 ? '' : 's'} working
+      </p>
+    </Card>
   );
-  const filtered = (statusFilter === 'all' ? opportunities : opportunities.filter((o) => o.status === statusFilter)).slice(
-    0,
-    30,
+}
+
+const TIER_META: Record<DecisionTier, { icon: string; label: string; color: string }> = {
+  important: { icon: '🟠', label: 'IMPORTANT', color: colors.warning },
+  review: { icon: '🟡', label: 'REVIEW', color: colors.warning },
+};
+
+function SectionLabel({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: colors.accent,
+        marginBottom: 4,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
   );
+}
+
+function DecisionRow({
+  opportunity,
+  active,
+  onSelect,
+}: {
+  opportunity: OpportunityRecord;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const tier = deriveDecisionTier(opportunity.score!.overall);
+  const meta = TIER_META[tier];
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 10,
+        textAlign: 'left',
+        padding: '10px 12px',
+        borderRadius: radii.md,
+        border: `1px solid ${active ? colors.borderStrong : colors.border}`,
+        background: active ? colors.surfaceRaised : 'transparent',
+        color: colors.text,
+        cursor: 'pointer',
+        font: 'inherit',
+        width: '100%',
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: meta.color, letterSpacing: '0.06em' }}>
+          {meta.icon} {meta.label}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {opportunity.title}
+        </div>
+      </div>
+      <div style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700, color: colors.accent, flexShrink: 0 }}>
+        {opportunity.score!.overall}
+      </div>
+    </button>
+  );
+}
+
+function DecisionDetail({ opportunity, busyKey, errors, run }: { opportunity: OpportunityRecord } & PanelBaseProps) {
+  const [prospects, setProspects] = useState<{ runId: string | null; prospects: NicheProspectSummary[] } | null>(null);
+  const [confirmed, setConfirmed] = useState<'selected' | 'rejected' | null>(null);
+
+  useEffect(() => {
+    setProspects(null);
+    setConfirmed(null);
+    if (!opportunity.nicheId) return;
+    let alive = true;
+    void getNicheProspects(opportunity.nicheId).then((result) => {
+      if (alive) setProspects(result);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [opportunity.id, opportunity.nicheId]);
+
+  const target = { entityType: 'opportunity' as const, entityId: opportunity.id };
+  const selectKey = `select:${opportunity.id}`;
+  const rejectKey = `reject:${opportunity.id}`;
+  const score = opportunity.score!;
+  const highFit = prospects?.prospects.filter((p) => p.bestScore >= HIGH_FIT_THRESHOLD).length;
+  const contactable = prospects?.prospects.filter((p) => p.hasContactChannel).length;
+
+  async function handle(key: string, name: Extract<CeoCommandName, 'SelectOpportunity' | 'RejectOpportunity'>) {
+    const ok = await run(key, name, { opportunityId: opportunity.id }, target);
+    if (ok) setConfirmed(name === 'SelectOpportunity' ? 'selected' : 'rejected');
+  }
 
   return (
-    <Card title={`Opportunities (${opportunities.length})`}>
-      <div style={{ marginBottom: 12 }}>
-        <label style={labelStyle}>
-          Filter by status
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={fieldStyle}>
-            <option value="all">all</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>{opportunity.title}</h3>
+          <span style={{ fontFamily: 'monospace', fontSize: 20, fontWeight: 700, color: colors.accent }}>
+            {score.overall}
+          </span>
+        </div>
+        <p style={{ margin: '4px 0 0', fontSize: 12, color: colors.muted }}>
+          {opportunity.geography} · {opportunity.market}
+        </p>
       </div>
-      {filtered.length === 0 ? (
-        <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>No opportunities match.</p>
-      ) : (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
-          {filtered.map((opp) => {
-            const target = { entityType: 'opportunity' as const, entityId: opp.id };
-            const selectKey = `select:${opp.id}`;
-            const rejectKey = `reject:${opp.id}`;
-            const projectKey = `create-project:${opp.id}`;
-            return (
-              <li
-                key={opp.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 10,
-                  flexWrap: 'wrap',
-                  borderBottom: `1px solid ${colors.border}`,
-                  padding: '10px 2px',
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <strong style={{ fontSize: 13 }}>{opp.title}</strong>
-                  <div style={{ color: colors.muted, fontSize: 11 }}>
-                    {opp.geography} · {opp.market}
-                    {opp.estimatedValueMin != null
-                      ? ` · ${opp.currency ?? 'USD'} ${opp.estimatedValueMin}-${opp.estimatedValueMax}`
-                      : ''}
+
+      {confirmed ? (
+        <div
+          style={{
+            padding: 10,
+            borderRadius: radii.sm,
+            border: `1px solid ${colors.success}`,
+            background: `${colors.success}18`,
+          }}
+        >
+          <strong style={{ fontSize: 13, color: colors.success }}>✓ Opportunity {confirmed}</strong>
+          <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, color: colors.muted }}>
+            {(confirmed === 'selected' ? DECISION_CONSEQUENCE.ifApproved : DECISION_CONSEQUENCE.ifRejected).map(
+              (line) => (
+                <li key={line}>{line}</li>
+              ),
+            )}
+          </ul>
+        </div>
+      ) : null}
+
+      <div>
+        <SectionLabel>Why this is here</SectionLabel>
+        <p style={{ margin: 0, fontSize: 13, color: colors.text, lineHeight: 1.5 }}>
+          {recommendationLabel(score.recommendation)}
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+        <div>
+          <SectionLabel>Evidence</SectionLabel>
+          <p style={{ margin: 0, fontSize: 13 }}>{opportunity.evidenceRefs?.length ?? 0} supporting signal(s)</p>
+        </div>
+        <div>
+          <SectionLabel>Prospects</SectionLabel>
+          {!opportunity.nicheId ? (
+            <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>No research run linked yet.</p>
+          ) : prospects === null ? (
+            <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>Loading…</p>
+          ) : (
+            <p style={{ margin: 0, fontSize: 13 }}>
+              {prospects.prospects.length} discovered · {highFit} high-fit · {contactable} contactable
+            </p>
+          )}
+        </div>
+      </div>
+
+      {opportunity.estimatedValueMin != null ? (
+        <div>
+          <SectionLabel>Estimated value</SectionLabel>
+          <p style={{ margin: 0, fontSize: 13 }}>
+            {opportunity.currency ?? 'USD'} {opportunity.estimatedValueMin}–{opportunity.estimatedValueMax}
+            {opportunity.timeToRevenueDays != null ? ` · ~${opportunity.timeToRevenueDays}d to revenue` : ''}
+          </p>
+        </div>
+      ) : null}
+
+      <div>
+        <SectionLabel>Timeline</SectionLabel>
+        <OpportunityJourney status={opportunity.status} />
+      </div>
+
+      <div>
+        <SectionLabel>If approved</SectionLabel>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: colors.muted }}>
+          {DECISION_CONSEQUENCE.ifApproved.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <SectionLabel style={{ marginTop: 8 }}>If rejected</SectionLabel>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: colors.muted }}>
+          {DECISION_CONSEQUENCE.ifRejected.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      </div>
+
+      <RowError message={errors[selectKey] || errors[rejectKey]} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Link href={`/company/opportunities/${opportunity.id}`} style={{ fontSize: 12, color: colors.accent }}>
+          View full opportunity →
+        </Link>
+        <div style={{ flex: 1 }} />
+        <Button
+          variant="danger"
+          disabled={busyKey === rejectKey}
+          onClick={() => void handle(rejectKey, 'RejectOpportunity')}
+        >
+          Reject
+        </Button>
+        <Button disabled={busyKey === selectKey} onClick={() => void handle(selectKey, 'SelectOpportunity')}>
+          Select
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const HIGH_FIT_THRESHOLD = 70;
+
+function DecisionCenterPanel({ opportunities, busyKey, errors, run }: PanelBaseProps & { opportunities: OpportunityRecord[] }) {
+  const queue = useMemo(() => deriveDecisionQueue(opportunities), [opportunities]);
+  const [selected, setSelected] = useState<OpportunityRecord | null>(queue[0] ?? null);
+  const effectiveSelected = queue.find((o) => o.id === selected?.id) ?? selected;
+
+  const readyForProject = opportunities.filter((o) => o.status === 'selected_for_execution');
+
+  return (
+    <>
+      <Card title={`Priority Decisions (${queue.length})`}>
+        {queue.length === 0 ? (
+          <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
+            No opportunities are awaiting a decision right now.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ flex: '1 1 280px', display: 'grid', gap: 6, minWidth: 0 }}>
+              {queue.map((opp) => (
+                <DecisionRow key={opp.id} opportunity={opp} active={opp.id === selected?.id} onSelect={() => setSelected(opp)} />
+              ))}
+            </div>
+            <div style={{ flex: '1 1 380px', minWidth: 0 }}>
+              {effectiveSelected ? (
+                <DecisionDetail opportunity={effectiveSelected} busyKey={busyKey} errors={errors} run={run} />
+              ) : null}
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {readyForProject.length > 0 ? (
+        <Card title={`Selected — ready to create a project (${readyForProject.length})`}>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
+            {readyForProject.map((opp) => {
+              const target = { entityType: 'opportunity' as const, entityId: opp.id };
+              const projectKey = `create-project:${opp.id}`;
+              const rejectKey = `reject:${opp.id}`;
+              return (
+                <li
+                  key={opp.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                    borderBottom: `1px solid ${colors.border}`,
+                    padding: '10px 2px',
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ fontSize: 13 }}>{opp.title}</strong>
+                    <RowError message={errors[projectKey] || errors[rejectKey]} />
                   </div>
-                  <RowError message={errors[selectKey] || errors[rejectKey] || errors[projectKey]} />
-                </div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <Badge tone={opp.status === 'project_created' ? 'success' : opp.status === 'rejected' ? 'danger' : 'default'}>
-                    {opp.status}
-                  </Badge>
-                  {SELECTABLE_FROM.has(opp.status) ? (
-                    <Button
-                      disabled={busyKey === selectKey}
-                      onClick={() => void run(selectKey, 'SelectOpportunity', { opportunityId: opp.id }, target)}
-                      style={smallButtonStyle}
-                    >
-                      Select
-                    </Button>
-                  ) : null}
-                  {REJECTABLE_FROM.has(opp.status) ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <Button
                       variant="danger"
                       disabled={busyKey === rejectKey}
@@ -218,8 +434,6 @@ function OpportunitiesPanel({
                     >
                       Reject
                     </Button>
-                  ) : null}
-                  {opp.status === 'selected_for_execution' ? (
                     <Button
                       disabled={busyKey === projectKey}
                       onClick={() => void run(projectKey, 'CreateProjectFromOpportunity', { opportunityId: opp.id })}
@@ -227,14 +441,14 @@ function OpportunitiesPanel({
                     >
                       Create project
                     </Button>
-                  ) : null}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Card>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      ) : null}
+    </>
   );
 }
 

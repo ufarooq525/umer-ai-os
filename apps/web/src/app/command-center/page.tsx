@@ -1,4 +1,4 @@
-import { colors, fonts } from '@umer/ui';
+import { Card, colors, fonts } from '@umer/ui';
 import {
   getAgentRuns,
   getAgents,
@@ -18,6 +18,7 @@ import {
 } from '@/lib/company-derive';
 import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
 import { MetricTile } from '@/components/os/MetricTile';
+import { CompanyOperatingFlow } from '@/components/os/CompanyOperatingFlow';
 import { LiveCompanyMap } from '@/components/os/LiveCompanyMap';
 import { LiveActivityStream } from '@/components/os/LiveActivityStream';
 import { CeoAttentionSummary } from '@/components/os/CeoAttentionSummary';
@@ -25,7 +26,11 @@ import { ActivityFeed } from '@/components/os/ActivityFeed';
 import { AgentCard } from '@/components/os/AgentCard';
 import { WhileYouWereAway } from '@/components/os/WhileYouWereAway';
 import { agentCurrentRun, agentCurrentTask, agentProjectName } from '@/components/os/joins';
+import { OPPORTUNITY_STAGES, opportunityStageIndex } from '@/components/os/OpportunityJourney';
+import { StatusBadge } from '@/components/os/StatusBadge';
+import { projectTone } from '@/components/os/status';
 import Link from 'next/link';
+import type { OpportunityRecord, WorkProjectRecord, WorkTaskRecord } from '@/lib/control-api';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,6 +86,8 @@ export default async function CommandCenterPage() {
         <p style={{ margin: '14px 0 0', color: colors.text, fontSize: 15, maxWidth: 760, lineHeight: 1.6 }}>{story}</p>
       </header>
 
+      <CompanyOperatingFlow pulse={pulse} />
+
       <section>
         <SectionTitle>Company Pulse</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
@@ -91,6 +98,11 @@ export default async function CommandCenterPage() {
           <MetricTile label="Blocked Work" value={pulse.tasks.blocked} href="/company/tasks" sublines={['Needs unblocking']} />
           <MetricTile label="Decisions Required" value={pulse.decisionsRequired} href="/decisions" sublines={['High-score opportunities']} />
         </div>
+      </section>
+
+      <section>
+        <SectionTitle href="/company/opportunities">Opportunity Pipeline</SectionTitle>
+        <OpportunityPipelineStrip opportunities={opportunities} />
       </section>
 
       <LiveActivityStream entries={liveActivity} />
@@ -114,6 +126,19 @@ export default async function CommandCenterPage() {
         </section>
       ) : null}
 
+      {projects.filter((p) => p.status === 'Active').length > 0 ? (
+        <section>
+          <SectionTitle href="/company/projects">Active Projects</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
+            {projects
+              .filter((p) => p.status === 'Active')
+              .map((project) => (
+                <ActiveProjectCard key={project.projectId} project={project} tasks={tasks} />
+              ))}
+          </div>
+        </section>
+      ) : null}
+
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <CeoAttentionSummary cases={attentionCases} />
@@ -128,6 +153,57 @@ export default async function CommandCenterPage() {
         <ActivityFeed entries={activity} limit={6} />
       </section>
     </div>
+  );
+}
+
+function OpportunityPipelineStrip({ opportunities }: { opportunities: OpportunityRecord[] }) {
+  const counts = OPPORTUNITY_STAGES.map((_, idx) => opportunities.filter((o) => opportunityStageIndex(o.status) === idx).length);
+  return (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, overflowX: 'auto' }}>
+        {OPPORTUNITY_STAGES.map((stage, idx) => (
+          <div key={stage} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <div style={{ textAlign: 'center', minWidth: 100, padding: '4px 8px' }}>
+              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: fonts.mono, color: counts[idx] > 0 ? colors.accent : colors.muted }}>
+                {counts[idx]}
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: colors.muted, marginTop: 2 }}>
+                {stage}
+              </div>
+            </div>
+            {idx < OPPORTUNITY_STAGES.length - 1 ? <span style={{ color: colors.border, fontSize: 16, alignSelf: 'center' }}>→</span> : null}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ActiveProjectCard({ project, tasks }: { project: WorkProjectRecord; tasks: WorkTaskRecord[] }) {
+  const projectTasks = tasks.filter((t) => t.projectId === project.projectId);
+  const done = projectTasks.filter((t) => t.status === 'Done').length;
+  const agentIds = new Set(projectTasks.map((t) => t.assignedAgentId).filter(Boolean));
+  return (
+    <Link
+      href={`/company/projects/${project.projectId}`}
+      style={{
+        display: 'block',
+        padding: 16,
+        borderRadius: 14,
+        border: `1px solid ${colors.border}`,
+        background: colors.surface,
+        textDecoration: 'none',
+        color: colors.text,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <strong style={{ fontSize: 14 }}>{project.name}</strong>
+        <StatusBadge tone={projectTone(project.status)} label={project.status} />
+      </div>
+      <div style={{ fontSize: 12, color: colors.muted, marginTop: 8 }}>
+        {projectTasks.length > 0 ? `${done}/${projectTasks.length} tasks done` : 'No tasks yet'} · {agentIds.size} agent{agentIds.size === 1 ? '' : 's'}
+      </div>
+    </Link>
   );
 }
 

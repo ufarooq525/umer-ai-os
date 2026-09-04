@@ -25,19 +25,18 @@ export default async function DecisionsPage() {
             margin: 0,
           }}
         >
-          CEO Command &amp; Decision Plane
+          Where the company needs you
         </p>
         <h1 style={{ fontSize: 'clamp(1.75rem, 3vw, 2.25rem)', fontWeight: 650, margin: '8px 0 0', letterSpacing: '-0.03em' }}>
-          Decisions
+          CEO Decision Center
         </h1>
         <p style={{ marginTop: 8, color: colors.muted, fontSize: 14, maxWidth: 720, lineHeight: 1.5 }}>
-          Select or reject an Opportunity, turn a selected one into a Project, then run the
-          Project through its lifecycle and assign the work. Every action here goes through{' '}
-          <code>POST /v1/commands</code> — authorized, idempotent, and appended to the{' '}
+          Review and act on what the company has found, then create and run projects from what you approve. Every
+          action here is authorized, recorded once, and kept in the{' '}
           <a href="/audit" style={{ color: colors.accent }}>
-            Audit
-          </a>{' '}
-          trail.
+            audit trail
+          </a>
+          .
         </p>
       </header>
       <CeoDecisionPlane opportunities={opportunities} projects={projects} tasks={tasks} agents={agents} />

@@ -22,15 +22,20 @@ const SECTIONS: NavSection[] = [
       { href: '/company/projects', label: 'Projects', icon: '▦' },
       { href: '/company/tasks', label: 'Tasks', icon: '☑' },
       { href: '/company/agents', label: 'Agents', icon: '◆' },
-      { href: '/decisions', label: 'Decisions', icon: '⚖' },
+    ],
+  },
+  {
+    title: 'Decisions',
+    items: [
+      { href: '/decisions', label: 'CEO Decisions', icon: '⚖' },
+      { href: '/attention', label: 'Attention', icon: '⚠', badgeKey: 'attention' },
     ],
   },
   {
     title: 'Operations',
     items: [
       { href: '/activity', label: 'Live Activity', icon: '▷' },
-      { href: '/attention', label: 'Attention', icon: '⚠', badgeKey: 'attention' },
-      { href: '/agent-runs', label: 'Agent Runs', icon: '⏱' },
+      { href: '/agent-runs', label: 'Agent Work', icon: '⏱' },
       { href: '/artifacts', label: 'Artifacts', icon: '✦' },
     ],
   },
@@ -100,7 +105,13 @@ export function Sidebar() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem('umer.sidebar.collapsed');
-    if (stored === '1') setCollapsed(true);
+    if (stored === '1' || stored === '0') {
+      setCollapsed(stored === '1');
+      return;
+    }
+    // No explicit preference yet — default to collapsed on narrow viewports
+    // (tablet/small laptop) so the sidebar doesn't crowd out real content.
+    if (window.matchMedia('(max-width: 900px)').matches) setCollapsed(true);
   }, []);
 
   const toggle = () => {

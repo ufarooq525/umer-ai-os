@@ -92,12 +92,48 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   },
   {
     id: 'dashboard', title: 'CEO Command Center', category: 'Dashboard',
-    summary: 'The dashboard must make the AI company understandable without requiring the CEO to ask what is happening.',
-    keywords: ['dashboard', 'ceo', 'command center', 'search', 'visibility', 'guide'],
+    summary: 'The home view answers: what is running now, what needs a decision, and what happened recently — all from real data.',
+    keywords: ['dashboard', 'ceo', 'command center', 'search', 'visibility', 'guide', 'pulse', 'how the company operates'],
     content: [
-      'The home view should answer: what is running now, which agents are working, what projects they belong to, what they are doing, what is blocked, what needs attention, what it costs and what business results are being produced.',
-      'Every agent, project, task, business, evidence item, opportunity, decision, tool and event should be navigable and connected to related records.',
-      'Global search should find operational entities and documentation. The Guide should explain the concepts while live pages show the actual current state.'
+      'Open the app to /command-center. The header gives one deterministic sentence describing current state (built from real counts, never hardcoded), followed by "How the Company Operates" — a four-stage strip (Opportunities discovered → CEO decides → Project created → Agents execute) where a stage only glows and pulses when its own real count is nonzero.',
+      'Below that: Company Pulse (clickable metric tiles into each area), the Opportunity Pipeline (a real stage-count breakdown), Live Company Activity (the real agent-run play-by-play), the Live Company Map (Opportunity → Project → Agents → Tasks → Tools → Artifacts, animated only on genuinely active edges), Active Projects, CEO Attention, "While You Were Away," and Recent Activity.',
+      'Every agent, project, task, business, evidence item, opportunity, decision and artifact is navigable and connected to related records — click through from any card.'
+    ]
+  },
+  {
+    id: 'decision-center', title: 'CEO Decision Center', category: 'Dashboard',
+    summary: 'Where the company actually needs you: a real, sorted queue of opportunities awaiting a Select/Reject decision.',
+    keywords: ['decisions', 'decision center', 'select opportunity', 'reject opportunity', 'priority', 'triage'],
+    content: [
+      'Open /decisions. The header shows real counts (decisions required, opportunities being evaluated, active projects, working agents) — never a fabricated small number. "Priority Decisions" lists every opportunity that has cleared the real scoring threshold and sits in a decidable status, sorted by score, tagged Important (score 85+) or Review.',
+      'Click a decision to open its detail: why it is here, real evidence count, a live-fetched prospect summary (discovered / high-fit / contactable), estimated value, a real status timeline, and exactly what happens if you approve or reject — then Select or Reject, which calls the same CEO Command Plane (POST /v1/commands) every other action in this app uses. A confirmation banner shows the real command result.',
+      'Opportunities already selected but not yet turned into a project appear in a second "ready to create a project" list. Project, Task and Agent management (pause/resume/assign/cancel) remain below, unchanged.'
+    ]
+  },
+  {
+    id: 'attention', title: 'CEO Attention', category: 'Dashboard',
+    summary: 'The system surfaces exceptions instead of making you monitor every agent — every case is explainable, never a raw count.',
+    keywords: ['attention', 'alerts', 'exceptions', 'repeated failure', 'contact intelligence', 'outreach ready'],
+    content: [
+      'Open /attention (or the sidebar badge). Real categories only: repeated agent failures (2+ real failures on one run), one aggregated "decision required" case for the whole opportunity queue (never one row per opportunity — that was an early mistake, since fixed), work that has run unusually long, incomplete contact intelligence for a research run, and outreach drafts awaiting review.',
+      'Click a case to open its full investigation: what happened, why, its real source chain (agent → run → project, or opportunity → business), evidence, current state, and a recommended next action. Nothing here is invented — a case with no real trigger simply does not appear.'
+    ]
+  },
+  {
+    id: 'prospects', title: 'Prospects & Commercial Intelligence', category: 'Dashboard',
+    summary: 'Who exactly the company would contact, with real contact channels, confidence, and evidence — not just a market score.',
+    keywords: ['prospect', 'contact intelligence', 'evidence', 'outreach', 'qualification', 'business'],
+    content: [
+      'Every Opportunity page shows its real Target Prospect: the specific business behind it, with a Contact Intelligence card (phone/website/email/address/WhatsApp, each with a real confidence level and source — "Not discovered" when a channel genuinely was not found, never guessed), a fit score drawn from that business\'s own opportunities, and a computed outreach-readiness state with real reasons.',
+      'One business can have several opportunities (one per problem the research found) — the page shows the others honestly, plus other prospects discovered in the same research run. Click through to /company/prospects/[id] for the full record, including any prepared outreach message — always labeled "prepared, not sent."'
+    ]
+  },
+  {
+    id: 'agent-work', title: 'Agent Work', category: 'Workforce',
+    summary: 'What every agent is doing right now, in plain language, with a real play-by-play for any single run.',
+    keywords: ['agent runs', 'agent work', 'run detail', 'live execution', 'play by play'],
+    content: [
+      'Open /agent-runs ("Agent Work"). Each card shows the agent, its real current task and project, and how many real actions it has completed — not a raw work-package id. Click through to a run for a full "Live Execution" checklist built entirely from its real action log: no fabricated progress percentages, ever.'
     ]
   },
   {

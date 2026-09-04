@@ -5,6 +5,15 @@ import { Card, colors, fonts } from '@umer/ui';
 import type { LiveActivityEntry } from '@/lib/company-derive';
 import { formatRelativeTime } from './format';
 
+const EXAMPLE_EVENTS = [
+  'Opportunity discovered',
+  'Agent started research',
+  'Prospect identified',
+  'Evidence collected',
+  'Decision requested',
+  'Project created',
+];
+
 /**
  * Real agent-run play-by-play (AgentRunSnapshot.actionLog), not a fabricated
  * conversation — every line here is a factual statement the Runtime
@@ -15,7 +24,30 @@ export function LiveActivityStream({ entries }: { entries: LiveActivityEntry[] }
   return (
     <Card title="Live Company Activity">
       {entries.length === 0 ? (
-        <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>No agent activity recorded yet.</p>
+        <div>
+          <p style={{ margin: '0 0 12px', color: colors.text, fontSize: 13, lineHeight: 1.6 }}>
+            No live activity yet. The company activity feed will appear here once agents begin executing work.
+          </p>
+          <p
+            style={{
+              margin: '0 0 6px',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              color: colors.muted,
+            }}
+          >
+            Your first activity will look like
+          </p>
+          <div style={{ display: 'grid', gap: 4, opacity: 0.5 }}>
+            {EXAMPLE_EVENTS.map((event) => (
+              <div key={event} style={{ fontSize: 12, color: colors.muted, fontStyle: 'italic' }}>
+                ● {event}
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <div style={{ display: 'grid', gap: 0 }}>
           <AnimatePresence initial={false}>

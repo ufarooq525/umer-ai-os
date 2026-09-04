@@ -22,8 +22,8 @@ export function GuideExplorer() {
   const selected = GUIDE_SECTIONS.find((item) => item.id === selectedId) ?? results[0] ?? GUIDE_SECTIONS[0];
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(230px, 0.32fr) minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
-      <Card title="Umer AI OS Guide">
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+      <Card title="Umer AI OS Guide" style={{ flex: '1 1 260px', minWidth: 260 }}>
         <input
           aria-label="Search the Umer AI OS Guide"
           value={query}
@@ -50,14 +50,16 @@ export function GuideExplorer() {
         </div>
       </Card>
 
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+      <Card style={{ flex: '2 1 400px', minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
           <div>
             <Badge tone="default">{selected.category}</Badge>
             <h2 style={{ margin: '10px 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>{selected.title}</h2>
             <p style={{ margin: 0, color: colors.muted, lineHeight: 1.55 }}>{selected.summary}</p>
           </div>
-          <Link href="/" style={{ color: colors.muted, fontSize: 11, textDecoration: 'none', whiteSpace: 'nowrap' }}>← Command Center</Link>
+          <Link href="/command-center" style={{ color: colors.muted, fontSize: 11, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            ← Command Center
+          </Link>
         </div>
         <div style={{ marginTop: 22, display: 'grid', gap: 16 }}>
           {selected.content.map((paragraph) => <p key={paragraph} style={{ margin: 0, lineHeight: 1.7, fontSize: 13, color: '#d8d6d0' }}>{paragraph}</p>)}
