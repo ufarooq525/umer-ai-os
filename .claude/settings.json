@@ -45,7 +45,12 @@
       "Bash(curl -s http://127.0.0.1:3001/artifacts)",
       "Bash(curl -s -o /dev/null -w \"company:%{http_code}\\\\n\" http://127.0.0.1:3001/company)",
       "Bash(curl -s -o /dev/null -w \"agents:%{http_code}\\\\n\" http://127.0.0.1:3001/company/agents)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:3001/)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:3001/)",
+      "Bash(sleep 3 *)",
+      "Read(//c/Users/umerf/.umer-ai-os-tools/logs/**)",
+      "PowerShell(wsl --status)",
+      "PowerShell(wsl -l -v)",
+      "PowerShell(docker version 2>&1)"
     ],
     "additionalDirectories": [
       "C:\\laragon\\www\\umer-ai-os\\apps\\web\\apps\\web\\src\\app\\company\\opportunities"
