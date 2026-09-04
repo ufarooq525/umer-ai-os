@@ -58,23 +58,23 @@ export function OpportunityControlCenter() {
 
   return (
     <section style={{ display: 'grid', gap: 14 }}>
-      <Card title="Autonomous Revenue Engine">
+      <Card title="Market research">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <Badge tone={status?.running ? 'success' : 'default'}>{status?.running ? 'RUNNING' : activeStage.toUpperCase()}</Badge>
               <Badge tone={status?.mode === 'LIVE_GOOGLE_PLACES' ? 'success' : 'warning'}>
-                {status?.mode === 'LIVE_GOOGLE_PLACES' ? 'LIVE PLACES API' : 'LOCAL FALLBACK'}
+                {status?.mode === 'LIVE_GOOGLE_PLACES' ? 'LIVE GOOGLE LISTINGS' : 'LOCAL FALLBACK'}
               </Badge>
               {status?.runId ? <code style={{ fontSize: 12 }}>{status.runId}</code> : null}
             </div>
-            <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>Saudi Umrah Opportunity Intelligence</h2>
-            <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
-              Autonomous commercial pipeline: multi-query discovery, deep signals research, problem detection, revenue scoring, and outreach drafting.
+            <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>Local operators — this market</h2>
+            <p style={{ margin: 0, color: colors.muted, fontSize: 13, maxWidth: 520, lineHeight: 1.5 }}>
+              Find listings, write down what is public, score work you might take. You still decide. New drafts do not invent conversion percentages.
             </p>
           </div>
           <Button onClick={() => void startRun()} disabled={busy || status?.running}>
-            {busy ? 'Starting…' : status?.running ? 'Engine running' : 'Start intelligence run'}
+            {busy ? 'Starting…' : status?.running ? 'Run in progress' : 'Run this market again'}
           </Button>
         </div>
 

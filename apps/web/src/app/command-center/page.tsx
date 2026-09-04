@@ -150,6 +150,9 @@ export default async function CommandCenterPage() {
           </span>
         </div>
         <p style={{ margin: '14px 0 0', color: colors.text, fontSize: 15, maxWidth: 760, lineHeight: 1.6 }}>{story}</p>
+        <p style={{ margin: '8px 0 0', color: colors.muted, fontSize: 13, maxWidth: 720, lineHeight: 1.5 }}>
+          This desk only shows the record. If a site, invoice, or ranking is not on file, it is unknown — not “probably fine.”
+        </p>
       </header>
 
       <WatchdogFindingsBanner findings={watchdogFindings} />
