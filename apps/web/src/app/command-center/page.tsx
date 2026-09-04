@@ -3,6 +3,7 @@ import {
   getAgentRuns,
   getAgents,
   getArtifacts,
+  getCommercialIntelligenceSummary,
   getOpportunities,
   getRecentAudit,
   getTasks,
@@ -15,6 +16,7 @@ import {
   deriveCompanyStory,
   deriveLiveActivity,
 } from '@/lib/company-derive';
+import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
 import { MetricTile } from '@/components/os/MetricTile';
 import { LiveCompanyMap } from '@/components/os/LiveCompanyMap';
 import { LiveActivityStream } from '@/components/os/LiveActivityStream';
@@ -28,7 +30,7 @@ import Link from 'next/link';
 export const dynamic = 'force-dynamic';
 
 export default async function CommandCenterPage() {
-  const [opportunities, projects, tasks, agents, agentRuns, auditRecords, artifacts] = await Promise.all([
+  const [opportunities, projects, tasks, agents, agentRuns, auditRecords, artifacts, commercialSummary] = await Promise.all([
     getOpportunities(),
     getWorkProjects(),
     getTasks(),
@@ -36,10 +38,14 @@ export default async function CommandCenterPage() {
     getAgentRuns(),
     getRecentAudit(),
     getArtifacts(),
+    getCommercialIntelligenceSummary(),
   ]);
 
   const pulse = deriveCompanyPulse(agents, projects, tasks, opportunities);
-  const attentionCases = deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities);
+  const attentionCases = [
+    ...deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities),
+    ...deriveCommercialAttentionCases(commercialSummary),
+  ];
   const story = deriveCompanyStory(pulse, attentionCases, projects, tasks, agents);
   const activity = deriveActivityFeed(auditRecords, opportunities, projects, tasks, agents);
   const liveActivity = deriveLiveActivity(agentRuns, agents);

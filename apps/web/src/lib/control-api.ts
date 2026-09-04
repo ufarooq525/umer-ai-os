@@ -440,6 +440,8 @@ export type OpportunityRecord = {
   title: string;
   geography: string;
   market: string;
+  nicheId?: string;
+  businessId?: string;
   problemIds?: string[];
   score?: OpportunityScore;
   status: string;
@@ -671,6 +673,159 @@ export async function getAgentRun(workPackageId: string): Promise<AgentRunRecord
   } catch {
     return null;
   }
+}
+
+// --- Commercial Intelligence — read-only over BusinessProspect / Evidence /
+// DiscoveryCandidate / Problem / OutreachDraft (@umer/opportunity-intelligence,
+// already-real MySQL data — see /v1/businesses, /v1/niches/:id/prospects).
+
+export type EvidenceRecord = {
+  id: string;
+  type: string;
+  title: string;
+  sourceUrl: string;
+  observedAt: string;
+  excerpt?: string;
+  observation: string;
+  strength: 'weak' | 'moderate' | 'strong' | 'verified';
+};
+
+export type DiscoveryCandidateRecord = {
+  id: string;
+  runId: string;
+  nicheId: string;
+  externalId?: string;
+  name: string;
+  websiteUrl?: string;
+  phone?: string;
+  address?: string;
+  geography: string;
+  industry?: string;
+  /** In practice the real Google Places discovery path only ever writes phone/address here — see deriveContactChannels. */
+  sourceRefs?: string[];
+  discoveredAt: string;
+};
+
+export type BusinessProspectRecord = {
+  id: string;
+  name: string;
+  website?: string;
+  geography: string;
+  industry?: string;
+  nicheId?: string;
+  sourceRefs?: string[];
+  discoveredAt: string;
+  lastResearchedAt?: string;
+};
+
+export type ProblemRecord = {
+  id: string;
+  businessId: string;
+  nicheId: string;
+  runId: string;
+  statement: string;
+  severity: number;
+  frequency: number;
+  financialImpact: number;
+  evidenceConfidence: number;
+  evidenceRefs: string[];
+};
+
+export type OutreachDraftRecord = {
+  id: string;
+  opportunityId: string;
+  businessId: string;
+  nicheId: string;
+  channel: 'email' | 'whatsapp' | 'linkedin' | 'phone';
+  recipient?: string;
+  subject?: string;
+  body: string;
+  language: 'ar' | 'en' | 'bilingual';
+  valueProposition: string;
+  evidenceRefs: string[];
+  status: 'drafted' | 'ready' | 'sent' | 'replied' | 'converted' | 'rejected';
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type NicheRecord = {
+  id: string;
+  name: string;
+  description: string;
+  geographies: string[];
+  status: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  outreachMode: 'disabled' | 'draft' | 'approval_required' | 'bounded_autonomous';
+};
+
+export type BusinessDetail = {
+  business: BusinessProspectRecord;
+  discoveryCandidate: DiscoveryCandidateRecord | null;
+  runId: string | null;
+  problems: ProblemRecord[];
+  opportunities: OpportunityRecord[];
+  outreach: OutreachDraftRecord[];
+  evidence: EvidenceRecord[];
+};
+
+export type NicheProspectSummary = {
+  businessId: string;
+  business: BusinessProspectRecord | null;
+  candidate: DiscoveryCandidateRecord;
+  problemCount: number;
+  opportunityCount: number;
+  bestScore: number;
+  hasContactChannel: boolean;
+};
+
+export type OpportunityRunEventRecord = {
+  id: string;
+  runId: string;
+  nicheId: string;
+  stage: string;
+  agentName: string;
+  level: 'info' | 'warn' | 'error' | 'success';
+  message: string;
+  occurredAt: string;
+};
+
+export type CommercialIntelligenceSummary = {
+  niches: Array<{
+    nicheId: string;
+    nicheName: string;
+    runId: string | null;
+    discovered: number;
+    contactComplete: number;
+    contactIncomplete: number;
+  }>;
+  outreachDraftsAwaitingReview: number;
+  businessesConsidered: number;
+  cap: number;
+};
+
+export async function getNiches(): Promise<NicheRecord[]> {
+  const body = await fetchJson<{ niches: NicheRecord[] }>('/v1/niches');
+  return body.niches;
+}
+
+export async function getBusiness(id: string, runId?: string): Promise<BusinessDetail | null> {
+  try {
+    return await fetchJson<BusinessDetail>(`/v1/businesses/${id}${runId ? `?runId=${encodeURIComponent(runId)}` : ''}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getNicheProspects(nicheId: string, runId?: string): Promise<{ runId: string | null; prospects: NicheProspectSummary[] }> {
+  return fetchJson(`/v1/niches/${nicheId}/prospects${runId ? `?runId=${encodeURIComponent(runId)}` : ''}`);
+}
+
+export async function getNicheEvents(nicheId: string, runId?: string): Promise<{ runId: string | null; events: OpportunityRunEventRecord[] }> {
+  return fetchJson(`/v1/niches/${nicheId}/events${runId ? `?runId=${encodeURIComponent(runId)}` : ''}`);
+}
+
+export async function getCommercialIntelligenceSummary(): Promise<CommercialIntelligenceSummary> {
+  return fetchJson('/v1/commercial-intelligence/summary');
 }
 
 /** The single write path for the CEO Command Plane. `actor` is trusted client input — see the milestone's auth-boundary notes. */

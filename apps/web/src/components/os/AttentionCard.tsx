@@ -15,6 +15,8 @@ const CATEGORY_LABEL: Record<AttentionCase['category'], string> = {
   repeated_failure: 'REPEATED FAILURE',
   decision_required: 'DECISION REQUIRED',
   waiting_too_long: 'WAITING TOO LONG',
+  contact_intelligence_incomplete: 'CONTACT INTELLIGENCE INCOMPLETE',
+  outreach_ready: 'OUTREACH READY',
 };
 
 export function AttentionCard({

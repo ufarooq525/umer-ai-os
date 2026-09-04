@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { brandName, colors, fonts, radii, spacing } from '@umer/ui';
-import { getAgentRuns, getAgents, getOpportunities, getTasks, getWorkProjects } from '@/lib/control-api';
+import { getAgentRuns, getAgents, getCommercialIntelligenceSummary, getOpportunities, getTasks, getWorkProjects } from '@/lib/control-api';
 import { deriveAttentionCases } from '@/lib/company-derive';
+import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
 
 type NavEntry = { href: string; label: string; icon: string; badgeKey?: 'attention' };
 type NavSection = { title: string; items: NavEntry[] };
@@ -67,14 +68,17 @@ function useAttentionCount(): number {
     let alive = true;
     const load = async () => {
       try {
-        const [agents, agentRuns, projects, tasks, opportunities] = await Promise.all([
+        const [agents, agentRuns, projects, tasks, opportunities, commercialSummary] = await Promise.all([
           getAgents(),
           getAgentRuns(),
           getWorkProjects(),
           getTasks(),
           getOpportunities(),
+          getCommercialIntelligenceSummary(),
         ]);
-        if (alive) setCount(deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities).length);
+        const cases = deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities);
+        const commercialCases = deriveCommercialAttentionCases(commercialSummary);
+        if (alive) setCount(cases.length + commercialCases.length);
       } catch {
         /* sidebar badge is best-effort; a control-api hiccup shouldn't break navigation */
       }

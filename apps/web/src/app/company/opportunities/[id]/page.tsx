@@ -1,10 +1,15 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Badge, Card, colors, fonts } from '@umer/ui';
-import { getOpportunity, getWorkProjects } from '@/lib/control-api';
+import { getBusiness, getNicheEvents, getNicheProspects, getOpportunity, getWorkProjects } from '@/lib/control-api';
 import { OpportunityJourney, recommendationLabel } from '@/components/os/OpportunityJourney';
 import { ScoreBars } from '@/components/os/ScoreBars';
 import { EntityNarrative, type NarrativeField } from '@/components/os/EntityNarrative';
+import { ContactChannelCard } from '@/components/os/ContactChannelCard';
+import { ProspectFitCard } from '@/components/os/ProspectFitCard';
+import { ProspectSummaryCard } from '@/components/os/ProspectSummaryCard';
+import { OpportunityActivityFeed } from '@/components/os/OpportunityActivityFeed';
+import { deriveContactChannels, deriveOpportunityActivity, deriveOutreachReadiness, deriveProspectFit } from '@/lib/commercial-intelligence';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +21,22 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
   const project = projects.find((p) => p.sourceOpportunityId === opportunity.id);
   const decidable = ['discovered', 'researching', 'validated', 'outreach_ready', 'in_sales'].includes(opportunity.status);
   const terminal = ['won', 'lost', 'rejected', 'converted_to_product'].includes(opportunity.status);
+
+  const businessDetail = opportunity.businessId ? await getBusiness(opportunity.businessId) : null;
+  const runId = businessDetail?.runId ?? undefined;
+  const [nicheProspects, nicheEvents] = await Promise.all([
+    opportunity.nicheId ? getNicheProspects(opportunity.nicheId, runId) : Promise.resolve({ runId: null, prospects: [] }),
+    opportunity.nicheId ? getNicheEvents(opportunity.nicheId, runId) : Promise.resolve({ runId: null, events: [] }),
+  ]);
+
+  const contactChannels = businessDetail ? deriveContactChannels(businessDetail.business, businessDetail.discoveryCandidate) : [];
+  const readiness = businessDetail
+    ? deriveOutreachReadiness(businessDetail.business, contactChannels, businessDetail.evidence.length, businessDetail.outreach)
+    : null;
+  const fit = businessDetail ? deriveProspectFit(businessDetail.opportunities) : null;
+  const otherOpportunities = businessDetail?.opportunities.filter((o) => o.id !== opportunity.id) ?? [];
+  const otherProspects = nicheProspects.prospects.filter((p) => p.businessId !== opportunity.businessId);
+  const activity = deriveOpportunityActivity(nicheEvents.events);
 
   const fields: NarrativeField[] = [
     {
@@ -100,6 +121,81 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
           </div>
         </div>
       </Card>
+
+      <section>
+        <h2 style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.muted, margin: '0 0 12px' }}>
+          Target Prospect
+        </h2>
+        {!opportunity.businessId ? (
+          <Card>
+            <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>
+              This opportunity is not yet linked to a specific business record.
+            </p>
+          </Card>
+        ) : !businessDetail ? (
+          <Card>
+            <p style={{ margin: 0, fontSize: 13, color: colors.muted }}>
+              Business record {opportunity.businessId} referenced by this opportunity could not be found.
+            </p>
+          </Card>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+            <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+              <ContactChannelCard channels={contactChannels} />
+            </div>
+            <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+              {fit && readiness ? <ProspectFitCard fit={fit} readiness={readiness} /> : null}
+            </div>
+          </div>
+        )}
+        {businessDetail ? (
+          <p style={{ margin: '10px 0 0' }}>
+            <Link href={`/company/prospects/${businessDetail.business.id}`} style={{ fontSize: 12, color: colors.accent }}>
+              View full prospect record →
+            </Link>
+          </p>
+        ) : null}
+      </section>
+
+      {otherOpportunities.length > 0 ? (
+        <Card title={`Other opportunities for ${businessDetail?.business.name}`}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {otherOpportunities.map((o) => (
+              <Link
+                key={o.id}
+                href={`/company/opportunities/${o.id}`}
+                style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: colors.text, textDecoration: 'none', padding: '6px 0', borderBottom: `1px solid ${colors.border}` }}
+              >
+                <span>{o.title}</span>
+                {o.score ? <span style={{ fontFamily: fonts.mono, color: colors.accent, fontSize: 12 }}>{o.score.overall}</span> : null}
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {otherProspects.length > 0 ? (
+        <section>
+          <h2 style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: colors.muted, margin: '0 0 8px' }}>
+            Other prospects discovered in this research run
+          </h2>
+          <p style={{ margin: '0 0 12px', fontSize: 12, color: colors.muted }}>
+            These businesses were found in the same market research run — not necessarily prospects for this specific
+            opportunity.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+            {otherProspects.map((p) => (
+              <ProspectSummaryCard key={p.businessId} prospect={p} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activity.length > 0 ? (
+        <Card title="Research Activity">
+          <OpportunityActivityFeed entries={activity} />
+        </Card>
+      ) : null}
     </div>
   );
 }

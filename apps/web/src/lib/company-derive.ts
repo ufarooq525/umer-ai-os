@@ -104,11 +104,16 @@ export function deriveCompanyPulse(
 // brief explicitly forbids. Revisit once that backend state is real.
 
 export type AttentionSeverity = 'critical' | 'high' | 'medium' | 'low';
-export type AttentionCategory = 'repeated_failure' | 'decision_required' | 'waiting_too_long';
+export type AttentionCategory =
+  | 'repeated_failure'
+  | 'decision_required'
+  | 'waiting_too_long'
+  | 'contact_intelligence_incomplete'
+  | 'outreach_ready';
 
 export type AttentionSourceLink = {
   label: string;
-  type: 'opportunity' | 'project' | 'task' | 'agent' | 'run';
+  type: 'opportunity' | 'project' | 'task' | 'agent' | 'run' | 'niche' | 'business';
   id: string;
   href: string;
 };

@@ -21,7 +21,8 @@ import {
   type TaskStatus,
 } from '@umer/contracts';
 import { InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
-import { InMemoryOpportunityPersistence } from '@umer/opportunity-intelligence';
+import { InMemoryOpportunityPersistence, buildBusinessIdentity } from '@umer/opportunity-intelligence';
+import type { DiscoveryCandidateRecord } from '@umer/contracts';
 import { InMemoryArtifactStore } from '@umer/artifacts';
 import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
 import { InMemoryProjectStore } from './project-store.js';
@@ -361,6 +362,197 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       sendJson(res, 200, opportunity);
+      return;
+    }
+
+    // --- Commercial Intelligence — read-only over the existing Opportunity
+    // Intelligence persistence (BusinessProspect / EvidenceRecord /
+    // DiscoveryCandidateRecord / OpportunityProblemRecord / OutreachDraft).
+    // No new domain model, no new persistence method: every one of these
+    // already existed on OpportunityPersistence, just never had an HTTP route.
+    // `identityIdFor` mirrors apps/web's existing
+    // src/app/api/opportunity/details/route.ts exactly (externalId/name/
+    // websiteUrl/geography only, no phone) so computed ids match whatever
+    // run-service.ts originally hashed when it saved the BusinessProspect —
+    // including phone here would silently produce a different, non-matching id.
+    const identityIdFor = (candidate: Pick<DiscoveryCandidateRecord, 'externalId' | 'name' | 'websiteUrl' | 'geography'>): string =>
+      buildBusinessIdentity({
+        externalId: candidate.externalId,
+        name: candidate.name,
+        websiteUrl: candidate.websiteUrl,
+        geography: candidate.geography,
+      }).id;
+
+    // The real Google Places discovery path only ever writes phone/address into
+    // sourceRefs as `phone:`/`address:` prefixed strings — the structured
+    // DiscoveryCandidateRecord.phone/.address columns exist in the schema but
+    // are never actually populated by the live write path (confirmed against
+    // real seeded data), so "does this candidate have a phone" must check both.
+    const candidateHasPhone = (candidate: DiscoveryCandidateRecord): boolean =>
+      Boolean(candidate.phone) || (candidate.sourceRefs?.some((ref) => ref.startsWith('phone:')) ?? false);
+
+    if (path === '/v1/niches' && req.method === 'GET') {
+      const niches = (await state.opportunityReader?.listNiches()) ?? [];
+      sendJson(res, 200, { niches });
+      return;
+    }
+
+    const businessMatch = path.match(/^\/v1\/businesses\/([^/]+)$/);
+    if (businessMatch && req.method === 'GET') {
+      const businessId = decodeURIComponent(businessMatch[1]!);
+      const reader = state.opportunityReader;
+      const business = await reader?.getBusiness(businessId);
+      if (!business) {
+        sendJson(res, 404, { error: `No prospect known for id ${businessId}` });
+        return;
+      }
+      const problems = (await reader?.listProblems({ businessId })) ?? [];
+      const requestedRunId = url.searchParams.get('runId') ?? undefined;
+      const latestNicheRunId = business.nicheId ? (await reader?.getLatestRun(business.nicheId))?.runId : undefined;
+      // A business can resurface across several research runs (rediscovered on
+      // re-runs). Prefer the niche's latest run (matches /v1/niches/:id/prospects'
+      // behavior) — but a business isn't guaranteed to appear in every run, so
+      // fall back to searching each run any of its Problems came from until its
+      // DiscoveryCandidateRecord (phone/address) is actually found, rather than
+      // silently showing stale/missing contact data from an arbitrary run.
+      const candidateRunIdsToTry = [
+        ...(requestedRunId ? [requestedRunId] : []),
+        ...(latestNicheRunId ? [latestNicheRunId] : []),
+        ...new Set(problems.map((p) => p.runId)),
+      ];
+      let runId: string | null = null;
+      let discoveryCandidate: DiscoveryCandidateRecord | null = null;
+      for (const candidateRunId of candidateRunIdsToTry) {
+        const candidates = (await reader?.listDiscoveryCandidates(candidateRunId)) ?? [];
+        const found = candidates.find((c) => identityIdFor(c) === businessId);
+        if (found) {
+          runId = candidateRunId;
+          discoveryCandidate = found;
+          break;
+        }
+        runId ??= candidateRunId;
+      }
+      const opportunities = business.nicheId
+        ? ((await reader?.listOpportunities(business.nicheId)) ?? []).filter((o) => o.businessId === businessId)
+        : [];
+      const outreach = (await reader?.listOutreachDrafts({ businessId })) ?? [];
+      const evidenceIds = [
+        ...new Set([
+          ...problems.flatMap((p) => p.evidenceRefs),
+          ...opportunities.flatMap((o) => o.evidenceRefs),
+          ...outreach.flatMap((d) => d.evidenceRefs),
+        ]),
+      ];
+      const evidence = (await reader?.listEvidence(evidenceIds)) ?? [];
+      sendJson(res, 200, { business, discoveryCandidate, runId: runId ?? null, problems, opportunities, outreach, evidence });
+      return;
+    }
+
+    const nicheProspectsMatch = path.match(/^\/v1\/niches\/([^/]+)\/prospects$/);
+    if (nicheProspectsMatch && req.method === 'GET') {
+      const nicheId = decodeURIComponent(nicheProspectsMatch[1]!);
+      const reader = state.opportunityReader;
+      const requestedRunId = url.searchParams.get('runId') ?? undefined;
+      const runId = requestedRunId ?? (await reader?.getLatestRun(nicheId))?.runId;
+      if (!runId) {
+        sendJson(res, 200, { nicheId, runId: null, prospects: [] });
+        return;
+      }
+      const [candidates, problems, opportunities] = await Promise.all([
+        reader?.listDiscoveryCandidates(runId) ?? Promise.resolve([]),
+        reader?.listProblems({ runId }) ?? Promise.resolve([]),
+        reader?.listOpportunities(nicheId) ?? Promise.resolve([]),
+      ]);
+      const byId = new Map<string, DiscoveryCandidateRecord>();
+      for (const candidate of candidates) {
+        const id = identityIdFor(candidate);
+        if (!byId.has(id)) byId.set(id, candidate);
+      }
+      const prospects = await Promise.all(
+        [...byId.entries()].map(async ([businessId, candidate]) => {
+          const business = (await reader?.getBusiness(businessId)) ?? null;
+          const businessOpportunities = opportunities.filter((o) => o.businessId === businessId);
+          const bestScore = businessOpportunities.reduce((max, o) => Math.max(max, o.score.overall), 0);
+          return {
+            businessId,
+            business,
+            candidate,
+            problemCount: problems.filter((p) => p.businessId === businessId).length,
+            opportunityCount: businessOpportunities.length,
+            bestScore,
+            hasContactChannel: candidateHasPhone(candidate) || Boolean(candidate.websiteUrl || business?.website),
+          };
+        }),
+      );
+      sendJson(res, 200, { nicheId, runId, prospects });
+      return;
+    }
+
+    const nicheEventsMatch = path.match(/^\/v1\/niches\/([^/]+)\/events$/);
+    if (nicheEventsMatch && req.method === 'GET') {
+      const nicheId = decodeURIComponent(nicheEventsMatch[1]!);
+      const reader = state.opportunityReader;
+      const requestedRunId = url.searchParams.get('runId') ?? undefined;
+      const runId = requestedRunId ?? (await reader?.getLatestRun(nicheId))?.runId;
+      const events = runId ? ((await reader?.listEvents(runId)) ?? []) : [];
+      sendJson(res, 200, { nicheId, runId: runId ?? null, events });
+      return;
+    }
+
+    // Bounded aggregate for the CEO Attention system — caps total businesses
+    // considered across all niches so a growing niche catalog can't turn a
+    // sidebar poll into an unbounded fan-out (no listBusinesses() exists to
+    // query this more cheaply; see implementation notes for this milestone).
+    const COMMERCIAL_SUMMARY_BUSINESS_CAP = 200;
+    if (path === '/v1/commercial-intelligence/summary' && req.method === 'GET') {
+      const reader = state.opportunityReader;
+      const niches = (await reader?.listNiches()) ?? [];
+      const perNiche: Array<{
+        nicheId: string;
+        nicheName: string;
+        runId: string | null;
+        discovered: number;
+        contactComplete: number;
+        contactIncomplete: number;
+      }> = [];
+      let businessesConsidered = 0;
+      for (const niche of niches) {
+        if (businessesConsidered >= COMMERCIAL_SUMMARY_BUSINESS_CAP) break;
+        const latestRun = await reader?.getLatestRun(niche.id);
+        if (!latestRun) {
+          perNiche.push({ nicheId: niche.id, nicheName: niche.name, runId: null, discovered: 0, contactComplete: 0, contactIncomplete: 0 });
+          continue;
+        }
+        const candidates = (await reader?.listDiscoveryCandidates(latestRun.runId)) ?? [];
+        const byId = new Map<string, DiscoveryCandidateRecord>();
+        for (const candidate of candidates) {
+          if (businessesConsidered >= COMMERCIAL_SUMMARY_BUSINESS_CAP) break;
+          const id = identityIdFor(candidate);
+          if (!byId.has(id)) {
+            byId.set(id, candidate);
+            businessesConsidered += 1;
+          }
+        }
+        let contactComplete = 0;
+        for (const candidate of byId.values()) {
+          if (candidateHasPhone(candidate) || candidate.websiteUrl) contactComplete += 1;
+        }
+        perNiche.push({
+          nicheId: niche.id,
+          nicheName: niche.name,
+          runId: latestRun.runId,
+          discovered: byId.size,
+          contactComplete,
+          contactIncomplete: byId.size - contactComplete,
+        });
+      }
+      const outreachDraftsAwaitingReview = ((await reader?.listOutreachDrafts({ status: 'drafted' })) ?? []).length;
+      sendJson(res, 200, {
+        niches: perNiche,
+        outreachDraftsAwaitingReview,
+        businessesConsidered,
+        cap: COMMERCIAL_SUMMARY_BUSINESS_CAP,
+      });
       return;
     }
 
