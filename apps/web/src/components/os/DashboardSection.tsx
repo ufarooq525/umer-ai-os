@@ -33,24 +33,27 @@ export function DashboardSection({
 
   return (
     <section style={{ display: 'grid', gap: 12, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          {href ? (
-            <Link href={href} style={{ textDecoration: 'none' }}>
-              {heading}
-            </Link>
-          ) : (
-            heading
-          )}
-          {hint ? (
-            <p style={{ margin: '4px 0 0', color: colors.muted, fontSize: 12, lineHeight: 1.45, maxWidth: 640, fontFamily: fonts.sans }}>
-              {hint}
-            </p>
-          ) : null}
-        </div>
-        {action}
-      </div>
       <Reveal>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', paddingLeft: 10 }}>
+            <span aria-hidden="true" style={{ position: 'absolute', left: 0, top: 2, bottom: 2, width: 2, borderRadius: 99, background: colors.borderStrong }} />
+            {href ? (
+              <Link href={href} style={{ textDecoration: 'none' }}>
+                {heading}
+              </Link>
+            ) : (
+              heading
+            )}
+            {hint ? (
+              <p style={{ margin: '4px 0 0', color: colors.muted, fontSize: 12, lineHeight: 1.45, maxWidth: 640, fontFamily: fonts.sans }}>
+                {hint}
+              </p>
+            ) : null}
+          </div>
+          {action}
+        </div>
+      </Reveal>
+      <Reveal delay={0.04}>
         <div className="os-dashboard-content">{children}</div>
       </Reveal>
       <style>{`
