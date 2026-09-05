@@ -33,7 +33,7 @@ export function OSShell({ children }: { children: ReactNode }) {
           padding: '32px clamp(16px, 3vw, 40px) 64px',
         }}
       >
-        <div style={{ maxWidth: 1280, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1320, margin: '0 auto' }}>
           <PageEnter>{children}</PageEnter>
         </div>
       </main>

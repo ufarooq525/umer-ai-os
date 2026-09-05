@@ -27,7 +27,7 @@ export default async function ActivityPage() {
           entry for the raw event.
         </p>
       </header>
-      <ActivityFeed entries={activity} />
+      <ActivityFeed entries={activity} pageSize={12} />
     </div>
   );
 }

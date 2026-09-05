@@ -23,8 +23,10 @@ export function MetricTile({ label, value, sublines = [], href }: MetricTileProp
         style={{
           padding: spacing.md,
           borderRadius: radii.lg,
-          border: `1px solid ${colors.border}`,
+          border: `1px solid ${hot ? colors.borderStrong : colors.border}`,
           background: colors.surface,
+          minHeight: 118,
+          boxSizing: 'border-box',
         }}
       >
         <div

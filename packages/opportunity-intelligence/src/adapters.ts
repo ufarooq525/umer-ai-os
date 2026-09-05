@@ -3,6 +3,13 @@ import type { EvidenceRecord, NicheDefinition } from '@umer/contracts';
 import type { BusinessDiscoveryProvider, BusinessCandidate, DiscoveryQuery } from './discovery.js';
 import type { DiscoveryAdapter, DiscoveryCandidate, ResearchAdapter } from './pipeline.js';
 
+export function inferPlacesRegion(geography: string): string {
+  const value = geography.trim().toLocaleLowerCase();
+  const pakistan = ['karachi', 'lahore', 'islamabad', 'faisalabad', 'peshawar', 'multan', 'rawalpindi', 'pakistan'];
+  if (pakistan.some((city) => value.includes(city))) return 'PK';
+  return 'SA';
+}
+
 /** Provider-neutral normalized discovery source. Real vendors can implement this contract without entering domain code. */
 export type DiscoverySource = {
   readonly name: string;
@@ -69,7 +76,7 @@ export class GooglePlacesDiscoverySource implements DiscoverySource {
             textQuery,
             pageSize,
             languageCode: 'en',
-            regionCode: 'SA',
+            regionCode: query.regionCode ?? inferPlacesRegion(query.geography),
           }),
           signal: AbortSignal.timeout(15_000),
         });
@@ -148,6 +155,7 @@ export class CompositeDiscoveryAdapter implements DiscoveryAdapter {
         geography,
         query: `${niche.name} in ${geography}`,
         limit: niche.targetBusinessesPerRun,
+        regionCode: inferPlacesRegion(geography),
       });
       all.push(...results.map((item) => ({
         externalId: item.externalId,

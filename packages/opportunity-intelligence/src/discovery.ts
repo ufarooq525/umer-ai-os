@@ -5,6 +5,8 @@ export type DiscoveryQuery = {
   geography: string;
   query: string;
   limit: number;
+  /** ISO country used by Places text search. Inferred from geography when omitted. */
+  regionCode?: string;
 };
 
 export type BusinessCandidate = {

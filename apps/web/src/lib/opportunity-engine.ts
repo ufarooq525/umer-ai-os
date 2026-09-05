@@ -11,12 +11,12 @@ import {
   EvidenceResearchAdapter,
   GooglePlacesDiscoverySource,
   OpportunityRunService,
-  SAUDI_UMRAH_NICHE,
   SourceDiscoveryProvider,
   StaticDiscoverySource,
   StaticEvidenceSource,
   WebsiteEvidenceSource,
 } from '@umer/opportunity-intelligence';
+import { MARKET_PRESETS, normalizeMarket, type MarketPreset } from './market-scan';
 
 export type OpportunityEvent = { at: string; agent: string; message: string; stage?: string; level?: string };
 export type OpportunityAgent = { name: string; status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED'; task: string };
@@ -39,6 +39,7 @@ export type OpportunityRunStatus = {
   agents: OpportunityAgent[];
   events: OpportunityEvent[];
   error: string | null;
+  market: MarketPreset;
 };
 
 const state: OpportunityRunStatus = {
@@ -56,7 +57,20 @@ const state: OpportunityRunStatus = {
   ],
   events: [],
   error: null,
+  market: MARKET_PRESETS[0]!,
 };
+
+let activeMarket: MarketPreset = MARKET_PRESETS[0]!;
+
+export function getActiveMarket(): MarketPreset {
+  return { ...activeMarket };
+}
+
+export function setActiveMarket(input: Parameters<typeof normalizeMarket>[0]): MarketPreset {
+  activeMarket = normalizeMarket(input);
+  state.market = { ...activeMarket };
+  return getActiveMarket();
+}
 
 function event(agent: string, message: string, stage?: string, level?: string) {
   state.events.push({ at: new Date().toISOString(), agent, message, stage, level });
@@ -88,10 +102,12 @@ const evidence: EvidenceRecord[] = [
 
 export function getOpportunityStatus(): OpportunityRunStatus {
   state.mode = process.env.GOOGLE_MAPS_API_KEY ? 'LIVE_GOOGLE_PLACES' : 'DETERMINISTIC_FALLBACK';
+  state.market = { ...activeMarket };
   return JSON.parse(JSON.stringify(state)) as OpportunityRunStatus;
 }
 
-export function startOpportunityRun(): { runId: string } {
+export function startOpportunityRun(market?: Parameters<typeof normalizeMarket>[0]): { runId: string } {
+  if (market) setActiveMarket(market);
   if (state.running) return { runId: state.runId! };
   const runId = randomUUID();
   const live = Boolean(process.env.GOOGLE_MAPS_API_KEY);
@@ -109,7 +125,7 @@ export function startOpportunityRun(): { runId: string } {
     { name: 'Research Agent', status: 'IDLE', task: 'Waiting for discovered businesses' },
     { name: 'Opportunity Agent', status: 'IDLE', task: 'Waiting for research' },
   ];
-  event('Orchestrator', `Autonomous opportunity run started (${state.mode})`);
+  event('Orchestrator', `Autonomous opportunity run started (${state.mode}) — ${activeMarket.label} in ${activeMarket.geography}`);
   persistWorkforceState({ agentName: 'Discovery Agent', status: 'RUNNING', task: live ? 'Scanning Google Places API' : 'Scanning deterministic fixtures', runId, eventType: 'assignment', stage: 'discovery', message: 'Discovery assignment started' });
   persistWorkforceState({ agentName: 'Research Agent', status: 'WAITING', task: 'Waiting for discovered businesses', runId, eventType: 'assignment', stage: 'research', message: 'Research agent waiting for discovery output' });
   persistWorkforceState({ agentName: 'Opportunity Agent', status: 'WAITING', task: 'Waiting for research', runId, eventType: 'assignment', stage: 'scoring', message: 'Opportunity agent waiting for research output' });
@@ -143,14 +159,27 @@ async function execute(runId: string, live: boolean) {
     taskLeases.discovery = { token: discoveryTask.leaseToken };
 
     const discoveryLimit = Math.max(1, Math.min(Number(process.env.OPPORTUNITY_DISCOVERY_LIMIT ?? 20) || 20, 20));
+    const now = new Date().toISOString();
     const niche: NicheDefinition = {
-      ...SAUDI_UMRAH_NICHE,
-      id: `saudi-umrah-ui-${runId}`,
-      name: 'Saudi Umrah Services',
-      minimumOpportunityScore: 60,
+      id: `${activeMarket.id}-${runId}`,
+      name: activeMarket.query,
+      description: `Hunt ${activeMarket.label} in ${activeMarket.geography}. A vacuum is a Maps listing with no official website.`,
+      geographies: [activeMarket.geography],
+      status: 'testing',
+      priority: 'high',
       targetBusinessesPerRun: discoveryLimit,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      minimumOpportunityScore: 60,
+      researchDepth: 'standard',
+      problemHypotheses: [
+        'The listing has no official live website.',
+        'Inquiries are handled only by phone or WhatsApp.',
+        'No online booking or payment path is visible.',
+      ],
+      discoverySignals: [],
+      allowedSolutionTypes: ['service', 'repeatable_service', 'product'],
+      outreachMode: 'draft',
+      createdAt: now,
+      updatedAt: now,
     };
 
     const discoverySource = live ? new GooglePlacesDiscoverySource() : new StaticDiscoverySource(candidates);

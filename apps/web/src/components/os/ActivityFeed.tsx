@@ -1,10 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { colors, fonts, spacing } from '@umer/ui';
 import type { ActivityEntry } from '@/lib/company-derive';
 import { formatDateLabel, formatTime } from './format';
 import { TechnicalDetailsDrawer } from './TechnicalDetailsDrawer';
+import { Pager, paginate } from './Pager';
 
 const EXAMPLE_EVENTS = [
   '🧠 CEO selected an opportunity',
@@ -13,8 +15,12 @@ const EXAMPLE_EVENTS = [
   '⚙ Engineering agent started architecture',
 ];
 
-export function ActivityFeed({ entries, limit }: { entries: ActivityEntry[]; limit?: number }) {
-  const shown = limit ? entries.slice(0, limit) : entries;
+export function ActivityFeed({ entries, limit, pageSize }: { entries: ActivityEntry[]; limit?: number; pageSize?: number }) {
+  const [page, setPage] = useState(1);
+  const pool = limit ? entries.slice(0, limit) : entries;
+  const size = pageSize ?? pool.length;
+  const shown = pageSize ? paginate(pool, page, size) : pool;
+  const pageCount = Math.max(1, Math.ceil(pool.length / size));
   if (shown.length === 0) {
     return (
       <div>
@@ -102,6 +108,7 @@ export function ActivityFeed({ entries, limit }: { entries: ActivityEntry[]; lim
           </div>
         </div>
       ))}
+      {pageSize ? <Pager page={page} pageCount={pageCount} total={pool.length} pageSize={size} onPage={setPage} /> : null}
     </div>
   );
 }

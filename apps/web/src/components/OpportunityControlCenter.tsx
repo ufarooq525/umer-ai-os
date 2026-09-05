@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Badge, Button, Card, colors, radii } from '@umer/ui';
 import type { OpportunityRunStatus } from '@/lib/opportunity-engine';
 import { OpportunityIntelligenceDetails } from '@/components/OpportunityIntelligenceDetails';
+import { Pager, paginate } from '@/components/os/Pager';
 
 const stages = ['Discovery', 'Research', 'Audit', 'Problems', 'Scoring', 'Opportunities'];
 
@@ -22,6 +23,7 @@ export function OpportunityControlCenter() {
   const [status, setStatus] = useState<OpportunityRunStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [eventPage, setEventPage] = useState(1);
 
   async function refresh() {
     try {
@@ -55,6 +57,10 @@ export function OpportunityControlCenter() {
   const activeStage = status?.stage ?? 'Idle';
   const activeIndex = stages.findIndex((stage) => stage.toLowerCase() === activeStage.toLowerCase());
   const progress = status?.progress ?? 0;
+  const events = [...(status?.events ?? [])].reverse();
+  const eventPageSize = 6;
+  const eventPageCount = Math.max(1, Math.ceil(events.length / eventPageSize));
+  const visibleEvents = paginate(events, eventPage, eventPageSize);
 
   return (
     <section style={{ display: 'grid', gap: 14 }}>
@@ -68,9 +74,12 @@ export function OpportunityControlCenter() {
               </Badge>
               {status?.runId ? <code style={{ fontSize: 12 }}>{status.runId}</code> : null}
             </div>
-            <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>Local operators — this market</h2>
+            <h2 style={{ margin: '10px 0 4px', fontSize: 22 }}>
+              {status?.market ? `${status.market.label} · ${status.market.geography}` : 'Local operators — this market'}
+            </h2>
             <p style={{ margin: 0, color: colors.muted, fontSize: 13, maxWidth: 520, lineHeight: 1.5 }}>
-              Find listings, write down what is public, score work you might take. You still decide. New drafts do not invent conversion percentages.
+              Find listings, write down what is public, score work you might take. You still decide. Approve the market on
+              Markets first if you want a different city.
             </p>
           </div>
           <Button onClick={() => void startRun()} disabled={busy || status?.running}>
@@ -114,14 +123,17 @@ export function OpportunityControlCenter() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.35fr) minmax(280px, 0.65fr)', gap: 14 }}>
         <Card title="Live agent activity">
-          {status?.events?.length ? (
-            <div style={{ display: 'grid', gap: 0 }}>
-              {status.events.slice(-20).reverse().map((item, index) => (
-                <div key={`${item.at}-${index}`} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 10, padding: '10px 0', borderBottom: `1px solid ${colors.border}` }}>
-                  <span style={{ color: colors.muted, fontSize: 11, fontFamily: 'monospace' }}>{new Date(item.at).toLocaleTimeString()}</span>
-                  <div><strong style={{ fontSize: 12 }}>{item.agent}</strong><div style={{ fontSize: 13, marginTop: 2 }}>{item.message}</div></div>
-                </div>
-              ))}
+          {events.length ? (
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'grid', gap: 0 }}>
+                {visibleEvents.map((item, index) => (
+                  <div key={`${item.at}-${index}`} style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: 10, padding: '10px 0', borderBottom: `1px solid ${colors.border}` }}>
+                    <span style={{ color: colors.muted, fontSize: 11, fontFamily: 'monospace' }}>{new Date(item.at).toLocaleTimeString()}</span>
+                    <div><strong style={{ fontSize: 12 }}>{item.agent}</strong><div style={{ fontSize: 13, marginTop: 2 }}>{item.message}</div></div>
+                  </div>
+                ))}
+              </div>
+              <Pager page={eventPage} pageCount={eventPageCount} total={events.length} pageSize={eventPageSize} onPage={setEventPage} />
             </div>
           ) : <p style={{ margin: 0, color: colors.muted }}>No active run. Start the engine to see real events.</p>}
         </Card>

@@ -15,6 +15,7 @@ const SECTIONS: NavSection[] = [
     title: 'Company',
     items: [
       { href: '/company', label: 'Company', icon: '◉' },
+      { href: '/markets', label: 'Markets', icon: '◎' },
       { href: '/company/opportunities', label: 'Opportunities', icon: '✧' },
       { href: '/company/projects', label: 'Projects', icon: '▦' },
       { href: '/company/tasks', label: 'Tasks', icon: '☑' },
