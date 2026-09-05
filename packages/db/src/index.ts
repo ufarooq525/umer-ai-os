@@ -69,3 +69,6 @@ export function createRedisClient(url?: string): Redis { if (redis) return redis
 export async function pingRedis(client: Redis = createRedisClient()): Promise<boolean> { if (client.status !== 'ready') await client.connect(); return (await client.ping()) === 'PONG'; }
 export async function closeRedis(): Promise<void> { if (redis) { await redis.quit(); redis = undefined; } }
 export async function seed(): Promise<void> { console.info('[@umer/db] seed: no seed data yet'); }
+
+export { MySqlWorkGraphStore } from './work-graph-store.js';
+export type { WorkGraphStore } from './work-graph-store.js';
