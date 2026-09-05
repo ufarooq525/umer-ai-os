@@ -2,7 +2,13 @@
 
 import { motion, useReducedMotion } from 'framer-motion';
 import { Card, colors, fonts, radii, spacing } from '@umer/ui';
-import type { WorkPackageRecord } from '@/lib/control-api';
+
+export type WorkGraphBoardItem = {
+  workPackageId: string;
+  stage: string;
+  status: string;
+  attempt: number;
+};
 
 const stageOrder = ['Requirements', 'Product', 'Architecture', 'UX', 'Implementation', 'QA', 'Security', 'Release', 'Operations'];
 
@@ -14,7 +20,7 @@ function tone(status: string) {
   return colors.muted;
 }
 
-export function WorkGraphBoard({ workPackages }: { workPackages: WorkPackageRecord[] }) {
+export function WorkGraphBoard({ workPackages }: { workPackages: WorkGraphBoardItem[] }) {
   const reduce = useReducedMotion();
   const present = stageOrder.filter((stage) => workPackages.some((work) => work.stage === stage));
   const stages = present.length > 0 ? present : [...new Set(workPackages.map((work) => work.stage))];
@@ -31,16 +37,8 @@ export function WorkGraphBoard({ workPackages }: { workPackages: WorkPackageReco
             {stages.map((stage, index) => {
               const items = workPackages.filter((work) => work.stage === stage);
               return (
-                <motion.div
-                  key={stage}
-                  initial={reduce ? false : { opacity: 0, x: 12 }}
-                  animate={reduce ? undefined : { opacity: 1, x: 0 }}
-                  transition={reduce ? undefined : { duration: 0.3, delay: index * 0.04 }}
-                  style={{ minWidth: 0 }}
-                >
-                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.09em', color: colors.muted, fontWeight: 700, marginBottom: 8 }}>
-                    {stage}
-                  </div>
+                <motion.div key={stage} initial={reduce ? false : { opacity: 0, x: 12 }} animate={reduce ? undefined : { opacity: 1, x: 0 }} transition={reduce ? undefined : { duration: 0.3, delay: index * 0.04 }} style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.09em', color: colors.muted, fontWeight: 700, marginBottom: 8 }}>{stage}</div>
                   <div style={{ display: 'grid', gap: 7 }}>
                     {items.map((work) => (
                       <div key={work.workPackageId} style={{ border: `1px solid ${colors.border}`, borderRadius: radii.md, background: colors.surface, padding: 10 }}>
