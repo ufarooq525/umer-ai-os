@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { colors, fonts } from '@umer/ui';
+import { Reveal } from './Reveal';
 
 export function DashboardSection({
   title,
@@ -31,7 +32,7 @@ export function DashboardSection({
   );
 
   return (
-    <section className="os-dashboard-section" style={{ display: 'grid', gap: 12, minWidth: 0 }}>
+    <section style={{ display: 'grid', gap: 12, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           {href ? (
@@ -49,19 +50,13 @@ export function DashboardSection({
         </div>
         {action}
       </div>
-      <div className="os-dashboard-content">{children}</div>
+      <Reveal>
+        <div className="os-dashboard-content">{children}</div>
+      </Reveal>
       <style>{`
-        .os-dashboard-section { animation: os-section-in 520ms cubic-bezier(.22,1,.36,1) both; }
-        .os-dashboard-section:nth-of-type(2n) { animation-delay: 45ms; }
-        .os-dashboard-section:nth-of-type(3n) { animation-delay: 90ms; }
         .os-dashboard-content > * { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
         .os-dashboard-content > *:hover { transform: translateY(-2px); }
-        @keyframes os-section-in {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
         @media (prefers-reduced-motion: reduce) {
-          .os-dashboard-section { animation: none; }
           .os-dashboard-content > * { transition: none; }
           .os-dashboard-content > *:hover { transform: none; }
         }
