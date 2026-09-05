@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@umer/config": "workspace:*",
+    "@umer/contracts": "workspace:*",
     "mysql2": "^3.15.3",
     "postgres": "^3.4.5",
     "ioredis": "^5.4.2"
