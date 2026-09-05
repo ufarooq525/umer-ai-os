@@ -14,3 +14,4 @@ export { Orchestrator, type OrchestratorOptions } from './orchestrator.js';
 export { createOrchestrator, type CreateOrchestratorOptions } from './factory.js';
 export { OrchestrationWorker, createOrchestrationWorker, type OrchestrationWorkerOptions } from './worker.js';
 export { WorkGraph, WorkGraphError, createWorkGraph } from './work-graph.js';
+export { PersistentWorkGraph, createPersistentWorkGraph, type WorkGraphPersistence } from './persistent-work-graph.js';
