@@ -1,8 +1,7 @@
 /**
- * @umer/registry — Project and specialist registry surfaces for Umer AI OS.
+ * @umer/registry — Project catalog for Umer AI OS (Laragon multi-project).
  *
- * Project catalog entries remain the deployment/project registry. Specialist
- * registration is contract-backed and is used for capability-based resolution.
+ * Add a project later: append an entry to projects/catalog.json and restart control-api.
  */
 
 export { packageName } from './types.js';
@@ -159,7 +158,7 @@ export type {
   SecuritySeverity,
 } from './security-audit.js';
 export { applySecurityToProject } from './security-apply.js';
-export type { SecurityApplyResult, SecurityApplyFileChange } from './security-result-types.js';
+export type { SecurityApplyResult, SecurityApplyFileChange } from './security-apply.js';
 export {
   runSecurityScans,
   scanDependencyVulnerabilities,
