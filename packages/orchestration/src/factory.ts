@@ -1,4 +1,5 @@
 import type { MessageFabricClient } from '@umer/message-fabric';
+import type { SpecialistRegistry } from '@umer/registry';
 import type { Clock } from './clock.js';
 import { systemClock } from './clock.js';
 import { createWorkPackageDispatcher } from './dispatcher.js';
@@ -12,6 +13,7 @@ export type CreateOrchestratorOptions = {
   store?: InMemoryWorkPackageStore;
   clock?: Clock;
   maxAttempts?: number;
+  specialistRegistry?: SpecialistRegistry;
 };
 
 export function createOrchestrator(options: CreateOrchestratorOptions): Orchestrator {
@@ -19,7 +21,9 @@ export function createOrchestrator(options: CreateOrchestratorOptions): Orchestr
   return new Orchestrator({
     store,
     events: createEventPublisher(options.fabric, options.producer),
-    dispatcher: createWorkPackageDispatcher(options.fabric, options.producer),
+    dispatcher: createWorkPackageDispatcher(options.fabric, options.producer, {
+      specialistRegistry: options.specialistRegistry,
+    }),
     clock: options.clock ?? systemClock,
     maxAttempts: options.maxAttempts,
   });
