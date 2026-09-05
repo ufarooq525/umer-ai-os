@@ -30,3 +30,24 @@ export {
   createOrchestrationWorker,
   type OrchestrationWorkerOptions,
 } from './worker.js';
+export { WorkGraph, canTransitionNode } from './work-graph.js';
+export {
+  InMemoryWorkGraphStore,
+  PersistentWorkGraph,
+  type WorkGraphStore,
+} from './work-graph-store.js';
+export { WorkGraphProjector } from './work-graph-projector.js';
+export {
+  MySqlWorkGraphStore,
+  type MySqlExecutor,
+  type MySqlWorkGraphStoreOptions,
+} from './work-graph-mysql-store.js';
+export {
+  ReadyWorkPackagePlanner,
+  type ReadyWorkPackagePlannerOptions,
+  type PlanningExecutionContext,
+  type ResolvedSpecialist,
+  type ResolvedTaskContext,
+  type PlanResult,
+  type PlanSkip,
+} from './ready-work-package-planner.js';

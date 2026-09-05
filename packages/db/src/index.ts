@@ -10,6 +10,7 @@ import { AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS } from './ai-kernel-runtime-hard
 import { AI_KERNEL_EXPLAINABILITY_MIGRATIONS } from './ai-kernel-explainability-migration.js';
 import { AI_OS_CONTROL_LINEAGE_MIGRATIONS } from './ai-os-control-lineage-migration.js';
 import { AI_WORKER_SUPERVISOR_MIGRATIONS } from './ai-worker-supervisor-migration.js';
+import { WORK_GRAPH_MIGRATIONS } from './work-graph-migration.js';
 
 export const ALL_MYSQL_MIGRATIONS = [
   ...OPPORTUNITY_MIGRATIONS,
@@ -20,6 +21,7 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...AI_KERNEL_EXPLAINABILITY_MIGRATIONS,
   ...AI_OS_CONTROL_LINEAGE_MIGRATIONS,
   ...AI_WORKER_SUPERVISOR_MIGRATIONS,
+  ...WORK_GRAPH_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;
