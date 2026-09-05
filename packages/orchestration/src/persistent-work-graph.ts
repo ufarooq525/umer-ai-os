@@ -3,7 +3,7 @@ import {
   type WorkGraphNode,
   type WorkGraphNodeStatus,
 } from '@umer/contracts';
-import { WorkGraph, type WorkGraphOptions } from './work-graph.js';
+import { WorkGraph } from './work-graph.js';
 
 export type WorkGraphPersistence = {
   getNode(nodeId: string): Promise<WorkGraphNode | undefined>;
@@ -15,21 +15,14 @@ export type WorkGraphPersistence = {
   attachWorkPackage(nodeId: string, workPackageId: string, updatedAt: string): Promise<void>;
 };
 
-/**
- * Persistence-aware graph facade. The domain WorkGraph remains the authority
- * for dependency/cycle rules; this facade only commits accepted transitions.
- */
+/** Persistence-aware graph facade. The domain WorkGraph remains authoritative for dependency rules. */
 export class PersistentWorkGraph {
-  constructor(
-    private readonly persistence: WorkGraphPersistence,
-    private readonly options?: WorkGraphOptions,
-  ) {}
+  constructor(private readonly persistence: WorkGraphPersistence) {}
 
   async load(projectId: string): Promise<WorkGraph> {
     return new WorkGraph(
       await this.persistence.listNodes(projectId),
       await this.persistence.listEdges(projectId),
-      this.options,
     );
   }
 
@@ -51,18 +44,19 @@ export class PersistentWorkGraph {
     const node = await this.persistence.getNode(nodeId);
     if (!node) return;
     const graph = await this.load(node.projectId);
-    graph.setStatus(nodeId, status);
+    graph.setStatus(nodeId, status, updatedAt);
     await this.persistence.setNodeStatus(nodeId, status, updatedAt);
   }
 
   async attachWorkPackage(nodeId: string, workPackageId: string, updatedAt: string): Promise<void> {
     const node = await this.persistence.getNode(nodeId);
     if (!node) return;
+    const graph = await this.load(node.projectId);
+    graph.attachWorkPackage(nodeId, workPackageId, updatedAt);
     await this.persistence.attachWorkPackage(nodeId, workPackageId, updatedAt);
   }
 }
 
 export const createPersistentWorkGraph = (
   persistence: WorkGraphPersistence,
-  options?: WorkGraphOptions,
-): PersistentWorkGraph => new PersistentWorkGraph(persistence, options);
+): PersistentWorkGraph => new PersistentWorkGraph(persistence);
