@@ -11,6 +11,8 @@ import {
 import { createAuditService } from '@umer/audit';
 import { createTrustRuntime } from '@umer/trust';
 import { createEventBus } from '@umer/event-bus';
+import { createCommandEnvelope, SUBJECTS } from '@umer/message-fabric';
+import { ORCHESTRATION_COMMANDS } from '@umer/orchestration';
 import {
   SCHEMA_VERSION,
   type ActorKind,
@@ -20,7 +22,11 @@ import {
   type ProjectStatus,
   type TaskStatus,
 } from '@umer/contracts';
-import { InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
+import {
+  createLogger,
+  InMemoryAgentRegistryStore,
+  InMemoryAgentRunReadModelStore,
+} from '@umer/observability';
 import { InMemoryOpportunityPersistence, buildBusinessIdentity } from '@umer/opportunity-intelligence';
 import type { DiscoveryCandidateRecord } from '@umer/contracts';
 import { InMemoryArtifactStore } from '@umer/artifacts';
@@ -51,6 +57,7 @@ import { buildGateReview } from './gate-review.js';
 import { listCodeProducers, resolveCodeProducer } from './code-producer.js';
 
 const SERVICE_NAME = 'control-api';
+const log = createLogger(SERVICE_NAME);
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -708,6 +715,48 @@ export function createControlApiServer(state: ControlApiState) {
         if (wp) {
           wp.status = body.decision === 'Pass' ? 'Accepted' : 'Rejected';
         }
+
+        // gate-wp-* gates are the ones runtime-work-package-bridge.ts opened
+        // for a genuinely-dispatched Work Package (real Orchestrator +
+        // AgentWorker run, not the simulated audit-pipeline intakes below).
+        // The CEO's decision here is only real once the actual Orchestrator
+        // (apps/orchestration-worker, a separate process) applies it to its
+        // own authoritative Work Package record — publish the same
+        // workpackage.accept/reject command its OrchestrationWorker already
+        // handles (packages/orchestration/src/worker.ts).
+        let runtimeSync: 'accepted' | 'rejected' | 'unavailable' | null = null;
+        if (result.record.gateId.startsWith('gate-wp-')) {
+          if (state.fabric) {
+            const commandName =
+              body.decision === 'Pass' ? ORCHESTRATION_COMMANDS.ACCEPT : ORCHESTRATION_COMMANDS.REJECT;
+            const command = createCommandEnvelope({
+              name: commandName,
+              producer: 'control-api',
+              correlationId: `corr-resolve-${waitId}`,
+              idempotencyKey: `${waitId}:${commandName}`,
+              payload:
+                body.decision === 'Pass'
+                  ? { workPackageId: result.record.workPackageId }
+                  : { workPackageId: result.record.workPackageId, reason: body.rationale },
+            });
+            try {
+              await state.fabric.publishCommand(SUBJECTS.CMD_ORCHESTRATION, command);
+              runtimeSync = body.decision === 'Pass' ? 'accepted' : 'rejected';
+            } catch (err) {
+              log.warn(
+                {
+                  workPackageId: result.record.workPackageId,
+                  err: err instanceof Error ? err.message : String(err),
+                },
+                'gate resolved but failed to sync decision back to the Orchestrator',
+              );
+              runtimeSync = 'unavailable';
+            }
+          } else {
+            runtimeSync = 'unavailable';
+          }
+        }
+
         await state.auditService.append(
           {
             action: 'gate.decide',
@@ -757,7 +806,7 @@ export function createControlApiServer(state: ControlApiState) {
             }));
         }
 
-        sendJson(res, 200, { ...result, applyResult: applyResult ?? null });
+        sendJson(res, 200, { ...result, applyResult: applyResult ?? null, runtimeSync });
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),

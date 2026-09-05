@@ -7,6 +7,7 @@ import type { TrustRuntime } from '@umer/trust';
 import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '@umer/observability';
 import type { OpportunityPersistence } from '@umer/opportunity-intelligence';
 import type { ArtifactStore } from '@umer/artifacts';
+import type { MessageFabricClient } from '@umer/message-fabric';
 import {
   type BusEvent,
   type BusEventSource,
@@ -51,6 +52,9 @@ export type WorkPackageSummary = {
   stage: string;
   artifactId?: string;
   projectId?: string;
+  /** Set when status is 'Failed' by the runtime work package bridge — see runtime-work-package-bridge.ts. */
+  errorMessage?: string;
+  updatedAt?: string;
 };
 
 export type IntakeTrigger = {
@@ -127,6 +131,15 @@ export type ControlApiState = {
    * test-compatibility reason as the stores above.
    */
   artifactStore?: ArtifactStore;
+  /**
+   * Message Fabric client used to publish `cmd.orchestration` commands back to
+   * the real Orchestrator (apps/orchestration-worker) — set by
+   * runtime-work-package-bridge.ts's connectRuntimeWorkPackageBridge(), which
+   * is boot-only (main.ts), same fail-open reasoning as agentRunReadModel.
+   * Undefined in tests and whenever the Message Fabric is unreachable; the
+   * gate-resolve route checks for its presence before publishing.
+   */
+  fabric?: MessageFabricClient;
 };
 
 export function resolveCatalogPath(): string {

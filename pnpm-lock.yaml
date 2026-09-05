@@ -185,6 +185,9 @@ importers:
       '@umer/opportunity-intelligence':
         specifier: workspace:*
         version: link:../../packages/opportunity-intelligence
+      '@umer/orchestration':
+        specifier: workspace:*
+        version: link:../../packages/orchestration
       '@umer/registry':
         specifier: workspace:*
         version: link:../../packages/registry
