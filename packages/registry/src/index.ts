@@ -1,7 +1,8 @@
 /**
- * @umer/registry — Project catalog for Umer AI OS (Laragon multi-project).
+ * @umer/registry — Project and specialist registry surfaces for Umer AI OS.
  *
- * Add a project later: append an entry to projects/catalog.json and restart control-api.
+ * Project catalog entries remain the deployment/project registry. Specialist
+ * registration is contract-backed and is used for capability-based resolution.
  */
 
 export { packageName } from './types.js';
@@ -158,7 +159,7 @@ export type {
   SecuritySeverity,
 } from './security-audit.js';
 export { applySecurityToProject } from './security-apply.js';
-export type { SecurityApplyResult, SecurityApplyFileChange } from './security-apply.js';
+export type { SecurityApplyResult, SecurityApplyFileChange } from './security-result-types.js';
 export {
   runSecurityScans,
   scanDependencyVulnerabilities,
@@ -189,7 +190,7 @@ export type {
   PerfSeverity,
 } from './perf-audit.js';
 export { applyPerfToProject } from './perf-apply.js';
-export type { PerfApplyResult, PerfApplyFileChange } from './perf-apply.js';
+export type { PerfApplyResult, PerfApplyFileChange } from './perf-result-types.js';
 export {
   decidePerfGate,
   decidePerfGateByCategory,
@@ -204,4 +205,11 @@ export type {
   UxPriority,
 } from './ux-audit.js';
 export { applyUxToProject } from './ux-apply.js';
-export type { UxApplyResult, UxApplyFileChange } from './ux-apply.js';
+export type { UxApplyResult, UxApplyFileChange } from './ux-result-types.js';
+
+export {
+  SpecialistRegistry,
+  SpecialistRegistryError,
+  createSpecialistRegistry,
+} from './specialist-registry.js';
+export type { SpecialistMatchQuery } from './specialist-registry.js';
