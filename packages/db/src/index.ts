@@ -10,6 +10,7 @@ import { AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS } from './ai-kernel-runtime-hard
 import { AI_KERNEL_EXPLAINABILITY_MIGRATIONS } from './ai-kernel-explainability-migration.js';
 import { AI_OS_CONTROL_LINEAGE_MIGRATIONS } from './ai-os-control-lineage-migration.js';
 import { AI_WORKER_SUPERVISOR_MIGRATIONS } from './ai-worker-supervisor-migration.js';
+import { AI_WORKFORCE_TRUTH_MIGRATIONS } from './ai-workforce-truth-migration.js';
 
 export const ALL_MYSQL_MIGRATIONS = [
   ...OPPORTUNITY_MIGRATIONS,
@@ -20,6 +21,7 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...AI_KERNEL_EXPLAINABILITY_MIGRATIONS,
   ...AI_OS_CONTROL_LINEAGE_MIGRATIONS,
   ...AI_WORKER_SUPERVISOR_MIGRATIONS,
+  ...AI_WORKFORCE_TRUTH_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;
@@ -35,20 +37,10 @@ let pg: PostgresClient | undefined;
 let mysqlPool: MySqlClient | undefined;
 let redis: Redis | undefined;
 
-/**
- * PostgreSQL connection bootstrap for existing application domains.
- * Keep this separate from the Revenue OS database.
- */
 export function createPostgresClient(connectionString?: string): PostgresClient {
-  if (pg) {
-    return pg;
-  }
+  if (pg) return pg;
   const env = loadEnv();
-  pg = postgres(connectionString ?? env.DATABASE_URL, {
-    max: 10,
-    idle_timeout: 20,
-    connect_timeout: 10,
-  });
+  pg = postgres(connectionString ?? env.DATABASE_URL, { max: 10, idle_timeout: 20, connect_timeout: 10 });
   return pg;
 }
 
@@ -58,22 +50,13 @@ export async function pingPostgres(client: PostgresClient = createPostgresClient
 }
 
 export async function closePostgres(): Promise<void> {
-  if (!pg) {
-    return;
-  }
+  if (!pg) return;
   await pg.end({ timeout: 5 });
   pg = undefined;
 }
 
-/**
- * MySQL pool for Opportunity Intelligence / Revenue OS persistence.
- * This deliberately uses a dedicated environment variable so the existing
- * PostgreSQL DATABASE_URL remains untouched.
- */
 export function createMySqlClient(connectionString?: string): MySqlClient {
-  if (mysqlPool) {
-    return mysqlPool;
-  }
+  if (mysqlPool) return mysqlPool;
   const env = loadEnv();
   mysqlPool = mysql.createPool({
     uri: connectionString ?? env.OPPORTUNITY_DATABASE_URL,
@@ -104,30 +87,17 @@ export async function pingMySql(client: MySqlClient = createMySqlClient()): Prom
 }
 
 export async function closeMySql(): Promise<void> {
-  if (!mysqlPool) {
-    return;
-  }
+  if (!mysqlPool) return;
   await mysqlPool.end();
   mysqlPool = undefined;
 }
 
-/**
- * Apply versioned Revenue OS migrations transactionally.
- * Each migration is registered before execution inside the same transaction,
- * so a failed migration rolls back both the marker and schema changes.
- */
 export async function migrate(client: MySqlClient = createMySqlClient()): Promise<void> {
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      id VARCHAR(191) PRIMARY KEY,
-      checksum VARCHAR(191) NOT NULL,
-      applied_at DATETIME(3) NOT NULL
-    )
-  `);
+  await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (id VARCHAR(191) PRIMARY KEY, checksum VARCHAR(191) NOT NULL, applied_at DATETIME(3) NOT NULL)`);
   try {
     await client.query('ALTER TABLE schema_migrations MODIFY checksum VARCHAR(191) NOT NULL');
   } catch {
-    // ignore if already modified
+    // Already compatible.
   }
 
   for (const migration of ALL_MYSQL_MIGRATIONS) {
@@ -135,57 +105,31 @@ export async function migrate(client: MySqlClient = createMySqlClient()): Promis
       try {
         await client.query(statement);
       } catch (err: any) {
-        if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME', '1060', '1061'].includes(err?.code || String(err?.errno))) {
-          throw err;
-        }
+        if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME', '1060', '1061'].includes(err?.code || String(err?.errno))) throw err;
       }
     }
-
-    const [rows] = await client.query<RowDataPacket[]>(
-      'SELECT id FROM schema_migrations WHERE id = ?',
-      [migration.id],
-    );
-
+    const [rows] = await client.query<RowDataPacket[]>('SELECT id FROM schema_migrations WHERE id = ?', [migration.id]);
     if (rows.length === 0) {
-      await client.execute(
-        'INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, UTC_TIMESTAMP(3))',
-        [migration.id, migration.checksum],
-      );
+      await client.execute('INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, UTC_TIMESTAMP(3))', [migration.id, migration.checksum]);
       console.info(`[@umer/db] applied MySQL migration ${migration.id}`);
     }
   }
 }
 
-
-
-/**
- * Redis connection bootstrap (cache / locks / rate limits).
- * No domain logic in Phase 6.
- */
 export function createRedisClient(url?: string): Redis {
-  if (redis) {
-    return redis;
-  }
+  if (redis) return redis;
   const env = loadEnv();
-  redis = new Redis(url ?? env.REDIS_URL, {
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
-  });
+  redis = new Redis(url ?? env.REDIS_URL, { maxRetriesPerRequest: 3, lazyConnect: true });
   return redis;
 }
 
 export async function pingRedis(client: Redis = createRedisClient()): Promise<boolean> {
-  if (client.status !== 'ready') {
-    await client.connect();
-  }
-  const pong = await client.ping();
-  return pong === 'PONG';
+  if (client.status !== 'ready') await client.connect();
+  return (await client.ping()) === 'PONG';
 }
 
 export async function closeRedis(): Promise<void> {
-  if (!redis) {
-    return;
-  }
+  if (!redis) return;
   await redis.quit();
   redis = undefined;
 }
