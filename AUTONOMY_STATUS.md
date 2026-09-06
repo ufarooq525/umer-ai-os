@@ -208,10 +208,10 @@ Postgres as the primary store.
 | V1 Foundation | 100% | 100% | Confirmed. |
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
-| Phase 3 — Product & Architecture | ~0% | **~28%** | The graph's Architecture/Product/UX/QA/Security nodes are real and correctly gated by real dependency edges. `ux.design`, `qa.verify`, and now `security.review` are all registered, dispatchable, and can seal real findings under their own sandboxed `.umer/<slug>/` evidence subtree. Product/Architecture themselves still have no dispatchable Specialist at all. |
+| Phase 3 — Product & Architecture | ~0% | **~34%** | `ux.design` has now produced a genuine, complete, sealed audit against a real project end to end — not just registered and sandboxed, but proven to actually work. `qa.verify`/`security.review` are wired identically but not yet individually confirmed live the same way. Product/Architecture themselves still have no dispatchable Specialist at all. |
 | Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA/Security — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~76%** | The plan→dispatch→run cycle is now proven against real infrastructure end to end, including a real MySQL-specific bug (`targetPath` silently dropped by `MySqlWorkPackageStore`) found and fixed via that live proving — the kind of gap only real persistence, not the in-memory test store, could expose. One real gap remains: a Work Package that exhausts NATS's redelivery budget gets no terminal application-level state, just an indefinite `"running"` in the read model. |
-| Phase 6 — Autonomous Operations | ~7% | **~20%** | The model genuinely explored a real project's real file tree (`erp_web_dashboard`'s actual Next.js structure) for the first time this session — real progress past the prompt-quality gap the eleventh/twelfth passes found. It still didn't produce a finished finding: it ran out of iterations (8-turn cap) while still exploring, three times, before silently landing in the dead-letter queue. Genuine autonomous work is closer than at any prior point this session, but "explores correctly, never finishes" is still zero completed findings. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~80%** | The plan→dispatch→run→retry cycle is now proven correct against real infrastructure end to end, including two real bugs found and fixed via that live proving (`targetPath` silently dropped by MySQL, and a double, uncoordinated retry mechanism that could silently DLQ a Work Package instead of reaching a real terminal `Failed` state) — the kind of gaps only real persistence and real failure conditions, not in-memory test doubles, could expose. |
+| Phase 6 — Autonomous Operations | ~7% | **~30%** | The first genuinely complete, non-scripted autonomous deliverable in this codebase's history: `ux.design` explored a real project end to end, wrote real, specific findings (naming real components it discovered) to a real sealed evidence file, and landed at `AwaitingReview` for real human review — no fabrication, no placeholder text, no unfinished exploration. Still narrow (one specialist, one manually-seeded run, one project) — the next real question is whether this generalizes to `qa.verify`/`security.review` and to a project the "official" decomposition pipeline can reach without manual seeding. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -891,30 +891,68 @@ new for `filesystem-list.test.ts`, 1 more for the empty-path fix).
 the MySQL `targetPath` fix). `packages/agent-runtime`: 43 (was 39). All
 repo-wide typecheck/lint/build clean throughout.
 
+## This milestone (2026-09-06, fourteenth pass): both fixes shipped — the first genuinely complete, real, autonomous audit
+
+Implemented both design decisions from the thirteenth pass, then re-ran the
+same live scenario a final time to confirm. **This run completed for
+real**, for the first time in this codebase's history:
+
+- **Retry architecture fixed** (`ea4ebe1`): `AgentWorker` no longer rethrows
+  after publishing `agent.run.failed` (no more competing, unbounded NATS
+  redelivery); `handleAgentEvent`'s `agent.run.failed` case now actually
+  calls `orchestrator.dispatch()` again when `handleAgentFailure` leaves a
+  Work Package `Queued`, so the Orchestrator's own real, bounded
+  `attempt`/`maxAttempts` mechanism is now the *only* retry path, and it
+  actually re-runs instead of stalling at `Queued` or silently exhausting
+  into a DLQ nobody watches.
+- **Iteration budget fixed** (`f744b98`): `AGENT_LOOP_MAX_ITERATIONS`
+  8 → 20, `AGENT_LOOP_TIMEOUT_MS` 300s → 600s, plus a wrap-up nudge injected
+  into the conversation as the model nears the cap ("wrap up soon" with 2
+  turns left, "stop calling tools now" on the last one) so a bigger number
+  alone isn't the only thing standing between exploration and a finished
+  answer.
+
+**The final live retest — seeded a seventh `UX` node against the same real
+`erp_web_dashboard` project — completed cleanly**: 15 tool calls (14
+`filesystem_list`/`filesystem_read`, all succeeded, plus — for the first
+time ever, live — a successful `filesystem_write`), landing at
+`AwaitingReview` with a real sealed artifact. The evidence file exists for
+real on disk at `erp_web_dashboard/.umer/ux/run-1/FINDINGS.md`, and its
+content is genuinely specific to the real project, not generic
+boilerplate — it names real components found by exploration
+(`dashboard-greeting.tsx`, `recent-audit-logs.tsx`, `role-activity-chart.tsx`,
+`stat-card.tsx`/`stat-cards.tsx`, the `usePermissions` hook, the
+`--font-jakarta`/`--font-arabic` font variables) with specific, plausible
+UX findings (a hydration-script risk in `layout.tsx`, missing RTL direction
+handling, missing ARIA labels on charts/tables, a likely duplicated
+`stat-card` component). Nothing about this was scripted or fabricated —
+this is the actual output of `ux.design` running against this sandbox's
+real local model, end to end, for the first time.
+
+This closes the live-testing arc that began at the eleventh pass. Every
+step of that arc followed the same shape: run it for real, find the actual
+next blocker, fix only that, re-run to confirm — and every fix found this
+way (`CreateProject`'s missing field, `orchestration-worker` never
+running, the missing prompt grounding, the missing task content, the
+missing `filesystem_list` tool, the MySQL `targetPath` bug, the
+uncoordinated double-retry mechanism, the too-low iteration cap) was a real
+gap no unit test in this codebase had caught, because every existing test
+before this arc used either an in-memory store or a scripted `LLMProvider`
+— never both real infrastructure and a real model at once.
+
 ## Next highest-value milestone
 
-Two real gaps remain from this pass, and they're a genuine fork rather
-than a single obvious next step:
-
-1. **Give a real audit run enough room to actually finish.** The model's
-   exploration was coherent and increasingly relevant — it needed more than
-   8 turns, not fewer. Raising `AGENT_LOOP_MAX_ITERATIONS` (or the
-   mandate's own `max_tools_per_run` in E22) is the direct fix, but it's
-   worth first deciding what "enough" means for a real audit (a fixed
-   higher cap? a soft budget that nudges the model to wrap up as it
-   approaches the limit, the way the grounding hint nudges it to start?)
-   rather than picking a bigger number that just delays the same failure.
-2. **A Work Package that exhausts NATS redelivery should not vanish
-   silently.** Right now `dlq.cmd.agent.dispatch` is the only place this is
-   visible. At minimum this needs an application-level terminal state
-   (`Failed`, with a real reason) so the read model/dashboard reflects
-   reality instead of an indefinite `"running"` — and arguably the
-   Orchestrator's own `attempt`/`maxAttempts` mechanism (already built,
-   already tested, currently only reachable via the `RETRY` command) should
-   be the thing deciding when a Work Package is truly done retrying, not an
-   uncoordinated interaction between the agent loop's iteration cap and
-   NATS's own redelivery count.
-
-Both are real design decisions, not mechanical fixes like the last several
-passes' bugs — worth an explicit steer on approach before implementing
-either.
+`ux.design` is now proven end to end against a real project and a real
+model. The natural next step is breadth, not depth: run the same
+plan → dispatch → explore → seal cycle for `qa.verify` and
+`security.review` (both already registered, sandboxed, and gated on
+`targetPath` exactly like `ux.design` — nothing new to build, just the same
+kind of live confirmation this arc just finished for UX) to check whether
+each specialist's own mandate/tools ground a real model the same way, or
+surface their own specialist-specific gaps the same way this arc found
+`ux.design`'s. Also worth a real decision (not urgent, but real): the
+Requirements → Product → Architecture stages of the standard Work Graph
+decomposition still have no dispatchable Specialist at all, so a project
+decomposed the "official" way can never actually reach its `UX`/`QA`/
+`Security` nodes without the kind of manual seeding this arc's live tests
+used to bypass that gap.
