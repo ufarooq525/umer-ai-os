@@ -40,6 +40,7 @@ type WorkPackageRow = {
   dispatched_at: string | null;
   started_at: string | null;
   last_error: string | null;
+  target_path: string | null;
 };
 
 function toIso(value: string | Date): string {
@@ -81,6 +82,7 @@ function rowToRecord(row: WorkPackageRow): WorkPackageRecord {
     attempt: row.attempt,
     ...(row.parent_work_package_id ? { parentWorkPackageId: row.parent_work_package_id } : {}),
     ...(row.correlation_id ? { correlationId: row.correlation_id } : {}),
+    ...(row.target_path ? { targetPath: row.target_path } : {}),
   });
 
   return {
@@ -118,8 +120,8 @@ export class MySqlWorkPackageStore implements WorkPackageStore {
          specialist_spec_version, specialist_spec_hash, task_ids_json, capability_ids_json,
          context_handle, tool_allowlist_json, resource_envelope_json, attempt,
          parent_work_package_id, correlation_id, metadata_json,
-         created_at, updated_at, queued_at, dispatched_at, started_at, last_error
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         created_at, updated_at, queued_at, dispatched_at, started_at, last_error, target_path
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          header_id=VALUES(header_id), exec_id=VALUES(exec_id), stage=VALUES(stage), status=VALUES(status),
          specialist_id=VALUES(specialist_id), specialist_spec_version=VALUES(specialist_spec_version),
@@ -129,7 +131,7 @@ export class MySqlWorkPackageStore implements WorkPackageStore {
          attempt=VALUES(attempt), parent_work_package_id=VALUES(parent_work_package_id),
          correlation_id=VALUES(correlation_id), metadata_json=VALUES(metadata_json),
          updated_at=VALUES(updated_at), queued_at=VALUES(queued_at), dispatched_at=VALUES(dispatched_at),
-         started_at=VALUES(started_at), last_error=VALUES(last_error)`,
+         started_at=VALUES(started_at), last_error=VALUES(last_error), target_path=VALUES(target_path)`,
       [
         wp.workPackageId,
         wp.id,
@@ -154,6 +156,7 @@ export class MySqlWorkPackageStore implements WorkPackageStore {
         toMySqlDateTimeOrNull(record.dispatchedAt),
         toMySqlDateTimeOrNull(record.startedAt),
         record.lastError ?? null,
+        wp.targetPath ?? null,
       ],
     );
   }

@@ -30,6 +30,7 @@ describe('MySqlWorkPackageStore', () => {
         dispatched_at: '2026-09-06T00:00:01.000Z',
         started_at: '2026-09-06T00:00:02.000Z',
         last_error: null,
+        target_path: 'C:\\laragon\\www\\erp_web_dashboard',
       },
     ] as never);
 
@@ -41,9 +42,46 @@ describe('MySqlWorkPackageStore', () => {
       execId: 'EXEC-001',
       status: 'Running',
       taskIds: ['task-1'],
+      targetPath: 'C:\\laragon\\www\\erp_web_dashboard',
     });
     expect(record?.startedAt).toBe('2026-09-06T00:00:02.000Z');
     expect(record?.lastError).toBeUndefined();
+  });
+
+  it('leaves targetPath undefined (not null) when the row has none — real bug found live: this column did not exist at all until this pass', async () => {
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => [] as never);
+    execute.mockResolvedValueOnce([
+      {
+        work_package_id: 'wp-no-target',
+        header_id: 'hdr-wp-no-target',
+        exec_id: 'EXEC-001',
+        stage: 'Development',
+        status: 'Running',
+        specialist_id: 'eng.spec.1',
+        specialist_spec_version: '1.0.0',
+        specialist_spec_hash: 'abc123',
+        task_ids_json: JSON.stringify(['task-1']),
+        capability_ids_json: JSON.stringify([]),
+        context_handle: 'ctx-1',
+        tool_allowlist_json: JSON.stringify([]),
+        resource_envelope_json: JSON.stringify({ parallelism: 1 }),
+        attempt: 1,
+        parent_work_package_id: null,
+        correlation_id: null,
+        metadata_json: JSON.stringify({ labels: {}, annotations: {} }),
+        created_at: '2026-09-06T00:00:00.000Z',
+        updated_at: '2026-09-06T00:00:00.000Z',
+        queued_at: null,
+        dispatched_at: null,
+        started_at: null,
+        last_error: null,
+        target_path: null,
+      },
+    ] as never);
+
+    const store = new MySqlWorkPackageStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
+    const record = await store.get('wp-no-target');
+    expect(record?.workPackage.targetPath).toBeUndefined();
   });
 
   it('maps a row where the driver already parsed JSON columns to objects', async () => {
@@ -73,6 +111,7 @@ describe('MySqlWorkPackageStore', () => {
         dispatched_at: null,
         started_at: null,
         last_error: 'boom',
+        target_path: null,
       },
     ] as never);
 
@@ -93,16 +132,29 @@ describe('MySqlWorkPackageStore', () => {
     const execute = vi.fn<MySqlExecutor['execute']>(async () => undefined as never);
     const store = new MySqlWorkPackageStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
 
-    const workPackage = createTestWorkPackage({ status: 'Queued' });
+    const workPackage = createTestWorkPackage({ status: 'Queued', targetPath: 'C:\\laragon\\www\\erp_web_dashboard' });
     await store.save({ workPackage, queuedAt: '2026-07-22T00:00:00.000Z' });
 
     expect(execute).toHaveBeenCalledTimes(1);
     const [sql, params] = execute.mock.calls[0]!;
     expect(sql).toContain('INSERT INTO orchestration_work_packages');
     expect(sql).toContain('ON DUPLICATE KEY UPDATE');
+    expect(sql).toContain('target_path');
     expect(params).toContain('wp-1');
     expect(params).toContain(JSON.stringify(['task-1']));
     expect(params).toContain('2026-07-22 00:00:00.000');
+    expect(params).toContain('C:\\laragon\\www\\erp_web_dashboard');
+  });
+
+  it('persists null for targetPath when the Work Package has none — never fabricates a path', async () => {
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => undefined as never);
+    const store = new MySqlWorkPackageStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
+
+    const workPackage = createTestWorkPackage({ status: 'Queued' });
+    await store.save({ workPackage, queuedAt: '2026-07-22T00:00:00.000Z' });
+
+    const [, params] = execute.mock.calls[0]!;
+    expect(params[params.length - 1]).toBeNull();
   });
 
   it('filters listByStatus to only the requested status', async () => {
