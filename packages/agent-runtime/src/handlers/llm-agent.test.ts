@@ -171,6 +171,42 @@ describe('runLlmAgent', () => {
     expect(qaResult.artifact.artifactType).toBe('TestPlanResults');
   });
 
+  it('grounds the user message with a filesystem_read/write hint when a real targetPath is present and those tools are allowlisted', async () => {
+    const uxMandate = await loadMandateFromRepo('design', 'ux-design.md');
+    const workPackage = buildWorkPackage(uxMandate, { targetPath: '/real/registered/project' });
+    const provider = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
+
+    await runLlmAgent(workPackage, uxMandate, baseDeps(provider), 'corr-grounding');
+
+    const userMessage = provider.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(userMessage?.content).toContain('filesystem_read');
+    expect(userMessage?.content).toContain('filesystem_write');
+    expect(userMessage?.content).toContain('do not ask a human for file paths');
+  });
+
+  it('omits the grounding hint when the Work Package has no real targetPath', async () => {
+    const uxMandate = await loadMandateFromRepo('design', 'ux-design.md');
+    const workPackage = buildWorkPackage(uxMandate);
+    const provider = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
+
+    await runLlmAgent(workPackage, uxMandate, baseDeps(provider), 'corr-no-grounding');
+
+    const userMessage = provider.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(userMessage?.content).not.toContain('filesystem_read');
+    expect(userMessage?.content).not.toContain('sandboxed access');
+  });
+
+  it('omits the grounding hint when a real targetPath is present but filesystem tools are not on the allowlist', async () => {
+    const mandate = await loadGrowthMandate();
+    const workPackage = buildWorkPackage(mandate, { targetPath: '/real/registered/project' });
+    const provider = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
+
+    await runLlmAgent(workPackage, mandate, baseDeps(provider), 'corr-no-fs-tools');
+
+    const userMessage = provider.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(userMessage?.content).not.toContain('sandboxed access');
+  });
+
   it("threads the Work Package's targetPath through to the tool's execution context", async () => {
     const mandate = await loadGrowthMandate();
     const workPackage = buildWorkPackage(mandate, { targetPath: '/real/registered/project' });

@@ -74,15 +74,51 @@ function buildSystemPrompt(mandate: SpecialistMandate): string {
   return lines.join('\n\n');
 }
 
-function buildUserMessage(workPackage: WorkPackageContract): string {
-  const instruction = workPackage.metadata.annotations?.instruction;
-  if (typeof instruction === 'string' && instruction.trim().length > 0) {
-    return instruction;
+/**
+ * Without this, a Work Package with a real `targetPath` gave the model no
+ * concrete signal that project files were actually reachable — a smaller
+ * local model (confirmed live against qwen3-8b) asked a human for file
+ * paths instead of calling `filesystem_read`, even with the tool registered
+ * and available. Only appears when there is something real to point at:
+ * never claims file access the Work Package doesn't actually have.
+ */
+function buildGroundingHint(workPackage: WorkPackageContract, allowlist: readonly string[]): string | undefined {
+  if (!workPackage.targetPath) {
+    return undefined;
+  }
+  const hints: string[] = [];
+  if (allowlist.includes('filesystem_read')) {
+    hints.push(
+      'Use filesystem_read to read real files from the project (paths are relative to the project root, ' +
+        'e.g. "src/app.tsx") — start by identifying and reading the files most relevant to this task before ' +
+        'answering.',
+    );
+  }
+  if (allowlist.includes('filesystem_write')) {
+    hints.push(
+      'Once you have real findings, use filesystem_write to seal them as an evidence file under your own ' +
+        '.umer/<specialist>/ subtree.',
+    );
+  }
+  if (hints.length === 0) {
+    return undefined;
   }
   return (
-    `Work Package ${workPackage.workPackageId} for ${workPackage.execId} (stage: ${workPackage.stage}). ` +
-    `Tasks: ${workPackage.taskIds.join(', ')}.`
+    'You have real, sandboxed access to the project you are reviewing — do not ask a human for file paths ' +
+    `or assume you lack access. ${hints.join(' ')}`
   );
+}
+
+function buildUserMessage(workPackage: WorkPackageContract, allowlist: readonly string[]): string {
+  const instruction = workPackage.metadata.annotations?.instruction;
+  const base =
+    typeof instruction === 'string' && instruction.trim().length > 0
+      ? instruction
+      : `Work Package ${workPackage.workPackageId} for ${workPackage.execId} (stage: ${workPackage.stage}). ` +
+        `Tasks: ${workPackage.taskIds.join(', ')}.`;
+
+  const groundingHint = buildGroundingHint(workPackage, allowlist);
+  return groundingHint ? `${base}\n\n${groundingHint}` : base;
 }
 
 function inferArtifactType(mandate: SpecialistMandate): ArtifactType {
@@ -154,7 +190,7 @@ export async function runLlmAgent(
   async function runLoop(signal: AbortSignal): Promise<SpecialistRunResult> {
     const messages: ChatMessage[] = [
       { role: 'system', content: buildSystemPrompt(mandate) },
-      { role: 'user', content: buildUserMessage(workPackage) },
+      { role: 'user', content: buildUserMessage(workPackage, allowlist) },
     ];
     const toolCallLog: ToolCallLogEntry[] = [];
     let finalText: string | undefined;
