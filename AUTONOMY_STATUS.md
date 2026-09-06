@@ -162,20 +162,27 @@ when `CONTROL_API_SEED_DEMO=true` is explicitly set (for local demos of the
 intake→gate flow). Tests that need the seed call `bootstrapDemoState()`
 directly and are unaffected.
 
-## Persistence gaps (self-documented, not new)
+## Persistence gaps (updated 2026-09-06, fourth pass)
 
-Only Opportunity Intelligence has real database persistence (MySQL). Agent
-Run read model, Agent Registry, Work Package store (`state.workPackages`),
-Task store, Project store, Artifact store, and Gate Wait store are all
-in-memory — every one of them resets on restart. No Postgres schema exists
-anywhere despite `implementation/MONOREPO_BLUEPRINT.md`'s original design
-assuming Postgres as the primary store. This means the "Runtime Truth Loop"
-closed by this milestone is real for the lifetime of one `control-api`
-process, but not yet durable — a restart loses every open gate and Work
-Package summary (Message Fabric replay would eventually reconstruct the
-Agent Run read model from JetStream retention if configured for it, but not
-the local `state.workPackages` array or Gate Wait store, which are pure
-in-memory `Map`s).
+Now MySQL-backed, best-effort (same fail-open pattern throughout — falls
+back to in-memory and logs a warning if MySQL is unreachable, never crashes
+the process): Opportunity Intelligence, the Work Graph
+(`work_graph_nodes`/`work_graph_edges`), the **Orchestrator's own Work
+Package store** (`orchestration_work_packages` — the authoritative record
+of every Work Package ever queued/dispatched/run, in `apps/orchestration-worker`),
+and the **Gate Wait store** (`control_plane_gate_waits` — the CEO's actual
+"needs your attention" review queue, in `apps/control-api`). These were
+picked first because losing them on restart is the most damaging: an
+in-flight Work Package (attempt count, timeout tracking, "Running" status
+itself) or a pending Gate silently vanishing is a CEO losing track of real
+work or a real decision that was waiting on them.
+
+Still in-memory, still reset on restart: the Agent Run read model, Agent
+Registry, `state.workPackages` (control-api's own read-projection summary —
+distinct from the Orchestrator's now-durable store above), Task store,
+Project store, and Artifact store. No Postgres schema exists anywhere
+despite `implementation/MONOREPO_BLUEPRINT.md`'s original design assuming
+Postgres as the primary store.
 
 ## Phase progress (revised from prior estimates)
 
@@ -333,21 +340,57 @@ Specialists for real, grounded Work Graph dispatch is real work spanning a
 contract change and cross-process context threading, not a quick
 `specPaths` edit — scope it as its own milestone rather than rushing it.
 
+## This milestone (2026-09-06, fourth pass): persist the Runtime Truth
+
+Took the "persist the Runtime Truth" option from the prior milestone's two
+choices — picked over threading registered-project context into planning
+because it's real, bounded, safe (no fabrication surface at all — it's pure
+plumbing), and closes the most damaging class of data loss first.
+
+- **New migrations** (`packages/db`): `control_plane_gate_waits`
+  (gate-wait-migration.ts) and `orchestration_work_packages`
+  (work-package-migration.ts), both registered in `ALL_MYSQL_MIGRATIONS`.
+- **`MySqlGateWaitStore`** (`packages/control-plane/src/mysql-store.ts`):
+  implements the existing `GateWaitStore` interface — no changes to
+  `ControlPlaneService` itself. Wired via new
+  `apps/control-api/src/gate-store-link.ts` (best-effort MySQL, same
+  fail-open pattern as `work-graph-link.ts`/`opportunity-link.ts`) — since
+  `ControlPlaneService` has no store setter, this reconstructs the service
+  around the resolved store at boot, before the server starts listening.
+- **`MySqlWorkPackageStore`** (`packages/orchestration/src/work-package-mysql-store.ts`):
+  implements the existing `WorkPackageStore` interface. `createOrchestrator`'s
+  `store` option was previously typed as the concrete `InMemoryWorkPackageStore`
+  class rather than the `WorkPackageStore` interface — widened so any real
+  implementation can be passed in. Wired in `apps/orchestration-worker/src/main.ts`,
+  same fail-open pattern.
+- **Tests**: `mysql-store.test.ts` in `packages/control-plane` (5 cases:
+  row-mapping both when the driver returns JSON columns as strings and
+  as already-parsed arrays, missing-row, upsert column values, the
+  `listPending` query shape) and `work-package-mysql-store.test.ts` in
+  `packages/orchestration` (5 equivalent cases). No dedicated test for
+  the two `*-link.ts` boot connectors — matches the codebase's own existing
+  convention for `work-graph-link.ts`/`opportunity-link.ts`.
+- Neither `*-link.ts` file has a test because — consistent with the existing
+  pattern — the connector itself is a thin `pingMySql()` + construct call;
+  the real logic lives in, and is tested via, the MySQL store classes above.
+
+`packages/control-plane` is now at 38 tests (was 33); `packages/orchestration`
+is now at 86 tests (was 81) — the `factory.ts` store-type widening is
+covered by its existing tests unchanged.
+
 ## Next highest-value milestone
 
-Two real options, roughly equal value:
+**Thread real registered-project context into planning**, so
+`qa.verify`/`security.review`/`ux.design` can be safely wired for the (real,
+legitimate) case where a Work Graph Project's `registryProjectId` points at
+an actual catalog codebase — skipping cleanly, as today, when it doesn't.
+Needs: a `WorkPackageContract` field (or a resolvable `contextHandle`) to
+actually carry `absolute_path`/target scope, and `orchestration-worker`
+gaining read access to `@umer/registry`'s catalog (or control-api resolving
+it and passing it through the `workgraph.plan` command, the same pattern
+already used for real Task ids).
 
-1. **Thread real registered-project context into planning**, so
-   `qa.verify`/`security.review`/`ux.design` can be safely wired for the
-   (real, legitimate) case where a Work Graph Project's `registryProjectId`
-   points at an actual catalog codebase — skipping cleanly, as today, when
-   it doesn't. Needs: a `WorkPackageContract` field (or a resolvable
-   `contextHandle`) to actually carry `absolute_path`/target scope, and
-   `orchestration-worker` gaining read access to `@umer/registry`'s catalog
-   (or control-api resolving it and passing it through the `workgraph.plan`
-   command, the same pattern already used for real Task ids).
-2. **Persist the Runtime Truth** for the stores still in-memory (Work
-   Package summaries, Gate Wait records, Agent Run read model, Agent
-   Registry, Task/Project stores) — the Work Graph is now the second
-   MySQL-backed domain after Opportunity Intelligence, but everything else
-   listed here still resets on restart.
+After that: the remaining in-memory stores (Agent Run read model, Agent
+Registry, `state.workPackages`, Task store, Project store, Artifact store)
+are still real, bounded, low-risk persistence work in the same shape as this
+milestone — just not yet the highest-value slice.

@@ -20,6 +20,11 @@ export {
   type WorkPackageStore,
   type WorkPackageRecord,
 } from './store.js';
+export {
+  MySqlWorkPackageStore,
+  type MySqlExecutor as MySqlWorkPackageExecutor,
+  type MySqlWorkPackageStoreOptions,
+} from './work-package-mysql-store.js';
 export { type Clock, systemClock } from './clock.js';
 export { createEventPublisher, type EventPublisher } from './events.js';
 export { createWorkPackageDispatcher, type WorkPackageDispatcher } from './dispatcher.js';

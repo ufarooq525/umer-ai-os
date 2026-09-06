@@ -10,11 +10,14 @@ import {
   createOrchestrator,
   createOrchestrationWorker,
   InMemoryWorkGraphStore,
+  InMemoryWorkPackageStore,
   MySqlWorkGraphStore,
+  MySqlWorkPackageStore,
   PersistentWorkGraph,
   WorkGraphProjector,
   type WorkGraphPlanningOptions,
   type WorkGraphStore,
+  type WorkPackageStore,
 } from '@umer/orchestration';
 
 const serviceName = 'orchestration-worker';
@@ -44,7 +47,28 @@ const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] =
     : undefined;
 
 const fabric = await createMessageFabric({ producer: serviceName });
-const orchestrator = createOrchestrator({ fabric, producer: serviceName });
+
+// Best-effort MySQL Work Package store — the Orchestrator's own
+// authoritative record of every Work Package it has ever queued/dispatched/
+// run. Without this, a restart loses every in-flight Work Package: attempt
+// counts, timeout tracking, and the "Running" status itself all vanish,
+// silently orphaning whatever the AgentWorker was actually doing. Same
+// fail-open pattern as the Work Graph store below.
+let workPackageStore: WorkPackageStore = new InMemoryWorkPackageStore();
+try {
+  if (await pingMySql()) {
+    workPackageStore = new MySqlWorkPackageStore({ db: createMySqlExecutor() });
+    log.info('work package store connected to MySQL');
+  } else {
+    throw new Error('pingMySql returned false');
+  }
+} catch (err) {
+  log.warn(
+    { err: err instanceof Error ? err.message : String(err) },
+    'work package store unavailable (MySQL unreachable) — Work Packages will not survive a restart until this recovers',
+  );
+}
+const orchestrator = createOrchestrator({ fabric, producer: serviceName, store: workPackageStore });
 
 // Best-effort MySQL Work Graph store — same fail-open pattern as
 // control-api's work-graph-link.ts. Both processes must point at the SAME

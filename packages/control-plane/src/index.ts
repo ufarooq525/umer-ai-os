@@ -13,6 +13,11 @@ export type {
 export { ControlPlaneError, type ControlPlaneErrorCode } from './errors.js';
 export { type GateWaitStore, InMemoryGateWaitStore } from './store.js';
 export {
+  MySqlGateWaitStore,
+  type MySqlExecutor,
+  type MySqlGateWaitStoreOptions,
+} from './mysql-store.js';
+export {
   type ControlPlaneEventPublisher,
   createNoopControlPlaneEventPublisher,
 } from './events.js';

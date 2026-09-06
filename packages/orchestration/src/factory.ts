@@ -4,12 +4,13 @@ import { systemClock } from './clock.js';
 import { createWorkPackageDispatcher } from './dispatcher.js';
 import { createEventPublisher } from './events.js';
 import { Orchestrator } from './orchestrator.js';
-import { InMemoryWorkPackageStore } from './store.js';
+import { InMemoryWorkPackageStore, type WorkPackageStore } from './store.js';
 
 export type CreateOrchestratorOptions = {
   fabric: MessageFabricClient;
   producer: string;
-  store?: InMemoryWorkPackageStore;
+  /** Defaults to InMemoryWorkPackageStore. Pass a MySqlWorkPackageStore for durable Work Packages across restarts. */
+  store?: WorkPackageStore;
   clock?: Clock;
   maxAttempts?: number;
 };
