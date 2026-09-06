@@ -20,6 +20,8 @@ export const RuntimeEventNameSchema = z.enum([
   'workpackage.completed',
   'workpackage.failed',
   'workpackage.cancelled',
+  /** Published by OrchestrationWorker after a workgraph.plan command runs ReadyWorkPackagePlanner — see @umer/orchestration's worker.ts. */
+  'workgraph.planned',
   'agent.run.started',
   'agent.run.completed',
   'agent.run.failed',

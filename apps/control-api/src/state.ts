@@ -58,6 +58,12 @@ export type WorkPackageSummary = {
   updatedAt?: string;
 };
 
+export type WorkGraphPlanResult = {
+  created: string[];
+  skipped: Array<{ nodeId: string; nodeType: string; reason: string }>;
+  occurredAt: string;
+};
+
 export type IntakeTrigger = {
   eventId: string;
   correlationId: string;
@@ -149,6 +155,17 @@ export type ControlApiState = {
    */
   workGraphStore?: WorkGraphStore;
   persistentWorkGraph?: PersistentWorkGraph;
+  /**
+   * Latest `workgraph.planned` result per project, keyed by projectId —
+   * populated by runtime-work-package-bridge.ts's second subscription.
+   * Cross-process visibility only: publishing `workgraph.plan` and getting a
+   * result back are two separate async hops (control-api → cmd.orchestration
+   * → orchestration-worker → evt.runtime.workgraph.planned → back here), so
+   * this is genuinely eventually-consistent, not a synchronous call result —
+   * GET /v1/work-graph/:projectId surfaces whatever's here, or nothing if a
+   * plan was never run (or hasn't reported back yet).
+   */
+  workGraphPlanResults?: Map<string, WorkGraphPlanResult>;
 };
 
 export function resolveCatalogPath(): string {

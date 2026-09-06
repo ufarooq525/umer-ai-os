@@ -7,7 +7,7 @@ import {
   type WorkGraphNodeContract,
   type WorkGraphNodeType,
 } from '@umer/contracts';
-import { WorkGraph } from './work-graph.js';
+import type { WorkGraph } from './work-graph.js';
 import type { PersistentWorkGraph } from './work-graph-store.js';
 
 export type RequirementDecompositionInput = {

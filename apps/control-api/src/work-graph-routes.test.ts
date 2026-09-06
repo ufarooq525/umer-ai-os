@@ -38,7 +38,7 @@ describe('/v1/work-graph', () => {
   it('returns an honest empty graph for a project that has never been decomposed', async () => {
     const { status, json } = await request(server, 'GET', '/v1/work-graph/proj-unknown');
     expect(status).toBe(200);
-    expect(json).toEqual({ projectId: 'proj-unknown', nodes: [], edges: [] });
+    expect(json).toEqual({ projectId: 'proj-unknown', nodes: [], edges: [], lastPlanResult: null });
   });
 
   it('decomposes a project into the real 9-node pipeline graph', async () => {
@@ -69,6 +69,6 @@ describe('/v1/work-graph', () => {
   it('keeps two projects fully isolated', async () => {
     await request(server, 'POST', '/v1/work-graph/proj-a/decompose', {});
     const { json } = await request(server, 'GET', '/v1/work-graph/proj-b');
-    expect(json).toEqual({ projectId: 'proj-b', nodes: [], edges: [] });
+    expect(json).toEqual({ projectId: 'proj-b', nodes: [], edges: [], lastPlanResult: null });
   });
 });

@@ -5,6 +5,7 @@ import { createControlApiState } from './server.js';
 import {
   connectRuntimeWorkPackageBridge,
   projectRuntimeWorkPackageEvent,
+  projectWorkGraphPlannedEvent,
   type ExecIdCache,
 } from './runtime-work-package-bridge.js';
 
@@ -115,6 +116,41 @@ describe('projectRuntimeWorkPackageEvent', () => {
     );
 
     expect(state.workPackages).toHaveLength(0);
+  });
+});
+
+describe('projectWorkGraphPlannedEvent', () => {
+  it('records the latest plan result for a project', async () => {
+    const state = await createControlApiState();
+    projectWorkGraphPlannedEvent(
+      state,
+      makeEvent('workgraph.planned', {
+        projectId: 'proj-1',
+        created: ['wp-1'],
+        skipped: [{ nodeId: 'qa', nodeType: 'QA', reason: 'no active Specialist resolved for node type QA' }],
+      }),
+    );
+
+    expect(state.workGraphPlanResults?.get('proj-1')).toMatchObject({
+      created: ['wp-1'],
+      skipped: [{ nodeId: 'qa', nodeType: 'QA', reason: expect.stringContaining('Specialist') }],
+    });
+  });
+
+  it('overwrites the previous result for the same project on a later plan', async () => {
+    const state = await createControlApiState();
+    projectWorkGraphPlannedEvent(state, makeEvent('workgraph.planned', { projectId: 'proj-1', created: ['wp-1'], skipped: [] }));
+    projectWorkGraphPlannedEvent(state, makeEvent('workgraph.planned', { projectId: 'proj-1', created: ['wp-2'], skipped: [] }));
+
+    expect(state.workGraphPlanResults?.get('proj-1')?.created).toEqual(['wp-2']);
+  });
+
+  it('ignores an event with no projectId, without throwing', async () => {
+    const state = await createControlApiState();
+    expect(() =>
+      projectWorkGraphPlannedEvent(state, makeEvent('workgraph.planned', { created: [], skipped: [] })),
+    ).not.toThrow();
+    expect(state.workGraphPlanResults?.size ?? 0).toBe(0);
   });
 });
 

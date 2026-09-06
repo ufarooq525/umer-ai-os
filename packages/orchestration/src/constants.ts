@@ -6,6 +6,8 @@ export const ORCHESTRATION_COMMANDS = {
   ACCEPT: 'workpackage.accept',
   REJECT: 'workpackage.reject',
   RETRY: 'workpackage.retry',
+  /** Runs ReadyWorkPackagePlanner for one project — see worker.ts's handling and OrchestrationWorkerOptions.workGraphPlanning. */
+  PLAN_PROJECT: 'workgraph.plan',
 } as const;
 
 /** Agent dispatch command published to `cmd.agent.dispatch`. */

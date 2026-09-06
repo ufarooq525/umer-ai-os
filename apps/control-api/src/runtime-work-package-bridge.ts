@@ -7,7 +7,7 @@ import {
   SUBJECTS,
   type SubscriptionHandle,
 } from '@umer/message-fabric';
-import type { ControlApiState, WorkPackageSummary } from './state.js';
+import type { ControlApiState, WorkGraphPlanResult, WorkPackageSummary } from './state.js';
 
 const log = createLogger('control-api');
 
@@ -133,15 +133,37 @@ export async function projectRuntimeWorkPackageEvent(
 }
 
 /**
- * Connects to the Message Fabric and wires projectRuntimeWorkPackageEvent to
- * the real `evt.runtime.agent.run.>` stream, and stashes the fabric client on
- * `state.fabric` so server.ts's gate-resolve route can publish
- * `workpackage.accept`/`workpackage.reject` back to `cmd.orchestration`.
+ * Pure projection of one `evt.runtime.workgraph.planned` event (published by
+ * @umer/orchestration's OrchestrationWorker after a `workgraph.plan` command
+ * runs ReadyWorkPackagePlanner) into `state.workGraphPlanResults`. No Message
+ * Fabric dependency, same reasoning as projectRuntimeWorkPackageEvent above.
+ */
+export function projectWorkGraphPlannedEvent(state: ControlApiState, event: EventEnvelope): void {
+  const projectId = String(event.payload.projectId ?? '');
+  if (!projectId) return;
+  if (!state.workGraphPlanResults) {
+    state.workGraphPlanResults = new Map();
+  }
+  state.workGraphPlanResults.set(projectId, {
+    created: Array.isArray(event.payload.created) ? (event.payload.created as string[]) : [],
+    skipped: Array.isArray(event.payload.skipped)
+      ? (event.payload.skipped as WorkGraphPlanResult['skipped'])
+      : [],
+    occurredAt: event.occurredAt,
+  });
+}
+
+/**
+ * Connects to the Message Fabric and wires two projections onto the same
+ * client: projectRuntimeWorkPackageEvent (`evt.runtime.agent.run.>`) and
+ * projectWorkGraphPlannedEvent (`evt.runtime.workgraph.planned`) — and
+ * stashes the fabric client on `state.fabric` so server.ts's gate-resolve
+ * and work-graph plan routes can publish commands back to `cmd.orchestration`.
  *
  * Boot-only (main.ts), never called from createControlApiState — same
  * fail-open reasoning as startAgentRunReadModelSubscription: if the Message
  * Fabric is unreachable, control-api still starts; genuinely-dispatched Work
- * Packages just won't surface until this recovers.
+ * Packages/plan results just won't surface until this recovers.
  */
 export async function connectRuntimeWorkPackageBridge(
   state: ControlApiState,
@@ -152,7 +174,7 @@ export async function connectRuntimeWorkPackageBridge(
   try {
     const fabric = await createMessageFabric({ producer: 'control-api' });
     state.fabric = fabric;
-    const subscription = await fabric.subscribeEvents(
+    const workPackageSub = await fabric.subscribeEvents(
       {
         stream: STREAMS.EVENTS,
         durable: 'control-api-runtime-work-package-bridge',
@@ -168,12 +190,27 @@ export async function connectRuntimeWorkPackageBridge(
         ctx.ack();
       },
     );
-    log.info('runtime work package bridge subscribed to evt.runtime.agent.run.>');
-    return subscription;
+    const planSub = await fabric.subscribeEvents(
+      {
+        stream: STREAMS.EVENTS,
+        durable: 'control-api-workgraph-plan-results',
+        filterSubject: `${SUBJECTS.EVT_RUNTIME}.workgraph.planned`,
+      },
+      async (event, ctx) => {
+        projectWorkGraphPlannedEvent(state, event);
+        ctx.ack();
+      },
+    );
+    log.info('runtime work package bridge subscribed to evt.runtime.agent.run.> and evt.runtime.workgraph.planned');
+    return {
+      stop: async () => {
+        await Promise.all([workPackageSub.stop(), planSub.stop()]);
+      },
+    };
   } catch (err) {
     log.warn(
       { err: err instanceof Error ? err.message : String(err) },
-      'runtime work package bridge unavailable (Message Fabric unreachable) — genuinely-dispatched work packages will not surface until this recovers',
+      'runtime work package bridge unavailable (Message Fabric unreachable) — genuinely-dispatched work packages/plan results will not surface until this recovers',
     );
     return undefined;
   }

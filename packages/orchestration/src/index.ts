@@ -29,6 +29,7 @@ export {
   OrchestrationWorker,
   createOrchestrationWorker,
   type OrchestrationWorkerOptions,
+  type WorkGraphPlanningOptions,
 } from './worker.js';
 export { WorkGraph, canTransitionNode } from './work-graph.js';
 export {

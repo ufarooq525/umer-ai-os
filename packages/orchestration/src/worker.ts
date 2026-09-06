@@ -1,11 +1,20 @@
-import type { CommandEnvelope, EventEnvelope } from '@umer/contracts';
+import type { CommandEnvelope, EventEnvelope, WorkGraphNodeContract } from '@umer/contracts';
 import { parseContract, WorkPackageContractSchema } from '@umer/contracts';
 import type { MessageFabricClient, SubscriptionHandle } from '@umer/message-fabric';
-import { STREAMS, SUBJECTS } from '@umer/message-fabric';
+import { createEventEnvelope, STREAMS, SUBJECTS } from '@umer/message-fabric';
 import { ORCHESTRATION_COMMANDS } from './constants.js';
 import { OrchestrationError } from './errors.js';
 import type { Orchestrator } from './orchestrator.js';
+import { ReadyWorkPackagePlanner, type ResolvedSpecialist } from './ready-work-package-planner.js';
+import type { PersistentWorkGraph } from './work-graph-store.js';
 import type { WorkGraphProjector } from './work-graph-projector.js';
+
+/** Enables handling `workgraph.plan` commands — see PLAN_PROJECT's case in handleCommand. */
+export type WorkGraphPlanningOptions = {
+  persistentGraph: PersistentWorkGraph;
+  /** Returning undefined for a node type this deployment has no real dispatchable Specialist for is correct — ReadyWorkPackagePlanner skips it rather than fabricating one. */
+  resolveSpecialist: (node: WorkGraphNodeContract) => ResolvedSpecialist | undefined;
+};
 
 export type OrchestrationWorkerOptions = {
   orchestrator: Orchestrator;
@@ -18,6 +27,8 @@ export type OrchestrationWorkerOptions = {
    * a no-op without it.
    */
   workGraphProjector?: WorkGraphProjector;
+  /** Optional: handles `workgraph.plan` commands (see WorkGraphPlanningOptions). Omitted deployments/tests just get INVALID_COMMAND for that command name, same as before this existed. */
+  workGraphPlanning?: WorkGraphPlanningOptions;
 };
 
 export class OrchestrationWorker {
@@ -25,6 +36,7 @@ export class OrchestrationWorker {
   private readonly fabric: MessageFabricClient;
   private readonly durablePrefix: string;
   private readonly workGraphProjector?: WorkGraphProjector;
+  private readonly workGraphPlanning?: WorkGraphPlanningOptions;
   private subscriptions: SubscriptionHandle[] = [];
 
   constructor(options: OrchestrationWorkerOptions) {
@@ -32,6 +44,7 @@ export class OrchestrationWorker {
     this.fabric = options.fabric;
     this.durablePrefix = options.durablePrefix ?? 'orchestration';
     this.workGraphProjector = options.workGraphProjector;
+    this.workGraphPlanning = options.workGraphPlanning;
   }
 
   async start(): Promise<void> {
@@ -109,6 +122,44 @@ export class OrchestrationWorker {
         const workPackageId = String(payload.workPackageId ?? '');
         await this.orchestrator.retry(workPackageId, correlationId);
         await this.workGraphProjector?.onRetried(workPackageId);
+        return;
+      }
+      case ORCHESTRATION_COMMANDS.PLAN_PROJECT: {
+        if (!this.workGraphPlanning) {
+          throw new OrchestrationError(
+            'INVALID_COMMAND',
+            'workgraph.plan received but this OrchestrationWorker has no workGraphPlanning configured',
+          );
+        }
+        const projectId = String(payload.projectId ?? '');
+        const execId = String(payload.execId ?? '');
+        const contextHandle = String(payload.contextHandle ?? '');
+        const taskIdsByNodeId = (payload.taskIdsByNodeId ?? {}) as Record<string, string[] | undefined>;
+
+        const planner = new ReadyWorkPackagePlanner({
+          orchestrator: this.orchestrator,
+          persistentGraph: this.workGraphPlanning.persistentGraph,
+          resolveSpecialist: this.workGraphPlanning.resolveSpecialist,
+          resolveTaskContext: (node) => {
+            const taskIds = taskIdsByNodeId[node.nodeId];
+            return taskIds && taskIds.length > 0 ? { taskIds } : undefined;
+          },
+        });
+
+        const result = await planner.planProject(projectId, { execId, contextHandle, correlationId });
+        await this.fabric.publishEvent(
+          `${SUBJECTS.EVT_RUNTIME}.workgraph.planned`,
+          createEventEnvelope({
+            name: 'workgraph.planned',
+            producer: `${this.durablePrefix}-worker`,
+            correlationId,
+            payload: {
+              projectId,
+              created: result.created.map((wp) => wp.workPackageId),
+              skipped: result.skipped,
+            },
+          }),
+        );
         return;
       }
       default:

@@ -253,6 +253,9 @@ importers:
       '@umer/orchestration':
         specifier: workspace:*
         version: link:../../packages/orchestration
+      '@umer/specialist-sdk':
+        specifier: workspace:*
+        version: link:../../packages/specialist-sdk
     devDependencies:
       tsx:
         specifier: ^4.19.2

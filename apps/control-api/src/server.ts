@@ -267,6 +267,10 @@ export function createControlApiServer(state: ControlApiState) {
         projectId,
         nodes: graph.listNodes(projectId),
         edges: graph.listEdges(projectId),
+        // Cross-process, eventually-consistent — see WorkGraphPlanResult's doc
+        // comment on state.ts. Absent means "no plan has reported back yet",
+        // not "nothing is ready" — check nodes' own status for that.
+        lastPlanResult: state.workGraphPlanResults?.get(projectId) ?? null,
       });
       return;
     }
@@ -298,6 +302,105 @@ export function createControlApiServer(state: ControlApiState) {
         // WorkGraph's own validation (duplicate node/edge ids) is the source of truth here.
         sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
       }
+      return;
+    }
+
+    // Turns Ready nodes into real, dispatched Work Packages via
+    // @umer/orchestration's ReadyWorkPackagePlanner — running in
+    // orchestration-worker's process, which owns the real Orchestrator, so
+    // this route only ever gets as far as: create real Tasks for the ready
+    // nodes (the one write this route makes itself), mint an execution
+    // context, and publish `workgraph.plan` for orchestration-worker to act
+    // on. The actual created/skipped result is NOT returned synchronously —
+    // it arrives via evt.runtime.workgraph.planned (see
+    // runtime-work-package-bridge.ts) and shows up in a follow-up
+    // GET /v1/work-graph/:projectId's `lastPlanResult`. Requires an
+    // `approver` so an automatic trigger can't quietly stand in for a human
+    // decision until that's explicitly designed and approved.
+    const workGraphPlanMatch = path.match(/^\/v1\/work-graph\/([^/]+)\/plan$/);
+    if (workGraphPlanMatch && req.method === 'POST') {
+      const projectId = decodeURIComponent(workGraphPlanMatch[1]!);
+      const body = await readJsonBody<{ approver?: string }>(req);
+      if (!body.approver) {
+        sendJson(res, 400, { error: 'approver is required' });
+        return;
+      }
+      if (!state.commandService) {
+        sendJson(res, 503, { error: 'command_service_unavailable' });
+        return;
+      }
+      if (!state.fabric) {
+        sendJson(res, 503, {
+          error: 'message_fabric_unavailable',
+          message: 'Cannot reach orchestration-worker to run the planner right now.',
+        });
+        return;
+      }
+
+      const graph = await state.persistentWorkGraph!.load(projectId);
+      const ready = graph.listReadyNodes(projectId);
+      if (ready.length === 0) {
+        sendJson(res, 200, { projectId, readyNodeIds: [], message: 'No ready nodes to plan.' });
+        return;
+      }
+
+      const correlationId = `corr-plan-${projectId}-${Date.now()}`;
+      const taskIdsByNodeId: Record<string, string[]> = {};
+      for (const node of ready) {
+        const taskEnvelope = {
+          commandId: `cmd-${randomUUID()}`,
+          schemaVersion: SCHEMA_VERSION,
+          name: 'CreateTask',
+          issuedAt: new Date().toISOString(),
+          correlationId,
+          producer: 'control-api',
+          payload: {
+            epicId: `epic-${projectId}`,
+            projectId,
+            title: node.title,
+            description: `Deliver "${node.title}" for project ${projectId}, per its Work Graph decomposition.`,
+            acceptanceCriteria: [`${node.title} artifact accepted by human review`],
+          },
+          actor: { principalId: body.approver, kind: 'human' as const },
+        } as unknown as CeoCommandEnvelope;
+
+        const result = await state.commandService.execute(taskEnvelope);
+        const task = result.data as { taskId: string };
+        taskIdsByNodeId[node.nodeId] = [task.taskId];
+      }
+
+      const execId = `EXEC-${Date.now()}`;
+      const contextHandle = `ctx-plan-${projectId}-${Date.now()}`;
+      const command = createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.PLAN_PROJECT,
+        producer: 'control-api',
+        correlationId,
+        idempotencyKey: correlationId,
+        payload: { projectId, execId, contextHandle, taskIdsByNodeId },
+      });
+      await state.fabric.publishCommand(SUBJECTS.CMD_ORCHESTRATION, command);
+
+      await state.auditService.append(
+        {
+          action: 'work_graph.plan_requested',
+          actor: body.approver,
+          resourceType: 'project',
+          resourceId: projectId,
+          outcome: 'success',
+          correlationId,
+          detail: { readyNodeIds: ready.map((n) => n.nodeId), taskIdsByNodeId, execId },
+        },
+        correlationId,
+      );
+
+      sendJson(res, 202, {
+        projectId,
+        correlationId,
+        execId,
+        readyNodeIds: ready.map((n) => n.nodeId),
+        taskIdsByNodeId,
+        message: 'Planning requested. Check GET /v1/work-graph/:projectId shortly for the result.',
+      });
       return;
     }
 

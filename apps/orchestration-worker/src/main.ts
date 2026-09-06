@@ -1,8 +1,11 @@
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadEnv } from '@umer/config';
 import { startRuntime, startHealthServer, healthCheck } from '@umer/kernel';
 import { createMessageFabric } from '@umer/message-fabric';
 import { createLogger } from '@umer/observability';
 import { pingMySql, createMySqlExecutor } from '@umer/db';
+import { loadSpecFromFile } from '@umer/specialist-sdk';
 import {
   createOrchestrator,
   createOrchestrationWorker,
@@ -10,12 +13,35 @@ import {
   MySqlWorkGraphStore,
   PersistentWorkGraph,
   WorkGraphProjector,
+  type WorkGraphPlanningOptions,
   type WorkGraphStore,
 } from '@umer/orchestration';
 
 const serviceName = 'orchestration-worker';
 const log = createLogger(serviceName);
 const env = loadEnv();
+
+// Real, currently-dispatchable Specialist metadata for the planning path
+// (ReadyWorkPackagePlanner needs a real specVersion/specHash, not a made-up
+// one) — read from the SAME spec file apps/agent-worker loads eng.app-delivery
+// from, so both processes agree on what's actually current. Only
+// 'Implementation' maps to a real Specialist today: eng.app-delivery is the
+// only one apps/agent-worker actually registers for dispatch (see its
+// main.ts) — every other node type correctly has no mapping, so
+// ReadyWorkPackagePlanner skips it (reported, not fabricated) rather than
+// building a Work Package no running worker could execute.
+const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
+const engAppDelivery = await loadSpecFromFile(
+  join(repoRoot, 'specialists', 'engineering', 'application-delivery.md'),
+);
+const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] = (node) =>
+  node.type === 'Implementation'
+    ? {
+        specialistId: engAppDelivery.binding.specialistId,
+        specialistSpecVersion: engAppDelivery.binding.specVersion,
+        specialistSpecHash: engAppDelivery.binding.specHash,
+      }
+    : undefined;
 
 const fabric = await createMessageFabric({ producer: serviceName });
 const orchestrator = createOrchestrator({ fabric, producer: serviceName });
@@ -46,6 +72,10 @@ const worker = createOrchestrationWorker({
   orchestrator,
   fabric,
   workGraphProjector,
+  workGraphPlanning: {
+    persistentGraph: persistentWorkGraph,
+    resolveSpecialist: workGraphPlanningResolver,
+  },
 });
 
 const health = await startHealthServer({

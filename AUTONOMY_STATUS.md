@@ -87,16 +87,36 @@ Operations graph for a project). `control-api` exposes
 `GET /v1/work-graph/:projectId` and `POST /v1/work-graph/:projectId/decompose`;
 `apps/web`'s `WorkGraphBoard` renders it on a Project's detail page.
 
-**Known real gap in this same area:** `ReadyWorkPackagePlanner` requires a
-real Task id per node (fails closed / skips the node with a reason if none
-resolves) — and nothing yet creates a real Task per Work Graph node
-automatically. So today, decomposing a project's Requirements produces a
-real, persisted, correctly-computed graph, and the planner/projector
-machinery is real and fully tested, but actually turning a Ready node into a
-dispatched Work Package in a live deployment requires a caller to supply
-real Task ids (e.g. via the CEO Command Plane's existing `CreateTask`) —
-this wiring is deliberately not faked with synthetic Task ids; see Next
-Milestone.
+**Planning trigger (real, added by the second 2026-09-06 milestone):**
+`ReadyWorkPackagePlanner` now has a real, end-to-end invocation path.
+`POST /v1/work-graph/:projectId/plan` (requires `{approver}` — a human stays
+accountable for triggering it) creates a real `Task` per Ready node via the
+CEO Command Plane's existing `CreateTask` handler (no synthetic Task ids),
+mints an execution context, and publishes a new `workgraph.plan` command to
+`cmd.orchestration`. `OrchestrationWorker` (running in
+`apps/orchestration-worker`, which owns the real `Orchestrator`) handles it
+by constructing a `ReadyWorkPackagePlanner` with those real Task ids and a
+`resolveSpecialist` that maps **only** `Implementation` → `eng.app-delivery`
+— the one Specialist `apps/agent-worker` actually registers for dispatch
+today (its `specVersion`/`specHash` are read from the same
+`specialists/engineering/application-delivery.md` file agent-worker loads,
+not invented). Every other node type correctly has no Specialist mapped, so
+the planner skips it (reported, not fabricated). The result
+(`created`/`skipped`) is published as a new `evt.runtime.workgraph.planned`
+event — genuinely eventually-consistent across the `control-api` ↔
+`orchestration-worker` process boundary, not a synchronous HTTP response —
+and surfaces in a follow-up `GET /v1/work-graph/:projectId`'s
+`lastPlanResult`.
+
+**Known real gap that remains:** only `Implementation` nodes can currently
+be planned into a real, executable Work Package, because `eng.app-delivery`
+is the only Specialist `apps/agent-worker` actually loads for dispatch (see
+its `main.ts` — `specPaths` lists only `eng.app-delivery` and
+`growth.opportunity-research`, and the latter doesn't fit this pipeline).
+Requirements/Product/Architecture/UX/QA/Security/Release/Operations nodes
+will report `skipped: "no active Specialist resolved for node type X"`
+until more Specialists are wired into a running agent-worker's dispatch
+list — deliberately not faked with a Specialist id nothing can execute.
 
 **Command Center UI (real data, not fabricated):** `apps/web`'s
 `command-center/page.tsx` fetches every tile from `control-api`'s real
@@ -166,8 +186,8 @@ in-memory `Map`s).
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
 | Phase 3 — Product & Architecture | ~0% | ~15% | The graph's Architecture/Product/UX nodes are real and correctly gated by real dependency edges (Architecture and UX both required before Implementation is Ready). No specialist yet actually produces a Product/Architecture artifact for these nodes — the graph structure is real, the content-producing work behind each node is not yet connected. |
 | Phase 4 — Software Factory | ~30% | ~30% | Not re-audited this pass. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~55%** | The Work Graph engine, persistence, planner, and Orchestrator projection are now all real and tested end-to-end (`orchestrator-work-graph.test.ts` proves a node going Ready → InProgress → Review → Accepted, unblocking its dependent). The remaining gap is Task-id resolution for the planner (see "Known real gap" above) and a CEO-facing trigger for planning (there's no `/v1/work-graph/:projectId/plan` route yet — the planner is a tested library primitive, not yet wired to an HTTP/command entry point). |
-| Phase 6 — Autonomous Operations | ~7% | ~10% | `WorkGraphProjector` makes Work Package status changes visible on the graph automatically, with zero manual bookkeeping — a real (if small) step toward routine work needing no human attention to track. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~65%** | The Work Graph engine, persistence, planner, projector, AND a real CEO-triggered planning path (`POST /v1/work-graph/:projectId/plan`, real Task creation, real dispatch) are all built, wired cross-process, and tested end-to-end. The remaining gap is breadth, not plumbing: only `Implementation` nodes map to a Specialist agent-worker can actually execute. |
+| Phase 6 — Autonomous Operations | ~7% | ~12% | `WorkGraphProjector` makes Work Package status changes visible on the graph automatically. The plan route still requires a named human `approver` per invocation — genuinely CEO-triggered, not yet autonomous — which is the correct conservative default until this path has a track record. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -215,18 +235,54 @@ Built the Work Graph layer end-to-end, real and tested at every layer:
   end-to-end Work Graph ↔ Orchestrator integration test
   (`orchestrator-work-graph.test.ts`).
 
+## This milestone (2026-09-06, continued)
+
+Closed the last real gap flagged in the prior milestone — the planner now
+has a genuine, invokable end-to-end path, not just tested library code:
+
+- **New command**: `ORCHESTRATION_COMMANDS.PLAN_PROJECT` (`workgraph.plan`)
+  on `cmd.orchestration`, handled by `OrchestrationWorker` — constructs a
+  `ReadyWorkPackagePlanner` per invocation from the command's real Task ids,
+  runs it, and publishes the result as a new `evt.runtime.workgraph.planned`
+  event (added to `RuntimeEventNameSchema`).
+- **Real Specialist resolution**: `apps/orchestration-worker` now loads
+  `specialists/engineering/application-delivery.md` via
+  `@umer/specialist-sdk`'s `loadSpecFromFile` at boot — the same file
+  `apps/agent-worker` loads — so the `specVersion`/`specHash` on any Work
+  Package it plans are real, current, and match what would actually execute
+  it. Only `Implementation` nodes get a Specialist; every other node type
+  correctly resolves to nothing and gets skipped.
+- **Real Task creation**: `POST /v1/work-graph/:projectId/plan` (control-api)
+  requires a human `approver`, creates one real `Task` per Ready node via
+  the CEO Command Plane's `CreateTask` handler (audited, trust-authorized,
+  same write path as every other Task in this system), mints an execution
+  context, and publishes the plan command.
+- **Cross-process result visibility**: `runtime-work-package-bridge.ts`
+  gained a second subscription (`evt.runtime.workgraph.planned`) on the same
+  Message Fabric client, recording the latest plan result per project in
+  `state.workGraphPlanResults` — surfaced via `GET /v1/work-graph/:projectId`'s
+  new `lastPlanResult` field.
+- **Tests**: `worker-plan.test.ts` (4 cases: rejects without planning
+  configured, plans a real Implementation node with real task ids, skips a
+  node with no task ids, never fabricates a Specialist for QA), plus control-api
+  route tests (`work-graph-plan-route.test.ts`, 4 cases) and bridge
+  projection tests (3 new cases in `runtime-work-package-bridge.test.ts`).
+  `packages/orchestration` is now at 81 tests (up from 77); `control-api` at
+  115 (up from 108).
+
 ## Next highest-value milestone
 
-**Wire real Task creation into the planning path.** The planner is fully
-real and tested but will skip every node in a live deployment until
-something creates a real Task per node — the honest, non-fabricating fix is
-to have the decomposition (or a first planning pass) call the CEO Command
-Plane's existing `CreateTask` handler per node before resolving task
-context, rather than inventing a Task id. Alongside that: a
-`POST /v1/work-graph/:projectId/plan` route/command so a CEO (or, once
-proven safe, an automatic trigger) can actually invoke
-`ReadyWorkPackagePlanner` against the real graph — today it's a tested
-library primitive with no HTTP/command entry point.
+**Register more Specialists for real dispatch.** The planning path is now
+completely real and wired end-to-end, but only `Implementation` nodes can
+actually be planned into an executable Work Package, because
+`apps/agent-worker` only registers `eng.app-delivery` (and
+`growth.opportunity-research`, which doesn't fit this pipeline) for
+dispatch — the other specialist `.md` files under `specialists/` exist but
+aren't loaded by any running worker. Wiring `qa.verify`, `security.review`,
+`design.ux-design`, etc. into `apps/agent-worker`'s `specPaths` (and giving
+`OrchestrationWorker`'s `resolveSpecialist` the matching node-type mapping)
+would let a decomposed project's QA/Security/UX nodes actually plan and
+execute, not just sit correctly-skipped.
 
 After that, unchanged from the prior milestone: **persist the Runtime
 Truth** for the stores that are still in-memory (Work Package summaries,
