@@ -210,8 +210,8 @@ Postgres as the primary store.
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
 | Phase 3 — Product & Architecture | ~0% | **~28%** | The graph's Architecture/Product/UX/QA/Security nodes are real and correctly gated by real dependency edges. `ux.design`, `qa.verify`, and now `security.review` are all registered, dispatchable, and can seal real findings under their own sandboxed `.umer/<slug>/` evidence subtree. Product/Architecture themselves still have no dispatchable Specialist at all. |
 | Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA/Security — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~72%** | Four Specialists (`Implementation`, `UX`, `QA`, `Security`) now map to real, dispatchable work; the planner/projector/context-resolution machinery has proven it generalizes across three different `targetPath`-requiring node types, plus the tool router's allowlist model held up unchanged for the first tool that spawns a real subprocess. |
-| Phase 6 — Autonomous Operations | ~7% | **~22%** | All three specialists originally scoped this session (`ux.design`, `qa.verify`, `security.review`) are registered, sandboxed, and can seal real evidence — `security.review` closes the loop with the first real subprocess execution (`npm audit`/`composer audit`) in this codebase, still fixed-argv and non-shell. The real gap now isn't more tools — it's that none of the three has ever been driven through a live LLM provider end to end; every test so far uses a scripted provider. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~74%** | Everything from the prior estimate, confirmed for real this pass: a live plan→dispatch→run cycle against the actual running services worked exactly as the machinery was designed — real Task creation, real `targetPath` resolution, real dispatch to `agent-worker`, real Work Package lifecycle transitions to `AwaitingReview`. The graph/planner/dispatch plumbing is solid; raised because this is now proven in production-shaped conditions, not just unit tests. |
+| Phase 6 — Autonomous Operations | ~7% | **~16%** | Lowered from the tenth pass's optimistic ~22%: the live run proved the plumbing works but the actual specialist output was a no-op — the model never called `filesystem_read` and asked a human for input instead, exposing a real prompt-quality gap (see this pass's findings) that no unit test surfaced. The honesty guarantees held up correctly even so (Work Package landed at `AwaitingReview` with an honest `N_A` artifact, nothing fabricated) — but zero real autonomous work has actually been produced yet, which is what this phase is meant to measure. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -710,17 +710,79 @@ Specialist run. All three specialists flagged back in the seventh pass
 dispatchable; none of the three has yet been driven through a real live
 run against an actual project.
 
+## This milestone (2026-09-06, eleventh pass): the first real live run — plumbing works, prompt doesn't
+
+Actually drove `ux.design` through a full live cycle against this
+sandbox's real local LM Studio server (`qwen/qwen3-8b`), a real registered
+project (`erp_web_dashboard`, genuinely on disk at
+`C:\laragon\www\erp_web_dashboard`), and the real running `control-api` +
+`agent-worker` processes. This is the first time anything in this codebase
+has executed against a real model instead of a scripted `LLMProvider`.
+
+**A real operational gap found and fixed first**: creating a Work
+Management Project and linking it to a registered codebase had no real,
+operator-facing path at all — `ProjectContract`, `ProjectWritePort`, and
+every store already carried `registryProjectId` end to end (this session's
+own tests set it by calling `projectStore.create()` directly, in-process),
+but `CreateProjectPayloadSchema` — the actual public command surface —
+never accepted it. Fixed by adding the field to the schema and threading
+it through the handler (`fix(control-plane): CreateProject accepts
+registryProjectId`, commit `8333679`). Also found: `orchestration-worker`
+was not part of `dev-up.ps1` at all and was not running; `control-api` was
+running the stale compiled `dist/main.js` under a manual restart-loop
+supervisor rather than the hot-reloading `dev` script `dev-up.ps1` itself
+uses, so a rebuild had to be paired with a process restart to actually pick
+up code changes — worth folding `orchestration-worker` into `dev-up.ps1`
+properly in a future pass.
+
+**Also confirmed, not fixed (by design, documented from the start)**: the
+full `Requirements → Product → Architecture → UX/Implementation → ...`
+decomposition fixture has no dispatchable Specialist for `Requirements`/
+`Product`/`Architecture`, so a real project decomposed through
+`POST /v1/work-graph/:projectId/decompose` gets permanently stuck with only
+`Requirements` ever Ready — `UX`/`QA`/`Security` can never become Ready
+through the normal pipeline yet. For this live test, a single freestanding
+`UX` node (no edges, so Ready immediately) was seeded directly into the
+real MySQL-backed `WorkGraphStore` with a one-off script, deliberately
+bypassing that unfinished part of the pipeline rather than trying to fix it
+as a side effect of a live-testing session.
+
+**What actually happened, end to end**: `POST /v1/work-graph/:id/plan`
+correctly resolved `targetPath` to the real absolute path; `orchestration-worker`
+picked up `workgraph.plan`, created a real Task, and dispatched a real
+Work Package to `agent-worker`; `agent-worker` called the real LM Studio
+model with `ux.design`'s system prompt and `filesystem_read`/
+`filesystem_write`/`process.recommend` available; the model responded with
+a **final answer and zero tool calls** — it never touched `filesystem_read`
+at all. Its response, verbatim: *"I cannot perform UX analysis without
+access to the project files or specific user instructions. Please
+provide: 1. File paths for review... 2. Specific UX requirements...
+3. Priority criteria..."* — despite `filesystem_read` being registered and
+`targetPath` being real. The Work Package still correctly reached
+`AwaitingReview` with an honest `N_A`-status artifact (the fabrication-fix
+from earlier this session held up perfectly here — nothing invented a
+finding), so the honesty guarantees worked exactly as designed even when
+the underlying work was a no-op.
+
+**The actual root cause**: `buildUserMessage()` in `llm-agent.ts` sends the
+model a generic `Work Package <id> for <execId> (stage: <stage>). Tasks:
+<taskId>.` with no file paths, no instruction to explore the codebase, and
+no mention that a real project is available to inspect — a smaller local
+model (8B) had no concrete signal to reach for `filesystem_read`
+proactively rather than asking a human for input, which is exactly the
+kind of prompt-quality gap the seventh pass predicted no unit test could
+catch, since every existing test uses a scripted provider that always
+calls the tool it's told to script.
+
 ## Next highest-value milestone
 
-All three specialists originally scoped are now registered. The next real
-gap is that **none of them has ever actually run** — every test so far
-exercises the tools and the planning/dispatch machinery in isolation, but
-nothing has driven a live LLM provider through a full
-plan → dispatch → tool-call → seal-evidence cycle against a real registered
-project on disk. That's the natural next milestone: pick one real,
-already-registered project from the catalog, decompose it, plan its UX (or
-QA) node with a real `targetPath`, and dispatch it against a real LLM
-provider end to end — surfacing whatever breaks in practice (prompt
-quality, tool-call formatting from the actual model, artifact sealing)
-that no unit test can catch, since every test so far uses a scripted
-`LLMProvider` rather than a real one.
+**Improve the grounding in the prompt itself**: when a Work Package
+carries a real `targetPath` and the specialist has `filesystem_read` on its
+allowlist, `buildUserMessage`/`buildSystemPrompt` should say so explicitly
+— e.g. "You have read access to the real project at this root via
+`filesystem_read`; start by identifying and reading the files most
+relevant to this task" — rather than leaving a smaller model to infer tool
+availability from the tool-calling API's function list alone. This is a
+prompt/message-construction change, not an architecture change, and is
+directly falsifiable: re-run the same live scenario afterward and check
+whether the model actually calls `filesystem_read` this time.
