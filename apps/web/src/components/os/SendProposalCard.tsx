@@ -21,8 +21,21 @@ export function SendProposalCard({ proposal }: { proposal: SendProposal }) {
     <Card title="One-page proposal">
       <p style={{ margin: '0 0 12px', fontSize: 13, color: colors.muted, lineHeight: 1.5 }}>
         Built from the opportunity record only. Nothing is sent until you copy or open mail. No ranking or booking
-        percentages.
+        percentages, and no price — that's for the call, not the first message.
       </p>
+      <div
+        style={{
+          margin: '0 0 12px',
+          padding: '8px 12px',
+          borderRadius: radii.md,
+          border: `1px solid ${colors.border}`,
+          background: colors.bg,
+          fontSize: 12,
+          color: colors.muted,
+        }}
+      >
+        For you only — not in the letter: {proposal.priceLine}
+      </div>
       {proposal.blockers.length > 0 ? (
         <ul style={{ margin: '0 0 12px', paddingLeft: 18, color: colors.warning, fontSize: 12 }}>
           {proposal.blockers.map((b) => (

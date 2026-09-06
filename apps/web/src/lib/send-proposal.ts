@@ -32,8 +32,8 @@ function moneyLine(opportunity: OpportunityRecord): string {
 }
 
 function timelineLine(opportunity: OpportunityRecord): string {
-  if (opportunity.timeToRevenueDays == null) return 'Timeline: scoped on the call.';
-  return `Recorded time-to-first-value: about ${opportunity.timeToRevenueDays} days.`;
+  if (opportunity.timeToRevenueDays == null) return "We can work out timing together on the call.";
+  return `Most projects like this are up and running in about ${opportunity.timeToRevenueDays} days.`;
 }
 
 export function deriveSendProposal(input: {
@@ -67,23 +67,21 @@ export function deriveSendProposal(input: {
           .join('\n')
       : '- No evidence records are attached yet. I will not claim results I have not seen.';
 
-  const subject = `${input.opportunity.title} — a scoped software fix`;
+  const subject = `${input.opportunity.title} — a quick idea for you`;
   const body = [
     `Hi ${businessName},`,
     '',
-    `I help operators rebuild the systems they are afraid to touch — ERPs, booking, and other software that cannot go down. I looked at this as a small, evidence-backed job, not a pitch deck.`,
+    `My name is Umer. I help local businesses fix the everyday problems that quietly cost them customers — things like a booking process that's harder than it needs to be, or no way for people to find you online. I took a look at how people currently reach you, and wanted to share what I noticed.`,
     '',
-    'What I would fix:',
+    "Here's what stood out:",
     problemBlock,
     '',
-    'What is on the record (not a guarantee):',
+    "What I actually checked, not a guess:",
     evidenceBlock,
     '',
-    `Offer: ${input.opportunity.title}.`,
-    moneyLine(input.opportunity),
     timelineLine(input.opportunity),
     '',
-    'I do not claim a booking or traffic percentage. The next step is a 15-minute call to confirm scope.',
+    "I'm not going to promise a specific number of extra bookings or visitors — I haven't earned that yet. If this sounds worth 15 minutes, let's talk it through and figure out the right fix together.",
     UMER_CAL_URL,
     '',
     founderSignatureText(),

@@ -55,10 +55,43 @@ describe('deriveSendProposal', () => {
     expect(proposal.body).toContain('Al Ansar Tours');
     expect(proposal.body).toContain('WhatsApp-only booking');
     expect(proposal.body).toContain('No booking form on the homepage');
-    expect(proposal.body).toContain('USD 1200–USD 2500');
     expect(proposal.body).not.toMatch(/25-35%|guaranteed/i);
     expect(proposal.canSend).toBe(true);
     expect(proposal.mailto).toMatch(/^mailto:hello%40example.com/);
+    // Price never appears in the letter itself -- it's operator-only context
+    // (SendProposalCard shows it separately from the sendable copy) so a
+    // recipient never sees a number before a real conversation has happened.
+    expect(proposal.body).not.toMatch(/USD|price|budget/i);
+    expect(proposal.priceLine).toContain('USD 1200–USD 2500');
+  });
+
+  it('writes for a non-technical owner — no jargon, no price, no internal record-keeping language', () => {
+    const proposal = deriveSendProposal({
+      opportunity: opportunity(),
+      businessName: 'Al Ansar Tours',
+      email: 'hello@example.com',
+      problems: [
+        {
+          id: 'p1',
+          businessId: 'b1',
+          nicheId: 'n1',
+          runId: 'r1',
+          statement: 'No public website',
+          severity: 80,
+          frequency: 70,
+          financialImpact: 60,
+          evidenceConfidence: 70,
+          evidenceRefs: [],
+        },
+      ],
+    });
+    // Jargon a small, non-technical business owner wouldn't recognize.
+    expect(proposal.body).not.toMatch(/ERP|scoped software fix|pitch deck/i);
+    // Internal, audit-record phrasing that reveals this as a system-generated
+    // report rather than something a person wrote.
+    expect(proposal.body).not.toMatch(/on the record|recorded/i);
+    // No price/budget anywhere in what actually gets sent.
+    expect(proposal.body).not.toMatch(/USD|price|budget|quote/i);
   });
 
   it('stays sendable as a copy-paste letter when email is missing', () => {
@@ -67,7 +100,7 @@ describe('deriveSendProposal', () => {
       businessName: null,
     });
     expect(proposal.canSend).toBe(false);
-    expect(proposal.body).toContain('no price is on this record');
+    expect(proposal.priceLine).toContain('no price is on this record');
     expect(proposal.blockers.length).toBeGreaterThan(0);
     expect(proposal.body).not.toMatch(/\d+%/);
   });
