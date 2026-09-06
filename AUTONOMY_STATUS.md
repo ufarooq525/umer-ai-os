@@ -65,8 +65,38 @@ audit-pipeline intake system below; genuinely-dispatched Work Packages never
 reached it.
 
 **Commercial Intelligence (real, MySQL-backed):** `packages/opportunity-intelligence`
-is the only part of the system with real persistent storage. `control-api`
-best-effort-connects its `opportunityReader` to MySQL when reachable.
+was, before this milestone, the only part of the system with real persistent
+storage. The Work Graph (below) is now the second.
+
+**Work Graph (real, tested, MySQL-backed — added by this milestone):**
+`packages/orchestration` now has a full Work Graph engine:
+`WorkGraph` (nodes/edges, cycle/duplicate/project-mismatch validation,
+readiness computation via `blocks`/`requires` precedence edges),
+`WorkGraphStore`/`PersistentWorkGraph`/`MySqlWorkGraphStore` (persistence,
+same best-effort-MySQL-else-in-memory pattern as `opportunityReader`, backed
+by `packages/db`'s `work_graph_nodes`/`work_graph_edges` migration),
+`ReadyWorkPackagePlanner` (turns a Ready node with no attached Work Package
+into a real, dispatched Work Package — fails closed, never fabricates a
+Task id or Specialist), `WorkGraphProjector` (projects real Work Package
+lifecycle transitions — `markRunning`/`markAwaitingReview`/`accept`/
+`reject`/`fail`/`cancel`/`retry` — back onto the originating graph node,
+wired into `OrchestrationWorker`), and `decomposeRequirementIntoWorkGraph`/
+`applyRequirementDecomposition` (builds the canonical Requirements → Product
+→ {Architecture, UX} → Implementation → {QA, Security} → Release →
+Operations graph for a project). `control-api` exposes
+`GET /v1/work-graph/:projectId` and `POST /v1/work-graph/:projectId/decompose`;
+`apps/web`'s `WorkGraphBoard` renders it on a Project's detail page.
+
+**Known real gap in this same area:** `ReadyWorkPackagePlanner` requires a
+real Task id per node (fails closed / skips the node with a reason if none
+resolves) — and nothing yet creates a real Task per Work Graph node
+automatically. So today, decomposing a project's Requirements produces a
+real, persisted, correctly-computed graph, and the planner/projector
+machinery is real and fully tested, but actually turning a Ready node into a
+dispatched Work Package in a live deployment requires a caller to supply
+real Task ids (e.g. via the CEO Command Plane's existing `CreateTask`) —
+this wiring is deliberately not faked with synthetic Task ids; see Next
+Milestone.
 
 **Command Center UI (real data, not fabricated):** `apps/web`'s
 `command-center/page.tsx` fetches every tile from `control-api`'s real
@@ -81,11 +111,14 @@ activity.
 A prior planning document for this repo asserted a Work Graph layer
 (`work_graph_nodes`/`work_graph_edges` MySQL tables, a `PersistentWorkGraph`,
 a `ReadyWorkPackagePlanner`, and a `WorkGraphBoard` UI component) was already
-implemented. **None of this exists in the codebase.** There is no
-`work-graph.ts` anywhere, no such MySQL tables, no planner, no board
-component. This file replaces that assumption with what's actually here;
-building the Work Graph layer is real, not-yet-started work — see Next
-Milestone below.
+implemented, as of 2026-09-05. At that time **none of it existed** — there
+was no `work-graph.ts` anywhere, no such MySQL tables, no planner, no board
+component. As of the 2026-09-06 milestone below, all of it now genuinely
+exists (contracts, engine, persistence, planner, projector, decomposition,
+API, UI) — this correction is kept here as the historical record of the
+gap between that planning document and the codebase at the time it was
+written, not as a claim about current state (see "Work Graph" above for
+that).
 
 A second, separate "audit-pipeline intake" system (`packages/registry`'s
 `planIntakeForControl` + `apply*ToProject`/`apply*OnGatePass` functions,
@@ -126,48 +159,78 @@ in-memory `Map`s).
 
 ## Phase progress (revised from prior estimates)
 
-| Phase | Prior estimate | Revised | Why revised |
+| Phase | 2026-09-05 estimate | Revised 2026-09-06 | Why revised |
 |---|---:|---:|---|
 | V1 Foundation | 100% | 100% | Confirmed. |
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
-| Phase 2 — Requirements Intake | ~0% | ~10% | `control-api` already has a real `/v1/intake` + `/v1/intake/route` flow (`routeIntakeGoal`) that turns a raw goal into an `IntakePlan`. It does not yet produce a `RequestContract`-driven Requirements → Product → Architecture decomposition — that part is genuinely ~0%. |
-| Phase 3 — Product & Architecture | ~0% | ~0% | Confirmed no such pipeline exists. |
+| Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
+| Phase 3 — Product & Architecture | ~0% | ~15% | The graph's Architecture/Product/UX nodes are real and correctly gated by real dependency edges (Architecture and UX both required before Implementation is Ready). No specialist yet actually produces a Product/Architecture artifact for these nodes — the graph structure is real, the content-producing work behind each node is not yet connected. |
 | Phase 4 — Software Factory | ~30% | ~30% | Not re-audited this pass. |
-| Phase 5 — Delivery & Work Graph | ~50% | **~20%** | The Work Package ↔ Agent Run ↔ Gate loop is real and now closes end-to-end (this milestone). The "Work Graph" half of this phase's name — nodes/edges, dependency tracking, a planner, persistence, UI — does not exist at all. 50% materially overstated the graph half. |
-| Phase 6 — Autonomous Operations | ~5% | ~7% | The gate-review bridge is a small real step toward Work Packages being reviewable without a human manually knowing to look; still far from autonomous. |
-| Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass; CEO Command Plane (pause/resume/cancel, project/task commands) is real and already supports this. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~55%** | The Work Graph engine, persistence, planner, and Orchestrator projection are now all real and tested end-to-end (`orchestrator-work-graph.test.ts` proves a node going Ready → InProgress → Review → Accepted, unblocking its dependent). The remaining gap is Task-id resolution for the planner (see "Known real gap" above) and a CEO-facing trigger for planning (there's no `/v1/work-graph/:projectId/plan` route yet — the planner is a tested library primitive, not yet wired to an HTTP/command entry point). |
+| Phase 6 — Autonomous Operations | ~7% | ~10% | `WorkGraphProjector` makes Work Package status changes visible on the graph automatically, with zero manual bookkeeping — a real (if small) step toward routine work needing no human attention to track. |
+| Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
-## This milestone (2026-09-05)
+## This milestone (2026-09-06)
 
-- Fixed: `control-api` no longer fabricates a demo Work Package/Gate on
-  every boot by default (`CONTROL_API_SEED_DEMO` opt-in only).
-- Added: `apps/control-api/src/runtime-work-package-bridge.ts` — projects
-  real `agent.run.*` events into `/v1/work-packages` and opens a real
-  `gate-wp-*` Gate review on completion.
-- Added: `/v1/gates/:id/resolve` now publishes `workpackage.accept`/
-  `workpackage.reject` back to `cmd.orchestration` for `gate-wp-*` gates,
-  so a CEO decision reaches the real Orchestrator.
-- Added tests: `runtime-work-package-bridge.test.ts` (9 cases, projection
-  logic + fail-open connection), `runtime-gate-resolve.test.ts` (4 cases,
-  the accept/reject bridge, including the "unaffected non-runtime gate" and
-  "fabric unavailable" cases).
-- No new contracts, no new event bus, no new abstraction — reused
-  `@umer/orchestration`'s existing `ORCHESTRATION_COMMANDS.ACCEPT/REJECT`
-  handling and `@umer/control-plane`'s existing `requestGateReview`/
-  `resolveGate`.
+Built the Work Graph layer end-to-end, real and tested at every layer:
+
+- **Contracts** (`packages/contracts/src/work-graph`): `WorkGraphNodeContract`
+  (10 node types: Project/Requirements/Product/Architecture/UX/
+  Implementation/QA/Security/Release/Operations; 8 statuses: Planned/Ready/
+  Blocked/InProgress/Review/Accepted/Failed/Cancelled) and
+  `WorkGraphEdgeContract` (`blocks`/`requires`).
+- **Engine** (`packages/orchestration/src/work-graph.ts`): `WorkGraph` class —
+  duplicate node/edge rejection, cross-project edge rejection, cycle
+  detection (direct, transitive, and mixed blocks/requires), and
+  `recomputeReadiness` (a node is Ready only once every real precedence
+  predecessor is Accepted).
+- **Persistence** (`work-graph-store.ts`, `work-graph-mysql-store.ts`,
+  `packages/db/src/work-graph-migration.ts`): `InMemoryWorkGraphStore` +
+  `MySqlWorkGraphStore` (new `work_graph_nodes`/`work_graph_edges` tables) +
+  `PersistentWorkGraph` (loads a project's graph, persists only what a
+  mutation actually changed, including cascaded readiness flips).
+- **Planner** (`ready-work-package-planner.ts`): turns each Ready,
+  unattached node into a real `WorkPackageContract`, queues + dispatches it
+  through the real `Orchestrator`, attaches the resulting `workPackageId`
+  back onto the node. Fails closed on missing execId/contextHandle/
+  correlationId; skips (with a reason, not a fabricated value) any node
+  whose Task ids or Specialist can't be resolved.
+- **Projector** (`work-graph-projector.ts`, wired into `OrchestrationWorker`):
+  every real `markRunning`/`markAwaitingReview`/`accept`/`reject`/`fail`/
+  `retry`/`cancel` now updates the originating graph node automatically — a
+  Work Package with no originating node (e.g. the separate audit-pipeline
+  system) is a no-op, never an error.
+- **Requirements decomposition** (`requirements-decomposition.ts`): builds
+  the canonical pipeline graph for a project; Architecture and UX gate
+  Implementation together, QA and Security gate Release together.
+- **API/UI**: `control-api` exposes `GET /v1/work-graph/:projectId` and
+  `POST /v1/work-graph/:projectId/decompose`; `apps/web`'s new
+  `WorkGraphBoard` component renders it on `/company/projects/:id`, with an
+  honest "No Work Graph recorded yet" empty state — wired into
+  `apps/orchestration-worker` (owns the live `WorkGraphProjector`) and
+  `apps/control-api` (owns reads/decompose), both best-effort-connected to
+  the same MySQL tables so they see the same graph.
+- **Tests**: 72 tests total in `packages/orchestration` (up from 38),
+  covering the engine, persistence, planner, MySQL row-mapping, and a full
+  end-to-end Work Graph ↔ Orchestrator integration test
+  (`orchestrator-work-graph.test.ts`).
 
 ## Next highest-value milestone
 
-**Persist the Runtime Truth.** Every store this milestone's loop depends on
-(Work Package summaries, Gate Wait records, Agent Run read model, Agent
-Registry, Task/Project stores) is in-memory. An "autonomous company" that
-forgets every open review and every Work Package on restart is not
-observably autonomous to a CEO who checks in once a day. This is larger than
-today's change and deserves its own design pass (schema, which store(s) to
-migrate first, migration tooling) rather than being folded in here.
+**Wire real Task creation into the planning path.** The planner is fully
+real and tested but will skip every node in a live deployment until
+something creates a real Task per node — the honest, non-fabricating fix is
+to have the decomposition (or a first planning pass) call the CEO Command
+Plane's existing `CreateTask` handler per node before resolving task
+context, rather than inventing a Task id. Alongside that: a
+`POST /v1/work-graph/:projectId/plan` route/command so a CEO (or, once
+proven safe, an automatic trigger) can actually invoke
+`ReadyWorkPackagePlanner` against the real graph — today it's a tested
+library primitive with no HTTP/command entry point.
 
-After that: the Work Graph layer named in the product vision (dependency
-edges between Requirements/Product/Architecture/UX/Implementation/QA/
-Security/Release/Operations nodes, a Ready Work Package Planner that reads
-that graph) is real, substantial, not-yet-started work — plan it as its own
-milestone with explicit schema/API sign-off rather than improvised.
+After that, unchanged from the prior milestone: **persist the Runtime
+Truth** for the stores that are still in-memory (Work Package summaries,
+Gate Wait records, Agent Run read model, Agent Registry, Task/Project
+stores) — the Work Graph is now the second MySQL-backed domain after
+Opportunity Intelligence, but everything else listed here still resets on
+restart.

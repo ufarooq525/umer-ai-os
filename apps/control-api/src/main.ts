@@ -10,6 +10,7 @@ import { startQaNightlyWatchdogCron } from './qa-nightly-scheduler.js';
 import { startAgentRunReadModelSubscription } from './agent-run-subscription.js';
 import { connectOpportunityReader } from './opportunity-link.js';
 import { connectRuntimeWorkPackageBridge } from './runtime-work-package-bridge.js';
+import { connectWorkGraphStore } from './work-graph-link.js';
 
 const serviceName = 'control-api';
 const log = createLogger(serviceName);
@@ -30,6 +31,7 @@ if (process.env.CONTROL_API_SEED_DEMO === 'true') {
 const agentRunSubscription = await startAgentRunReadModelSubscription(state);
 const runtimeWorkPackageBridge = await connectRuntimeWorkPackageBridge(state);
 await connectOpportunityReader(state);
+await connectWorkGraphStore(state);
 
 const runtime = await startRuntime({
   serviceName,

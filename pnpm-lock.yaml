@@ -238,6 +238,9 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@umer/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@umer/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel

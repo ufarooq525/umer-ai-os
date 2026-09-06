@@ -44,6 +44,28 @@ export type WorkPackageSummary = {
   specialistId: string;
   stage: string;
   artifactId?: string;
+  projectId?: string;
+  /** Set for a real, genuinely-dispatched Work Package that failed — see runtime-work-package-bridge.ts. */
+  errorMessage?: string;
+  updatedAt?: string;
+};
+
+export type WorkGraphNode = {
+  nodeId: string;
+  projectId: string;
+  type: 'Project' | 'Requirements' | 'Product' | 'Architecture' | 'UX' | 'Implementation' | 'QA' | 'Security' | 'Release' | 'Operations';
+  status: 'Planned' | 'Ready' | 'Blocked' | 'InProgress' | 'Review' | 'Accepted' | 'Failed' | 'Cancelled';
+  title: string;
+  workPackageId?: string;
+  updatedAt: string;
+};
+
+export type WorkGraphEdge = {
+  edgeId: string;
+  projectId: string;
+  fromNodeId: string;
+  toNodeId: string;
+  type: 'blocks' | 'requires';
 };
 
 export type AuditRecord = {
@@ -347,6 +369,17 @@ export async function getPendingGates(): Promise<GateWaitRecord[]> {
 export async function getWorkPackages(): Promise<WorkPackageSummary[]> {
   const body = await fetchJson<{ workPackages: WorkPackageSummary[] }>('/v1/work-packages');
   return body.workPackages;
+}
+
+/**
+ * Real, persisted Work Graph for one Project — @umer/orchestration. An
+ * unknown or not-yet-decomposed project returns an honest empty graph
+ * (`{nodes: [], edges: []}`), never fabricated placeholder nodes.
+ */
+export async function getWorkGraph(
+  projectId: string,
+): Promise<{ projectId: string; nodes: WorkGraphNode[]; edges: WorkGraphEdge[] }> {
+  return fetchJson(`/v1/work-graph/${encodeURIComponent(projectId)}`);
 }
 
 export async function getRecentAudit(): Promise<AuditRecord[]> {

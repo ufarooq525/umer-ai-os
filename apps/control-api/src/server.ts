@@ -12,7 +12,12 @@ import { createAuditService } from '@umer/audit';
 import { createTrustRuntime } from '@umer/trust';
 import { createEventBus } from '@umer/event-bus';
 import { createCommandEnvelope, SUBJECTS } from '@umer/message-fabric';
-import { ORCHESTRATION_COMMANDS } from '@umer/orchestration';
+import {
+  applyRequirementDecomposition,
+  InMemoryWorkGraphStore,
+  ORCHESTRATION_COMMANDS,
+  PersistentWorkGraph,
+} from '@umer/orchestration';
 import {
   SCHEMA_VERSION,
   type ActorKind,
@@ -114,8 +119,10 @@ export async function createControlApiState(): Promise<ControlApiState> {
     agentControlStore: new InMemoryAgentControlStore(),
     opportunityReader: new InMemoryOpportunityPersistence(),
     artifactStore: new InMemoryArtifactStore(),
+    workGraphStore: new InMemoryWorkGraphStore(),
     trustRuntime,
   };
+  state.persistentWorkGraph = new PersistentWorkGraph(state.workGraphStore!);
   state.commandService = createCeoCommandService(
     {
       // Delegates through `state.opportunityReader` on every call rather than
@@ -245,6 +252,52 @@ export function createControlApiServer(state: ControlApiState) {
 
     if (path === '/v1/work-packages' && req.method === 'GET') {
       sendJson(res, 200, { workPackages: state.workPackages });
+      return;
+    }
+
+    // Work Graph (Requirements → Product → Architecture → UX → Implementation
+    // → QA → Security → Release → Operations) — @umer/orchestration. Real
+    // persisted nodes/edges only; an unknown project returns an honest empty
+    // graph, never a fabricated one.
+    const workGraphMatch = path.match(/^\/v1\/work-graph\/([^/]+)$/);
+    if (workGraphMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(workGraphMatch[1]!);
+      const graph = await state.persistentWorkGraph!.load(projectId);
+      sendJson(res, 200, {
+        projectId,
+        nodes: graph.listNodes(projectId),
+        edges: graph.listEdges(projectId),
+      });
+      return;
+    }
+
+    const workGraphDecomposeMatch = path.match(/^\/v1\/work-graph\/([^/]+)\/decompose$/);
+    if (workGraphDecomposeMatch && req.method === 'POST') {
+      const projectId = decodeURIComponent(workGraphDecomposeMatch[1]!);
+      const body = await readJsonBody<{ slug?: string }>(req);
+      try {
+        const graph = await applyRequirementDecomposition(state.persistentWorkGraph!, {
+          projectId,
+          slug: body.slug,
+        });
+        await state.auditService.append(
+          {
+            action: 'work_graph.decomposed',
+            actor: 'ceo.command-plane',
+            resourceType: 'project',
+            resourceId: projectId,
+            outcome: 'success',
+            correlationId: `corr-decompose-${projectId}-${Date.now()}`,
+            detail: { slug: body.slug ?? projectId, nodeCount: graph.listNodes(projectId).length },
+          },
+          `corr-decompose-${projectId}-${Date.now()}`,
+        );
+        sendJson(res, 200, { projectId, nodes: graph.listNodes(projectId), edges: graph.listEdges(projectId) });
+      } catch (err) {
+        // Most likely a duplicate decomposition (same slug already applied to this project) —
+        // WorkGraph's own validation (duplicate node/edge ids) is the source of truth here.
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
       return;
     }
 

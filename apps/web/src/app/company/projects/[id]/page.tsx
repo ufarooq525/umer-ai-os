@@ -1,24 +1,34 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Card, colors } from '@umer/ui';
-import { getAgents, getOpportunity, getTasks, getWorkProject } from '@/lib/control-api';
+import { getAgents, getOpportunity, getTasks, getWorkGraph, getWorkProject } from '@/lib/control-api';
 import { EntityNarrative, type NarrativeField } from '@/components/os/EntityNarrative';
 import { StatusBadge } from '@/components/os/StatusBadge';
+import { WorkGraphBoard } from '@/components/os/WorkGraphBoard';
 import { projectTone, taskTone } from '@/components/os/status';
 
 export const dynamic = 'force-dynamic';
 
 const PAUSABLE = new Set(['Forming', 'Active', 'Stabilizing']);
 
+async function settled<T>(task: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await task;
+  } catch {
+    return fallback;
+  }
+}
+
 export default async function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const project = await getWorkProject(id);
   if (!project) notFound();
 
-  const [tasks, agents, opportunity] = await Promise.all([
+  const [tasks, agents, opportunity, workGraph] = await Promise.all([
     getTasks(),
     getAgents(),
     project.sourceOpportunityId ? getOpportunity(project.sourceOpportunityId) : Promise.resolve(null),
+    settled(getWorkGraph(project.projectId), { projectId: project.projectId, nodes: [], edges: [] }),
   ]);
 
   const projectTasks = tasks.filter((t) => t.projectId === project.projectId);
@@ -76,6 +86,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       </header>
 
       <EntityNarrative fields={fields} />
+
+      <Card title="Work Graph">
+        <WorkGraphBoard nodes={workGraph.nodes} edges={workGraph.edges} />
+      </Card>
 
       <Card title={`Agents (${projectAgents.length})`}>
         {projectAgents.length === 0 ? (

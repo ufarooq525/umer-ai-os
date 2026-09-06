@@ -8,6 +8,7 @@ import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '
 import type { OpportunityPersistence } from '@umer/opportunity-intelligence';
 import type { ArtifactStore } from '@umer/artifacts';
 import type { MessageFabricClient } from '@umer/message-fabric';
+import type { PersistentWorkGraph, WorkGraphStore } from '@umer/orchestration';
 import {
   type BusEvent,
   type BusEventSource,
@@ -140,6 +141,14 @@ export type ControlApiState = {
    * gate-resolve route checks for its presence before publishing.
    */
   fabric?: MessageFabricClient;
+  /**
+   * Work Graph persistence (@umer/orchestration) — see work-graph-link.ts
+   * for the in-memory default / best-effort MySQL swap, same pattern as
+   * opportunityReader. `persistentWorkGraph` wraps `workGraphStore` and is
+   * what routes actually call (load/addNode/addEdge/setNodeStatus).
+   */
+  workGraphStore?: WorkGraphStore;
+  persistentWorkGraph?: PersistentWorkGraph;
 };
 
 export function resolveCatalogPath(): string {

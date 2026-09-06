@@ -55,6 +55,28 @@ export function taskTone(status: string): StatusTone {
   }
 }
 
+/** Work Graph node status (@umer/orchestration) → display tone. */
+export function workGraphNodeTone(status: string): StatusTone {
+  switch (status) {
+    case 'Accepted':
+      return 'completed';
+    case 'Failed':
+      return 'failed';
+    case 'Cancelled':
+      return 'paused';
+    case 'Blocked':
+      return 'blocked';
+    case 'InProgress':
+      return 'working';
+    case 'Review':
+      return 'waiting';
+    case 'Ready':
+      return 'idle';
+    default:
+      return 'idle';
+  }
+}
+
 export function projectTone(status: string): StatusTone {
   switch (status) {
     case 'Active':

@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@umer/config": "workspace:*",
+    "@umer/db": "workspace:*",
     "@umer/observability": "workspace:*",
     "@umer/kernel": "workspace:*",
     "@umer/message-fabric": "workspace:*",

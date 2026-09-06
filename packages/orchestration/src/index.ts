@@ -51,3 +51,9 @@ export {
   type PlanResult,
   type PlanSkip,
 } from './ready-work-package-planner.js';
+export {
+  decomposeRequirementIntoWorkGraph,
+  applyRequirementDecomposition,
+  type RequirementDecompositionInput,
+  type RequirementDecomposition,
+} from './requirements-decomposition.js';
