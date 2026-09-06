@@ -141,11 +141,28 @@ export function createProcessRunAuditTool(options: ProcessRunAuditToolOptions = 
       }
 
       try {
-        const { stdout, stderr } = await execFileAsync(audit.bin, audit.args, {
+        // Confirmed live: Windows' CreateProcess cannot execute a .cmd/.bat
+        // shim directly (npm.cmd, the exact bin DEFAULT_AUDITS resolves to on
+        // win32) without going through cmd.exe -- execFile throws
+        // `spawn EINVAL` otherwise. Narrowly scoped to .cmd/.bat files only:
+        // turning this on for every binary broke real .exe paths containing
+        // spaces (e.g. the default Node.js install itself, "C:\Program
+        // Files\nodejs\node.exe") because shell:true routes the command
+        // through cmd.exe, which does NOT auto-quote the executable --
+        // hence the explicit quoting below. Safe here specifically because
+        // `bin` and `args` are always fixed, code-defined values
+        // (DEFAULT_AUDITS or a caller-supplied override), never derived
+        // from the model's input or any other untrusted source -- shell:true
+        // only becomes an injection risk when an argument's content could
+        // itself be shell syntax, which never happens for this tool's two
+        // fixed audit commands.
+        const needsShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(audit.bin);
+        const { stdout, stderr } = await execFileAsync(needsShell ? `"${audit.bin}"` : audit.bin, audit.args, {
           cwd: ctx.targetPath,
           timeout: timeoutMs,
           signal: ctx.signal,
           maxBuffer: 10 * 1024 * 1024,
+          shell: needsShell,
         });
         const out = capture(stdout, maxOutputBytes);
         const err = capture(stderr, maxOutputBytes);

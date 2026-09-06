@@ -130,4 +130,25 @@ describe('createProcessRunAuditTool', () => {
     expect(result.applicable).toBe(true);
     expect(JSON.parse(result.stdout)).toEqual({ php: true });
   });
+
+  it('runs a real .cmd shim on Windows — execFile alone throws spawn EINVAL for .cmd files without shell:true', async () => {
+    // Confirmed live: DEFAULT_AUDITS resolves npm's real bin to "npm.cmd" on
+    // win32, and CreateProcess cannot execute a .cmd/.bat file directly
+    // without going through cmd.exe. Windows-only regression -- this
+    // failure mode doesn't exist on POSIX, where npm's real binary isn't a
+    // shell script.
+    if (process.platform !== 'win32') {
+      return;
+    }
+    await writeFile(join(root, 'package.json'), '{}', 'utf8');
+    const cmdPath = join(root, 'fake-npm.cmd');
+    await writeFile(cmdPath, '@echo off\r\necho {"ok":true}\r\n', 'utf8');
+    const tool = createProcessRunAuditTool({
+      audits: { npm: { bin: cmdPath, args: [], manifestFile: 'package.json' } },
+    });
+    const result = await tool.handler({ audit: 'npm' }, ctx(root));
+    expect(result.applicable).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toContain('{"ok":true}');
+  });
 });
