@@ -774,15 +774,70 @@ kind of prompt-quality gap the seventh pass predicted no unit test could
 catch, since every existing test uses a scripted provider that always
 calls the tool it's told to script.
 
+## This milestone (2026-09-06, twelfth pass): grounding hint shipped, retested live, root cause is deeper
+
+Implemented the grounding hint proposed above (`buildGroundingHint` in
+`llm-agent.ts`, commit `de79598`) and immediately re-ran the *exact same*
+live scenario against the running services to falsify it, per the plan.
+
+**Result: no change.** The retest produced the same shape of refusal
+("I need specific file paths... Please provide: 1. The exact file paths to
+analyze..."), 0 tool calls, `finishReason: 'stop'`, on a fresh `UX` node
+against the same real project.
+
+**Isolated the real cause with a request outside this codebase entirely**:
+a raw, hand-written `curl` straight to this sandbox's LM Studio server
+(same model, same `tools`/`tool_choice` shape our `OpenAICompatibleProvider`
+sends) with an instruction naming a concrete file — *"Read the file
+src/app.tsx using the filesystem_read tool"* — got a correct `tool_calls`
+response back immediately. So: **tool-calling itself works fine**, both the
+model and our wire format (`openai-compatible.ts`) are proven correct in
+isolation. The gap is upstream of the prompt-construction layer entirely:
+
+1. **The real Task's content never reaches the model.** `buildUserMessage`
+   only ever had a bare `taskId` to work with — `control-api`'s plan route
+   creates a real `Task` with a genuine `title`/`description` via
+   `CreateTask`, but only the id string flows through
+   `taskIdsByNodeId` → `ResolvedTaskContext.taskIds` →
+   `WorkPackageContract.taskIds`. Nothing in `agent-runtime` fetches the
+   real Task back to read its content. The model was never actually told
+   what to review, in a UX-audit run whose one real Task was literally
+   titled "Live E2E UX Audit (retest)" with a description referencing "its
+   Work Graph decomposition" — meaningless as a review target.
+2. **There is no directory-listing tool.** `filesystem_read` requires an
+   exact relative path the caller already knows; there's no `filesystem_list`/
+   `ls`-equivalent. Even with real task content, a model auditing an
+   unfamiliar codebase has no way to discover what files exist to read.
+
+Both gaps have to close together for a real run to produce real findings —
+fixing either alone leaves the model still stuck (real task content but no
+way to explore the tree; or file discovery but nothing to explore *for*).
+Left both unfixed this pass rather than rush a second attempt at the same
+kind of prompt tweak that just failed to falsify cleanly — this is a
+two-part, cross-layer change (control-api → orchestration →
+agent-runtime for Task content; a new `packages/extension` tool for
+listing) that deserves its own scoped implementation, not a quick patch
+onto this pass's already-committed (and independently correct, just
+insufficient alone) grounding-hint fix.
+
 ## Next highest-value milestone
 
-**Improve the grounding in the prompt itself**: when a Work Package
-carries a real `targetPath` and the specialist has `filesystem_read` on its
-allowlist, `buildUserMessage`/`buildSystemPrompt` should say so explicitly
-— e.g. "You have read access to the real project at this root via
-`filesystem_read`; start by identifying and reading the files most
-relevant to this task" — rather than leaving a smaller model to infer tool
-availability from the tool-calling API's function list alone. This is a
-prompt/message-construction change, not an architecture change, and is
-directly falsifiable: re-run the same live scenario afterward and check
-whether the model actually calls `filesystem_read` this time.
+Two changes, needed together to get a real live run past this point:
+
+1. **Thread the real Task's title/description into the prompt.** The
+   simplest correct path: have `control-api`'s plan route (or
+   `ReadyWorkPackagePlanner`'s `resolveTaskContext`) carry the created
+   Task's `title`/`description` alongside its id, and have
+   `buildUserMessage` use them instead of the bare taskId list when
+   present — never fabricated, omitted when unavailable exactly like
+   `targetPath` is today.
+2. **A `filesystem_list` tool** (`packages/extension`), sandboxed the same
+   way `filesystem_read` is (fails closed with no `targetPath`, confined to
+   the project root, `realpath()`-checked), returning real directory
+   entries so a Specialist can discover what to read instead of guessing
+   paths blind.
+
+Re-run the exact same live scenario a third time afterward — this is
+directly falsifiable, same as this pass's hint was, and the honest result
+either way (real findings this time, or a further-narrowed root cause)
+should be recorded the same way this pass's negative result was.
