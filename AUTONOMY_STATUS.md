@@ -210,8 +210,8 @@ Postgres as the primary store.
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
 | Phase 3 — Product & Architecture | ~0% | **~28%** | The graph's Architecture/Product/UX/QA/Security nodes are real and correctly gated by real dependency edges. `ux.design`, `qa.verify`, and now `security.review` are all registered, dispatchable, and can seal real findings under their own sandboxed `.umer/<slug>/` evidence subtree. Product/Architecture themselves still have no dispatchable Specialist at all. |
 | Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA/Security — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~74%** | Everything from the prior estimate, confirmed for real this pass: a live plan→dispatch→run cycle against the actual running services worked exactly as the machinery was designed — real Task creation, real `targetPath` resolution, real dispatch to `agent-worker`, real Work Package lifecycle transitions to `AwaitingReview`. The graph/planner/dispatch plumbing is solid; raised because this is now proven in production-shaped conditions, not just unit tests. |
-| Phase 6 — Autonomous Operations | ~7% | **~16%** | Lowered from the tenth pass's optimistic ~22%: the live run proved the plumbing works but the actual specialist output was a no-op — the model never called `filesystem_read` and asked a human for input instead, exposing a real prompt-quality gap (see this pass's findings) that no unit test surfaced. The honesty guarantees held up correctly even so (Work Package landed at `AwaitingReview` with an honest `N_A` artifact, nothing fabricated) — but zero real autonomous work has actually been produced yet, which is what this phase is meant to measure. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~76%** | The plan→dispatch→run cycle is now proven against real infrastructure end to end, including a real MySQL-specific bug (`targetPath` silently dropped by `MySqlWorkPackageStore`) found and fixed via that live proving — the kind of gap only real persistence, not the in-memory test store, could expose. One real gap remains: a Work Package that exhausts NATS's redelivery budget gets no terminal application-level state, just an indefinite `"running"` in the read model. |
+| Phase 6 — Autonomous Operations | ~7% | **~20%** | The model genuinely explored a real project's real file tree (`erp_web_dashboard`'s actual Next.js structure) for the first time this session — real progress past the prompt-quality gap the eleventh/twelfth passes found. It still didn't produce a finished finding: it ran out of iterations (8-turn cap) while still exploring, three times, before silently landing in the dead-letter queue. Genuine autonomous work is closer than at any prior point this session, but "explores correctly, never finishes" is still zero completed findings. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -820,24 +820,101 @@ listing) that deserves its own scoped implementation, not a quick patch
 onto this pass's already-committed (and independently correct, just
 insufficient alone) grounding-hint fix.
 
+## This milestone (2026-09-06, thirteenth pass): both fixes shipped, retested twice more, a real subprocess bug found and fixed, and the model genuinely explored the real project
+
+Implemented both changes the twelfth pass called for, then re-ran the exact
+same live scenario twice more — each retest immediately surfaced the next
+real blocker, in the pattern this whole extended live-testing arc has
+followed all the way through.
+
+**Retest #1 (task content + `filesystem_list` shipped)**: the model called
+`filesystem_list` for the first time ever in this codebase — genuine
+progress, tool-calling was reaching the right tool now — but every call
+failed: *"filesystem_list has no real target path configured for this Work
+Package."* The `/plan` response itself showed the correct `targetPath`
+resolved (`C:\laragon\www\erp_web_dashboard`), so something between
+resolution and dispatch was losing it.
+
+**Root cause, found and fixed** (`e0d0fa4`): `MySqlWorkPackageStore` —
+built one pass before `targetPath` existed on `WorkPackageContract` — never
+had a `target_path` column, never wrote it, never read it back. Every Work
+Package that round-tripped through the real MySQL store this sandbox uses
+silently lost its `targetPath` between being queued and being dispatched.
+Every `packages/orchestration` test uses the in-memory store, which has no
+serialization boundary to lose a field across, so nothing caught this
+until a real run hit the real store. Fixed with a new migration
+(`017_orchestration_work_packages_target_path`, applied for real against
+this sandbox's live MySQL) and the store's missing column mapping. This is
+now the third real, MySQL-specific gap this live-testing arc has found
+that no unit test could have caught (after `CreateProject`'s missing
+`registryProjectId` field and the never-started `orchestration-worker`) —
+a real pattern: this codebase's persistence layer has repeatedly drifted
+out of sync with its contracts, and only exercising it live (not just
+against `InMemoryWorkPackageStore`) exposes that drift.
+
+**Retest #2 (after the MySQL fix)**: `filesystem_list` and `filesystem_read`
+both succeeded for real. The model **genuinely explored
+`erp_web_dashboard`'s actual file tree** — listed the root, listed `app/`,
+read `app/layout.tsx` and `app/page.tsx`, listed `app/dashboard`, read
+`app/dashboard/layout.tsx` and `app/dashboard/page.tsx`, listed
+`app/marketing`, read `app/marketing/page.tsx` — real, coherent,
+increasingly-specific exploration of a real Next.js codebase, exactly the
+behavior every prior pass in this arc was trying to produce. This is the
+first genuine evidence that the whole grounded-Specialist design actually
+works end to end against a real model.
+
+**But it never reached a final answer**: it exceeded the agent loop's
+8-iteration cap (`AGENT_LOOP_MAX_ITERATIONS` default) while still
+exploring, three times in a row (each `MAX_ITERATIONS_EXCEEDED` is thrown
+as an error from the `cmd.agent.dispatch` handler, which NATS JetStream
+then redelivers — not the Orchestrator's own bounded `attempt`/`maxAttempts`
+retry path at all, a distinct mechanism worth knowing apart). After 5
+redeliveries it was moved to `dlq.cmd.agent.dispatch`, exactly like the
+stale pre-existing backlog messages this session's very first
+`orchestration-worker` boot already drained. **A real, separate gap**: a
+Work Package that exhausts NATS's redelivery budget this way gets no
+application-level "permanently failed" event at all — it just stops being
+processed. The read model still shows it as `"status":"running"` forever,
+with no visible signal (short of checking the DLQ subject directly) that
+anything went wrong. This is now the fourth real gap this arc has found
+that only a live run against real infrastructure could surface.
+
+**One more small fix from the same retest** (`489bf95`): `filesystem_list`
+rejected `{"path":""}` with a validation error, but the live model sends an
+empty string and omits `"path"` interchangeably to mean "the project
+root" — every retest wasted one full turn on this before self-correcting.
+Fixed to treat both the same.
+
+**Tests**: `packages/extension`: 64 (was 52 at the start of this pass — 11
+new for `filesystem-list.test.ts`, 1 more for the empty-path fix).
+`packages/orchestration`: 94 (was 89 — 3 for task-content threading, 2 for
+the MySQL `targetPath` fix). `packages/agent-runtime`: 43 (was 39). All
+repo-wide typecheck/lint/build clean throughout.
+
 ## Next highest-value milestone
 
-Two changes, needed together to get a real live run past this point:
+Two real gaps remain from this pass, and they're a genuine fork rather
+than a single obvious next step:
 
-1. **Thread the real Task's title/description into the prompt.** The
-   simplest correct path: have `control-api`'s plan route (or
-   `ReadyWorkPackagePlanner`'s `resolveTaskContext`) carry the created
-   Task's `title`/`description` alongside its id, and have
-   `buildUserMessage` use them instead of the bare taskId list when
-   present — never fabricated, omitted when unavailable exactly like
-   `targetPath` is today.
-2. **A `filesystem_list` tool** (`packages/extension`), sandboxed the same
-   way `filesystem_read` is (fails closed with no `targetPath`, confined to
-   the project root, `realpath()`-checked), returning real directory
-   entries so a Specialist can discover what to read instead of guessing
-   paths blind.
+1. **Give a real audit run enough room to actually finish.** The model's
+   exploration was coherent and increasingly relevant — it needed more than
+   8 turns, not fewer. Raising `AGENT_LOOP_MAX_ITERATIONS` (or the
+   mandate's own `max_tools_per_run` in E22) is the direct fix, but it's
+   worth first deciding what "enough" means for a real audit (a fixed
+   higher cap? a soft budget that nudges the model to wrap up as it
+   approaches the limit, the way the grounding hint nudges it to start?)
+   rather than picking a bigger number that just delays the same failure.
+2. **A Work Package that exhausts NATS redelivery should not vanish
+   silently.** Right now `dlq.cmd.agent.dispatch` is the only place this is
+   visible. At minimum this needs an application-level terminal state
+   (`Failed`, with a real reason) so the read model/dashboard reflects
+   reality instead of an indefinite `"running"` — and arguably the
+   Orchestrator's own `attempt`/`maxAttempts` mechanism (already built,
+   already tested, currently only reachable via the `RETRY` command) should
+   be the thing deciding when a Work Package is truly done retrying, not an
+   uncoordinated interaction between the agent loop's iteration cap and
+   NATS's own redelivery count.
 
-Re-run the exact same live scenario a third time afterward — this is
-directly falsifiable, same as this pass's hint was, and the honest result
-either way (real findings this time, or a further-narrowed root cause)
-should be recorded the same way this pass's negative result was.
+Both are real design decisions, not mechanical fixes like the last several
+passes' bugs — worth an explicit steer on approach before implementing
+either.
