@@ -208,10 +208,10 @@ Postgres as the primary store.
 | V1 Foundation | 100% | 100% | Confirmed. |
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
-| Phase 3 — Product & Architecture | ~0% | **~26%** | The graph's Architecture/Product/UX/QA nodes are real and correctly gated by real dependency edges. `ux.design` and `qa.verify` can genuinely execute against a real registered codebase's files, and — new this pass — can seal real findings to disk under their own sandboxed `.umer/<slug>/` evidence subtree rather than only returning a summary string. Product/Architecture themselves still have no dispatchable Specialist at all. |
-| Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~70%** | Unchanged this pass — `filesystem_write` needed no new orchestration/planner wiring at all (it derives its sandbox from `specialistId`, already present on every tool context), which is itself further evidence the mechanism/policy split holds. |
-| Phase 6 — Autonomous Operations | ~7% | **~20%** | `ux.design` and `qa.verify` can now seal real evidence files, closing the gap between what their mandates promise ("seal findings under `.umer/ux/`" / "`.umer/qa/`") and what the code actually does — still no end-to-end run has exercised this against a live LLM provider (only unit-tested in isolation), and `process_recommend` still never executes anything itself. The plan route still requires a named human `approver` per invocation, which remains correct. |
+| Phase 3 — Product & Architecture | ~0% | **~28%** | The graph's Architecture/Product/UX/QA/Security nodes are real and correctly gated by real dependency edges. `ux.design`, `qa.verify`, and now `security.review` are all registered, dispatchable, and can seal real findings under their own sandboxed `.umer/<slug>/` evidence subtree. Product/Architecture themselves still have no dispatchable Specialist at all. |
+| Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA/Security — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~72%** | Four Specialists (`Implementation`, `UX`, `QA`, `Security`) now map to real, dispatchable work; the planner/projector/context-resolution machinery has proven it generalizes across three different `targetPath`-requiring node types, plus the tool router's allowlist model held up unchanged for the first tool that spawns a real subprocess. |
+| Phase 6 — Autonomous Operations | ~7% | **~22%** | All three specialists originally scoped this session (`ux.design`, `qa.verify`, `security.review`) are registered, sandboxed, and can seal real evidence — `security.review` closes the loop with the first real subprocess execution (`npm audit`/`composer audit`) in this codebase, still fixed-argv and non-shell. The real gap now isn't more tools — it's that none of the three has ever been driven through a live LLM provider end to end; every test so far uses a scripted provider. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -646,15 +646,81 @@ sandbox is safe to grant, but no end-to-end run has driven an LLM through
 `filesystem_write`" against a live provider. `security.review` remains
 unregistered.
 
+## This milestone (2026-09-06, tenth pass): security.review — the first real subprocess execution
+
+Registered the third and last specialist from the original seventh-pass
+scope. This is the first tool in this codebase that can spawn a real
+subprocess, so — per explicit sign-off before writing it — its surface is
+deliberately narrower than every prior tool's: the model chooses one of
+exactly two enum values, never a command string.
+
+- **New tool** (`packages/extension/src/tools/process-run-audit.ts`,
+  `process_run_audit`): the model passes `{ audit: "npm" | "composer" }`
+  only; every actual argv (`npm audit --json` / `composer audit
+  --format=json`) is fixed in code, spawned with `execFile` (never a shell —
+  no `;`/`|`/`&&` injection surface exists regardless of input, since no
+  input ever reaches the argv), cwd locked to the Work Package's real
+  `targetPath`. A missing manifest (`package.json`/`composer.json`) returns
+  a clean "not applicable" result without spawning anything. A non-zero
+  exit from the audit CLI itself is **not** treated as a tool failure — e.g.
+  `npm audit` exits non-zero when it finds vulnerabilities, and that JSON on
+  stdout is the actual finding — only a missing binary (clear "not
+  installed" error, not a raw ENOENT) or a genuine timeout/abort (detected
+  via the child's `signal`/`killed` flags, since Node still attaches empty
+  stdout/stderr strings to an aborted call that would otherwise look like a
+  successful empty result) is a real failure. Output capped at 200KB per
+  stream with truncation reported.
+- **Real subprocess in the tests, not mocked**: `process-run-audit.test.ts`
+  overrides the `npm`/`composer` argv (an injectable option, same DI pattern
+  `search_web` already used for its endpoint) to spawn the actual Node
+  binary running the test suite with a `-e` script — so the 11 tests
+  (clean exit-0, non-zero-exit-with-captured-stdout, missing-manifest
+  no-op, no-`targetPath` fail-closed, real-ENOENT-for-a-nonexistent-binary,
+  output truncation, real cwd confinement, a real abort that kills the
+  child and fails the call, and the composer path resolved independently)
+  exercise the actual `execFile`/signal/cwd/timeout plumbing end to end,
+  cross-platform, without depending on real `npm`/`composer` being
+  installed wherever these tests run.
+- **Mandate correction**: `security-review.md`'s E7 had the dot names
+  the last two passes already fixed elsewhere (`filesystem.read` →
+  `filesystem_read`, `filesystem.write.umer_security` → the shared
+  `filesystem_write`) plus its own version of the parenthetical-pollution
+  bug: `` process.run.audit_allowlist (`npm audit --json`, `composer audit
+  --format=json` only) `` → bare `process_run_audit`, since the allowlist
+  itself now lives in code (`DEFAULT_AUDITS`), not in mandate prose.
+- **Registration**: `security.review` added to `agent-worker`'s `specPaths`
+  + tool registry, and to `orchestration-worker`'s `resolveSpecialist`
+  (`Security` → `security.review`) and `targetPath`-required set alongside
+  `UX`/`QA`.
+- **`inferArtifactType`**: `Security` has no dedicated entry in
+  `ArtifactTypeSchema` (checked all ten values — none fit a security audit
+  report better than the generic fallback), so it deliberately stays on
+  `Brief` rather than forcing an ill-fitting label onto it.
+- **Tests**: 11 new in `process-run-audit.test.ts`. `packages/extension`: 52
+  tests (was 41). No other package's tests changed — same reason as the
+  `filesystem_write` pass: `targetPath` and `specialistId` were already
+  threaded through to every tool call.
+
+**What this does NOT yet do**: like `filesystem_write`, nothing calls
+`process_run_audit` end to end against a live LLM provider yet — it's
+proven safe and functionally correct in isolation (including a real,
+unmocked subprocess in its own tests), not exercised through a real
+Specialist run. All three specialists flagged back in the seventh pass
+(`ux.design`, `qa.verify`, `security.review`) are now registered and
+dispatchable; none of the three has yet been driven through a real live
+run against an actual project.
+
 ## Next highest-value milestone
 
-**`security.review`** is now the only one of the three specialists flagged
-in the seventh pass's scope still unregistered, and the only remaining
-piece of "next steps" left over from that pass. It genuinely needs process
-execution (`npm audit`/`composer audit`), which is qualitatively
-higher-risk than pure file reads (`filesystem_read`, now `filesystem_write`,
-both non-executing) and deserves its own focused review of the exact
-allowlist/sandboxing mechanism — a fixed, non-shell-interpreted argv rather
-than a free-text command string like `process_recommend` accepts, and a
-real allowlist of resolvable binaries — before it's wired for real, rather
-than being treated as mechanical repetition of the read-only pattern.
+All three specialists originally scoped are now registered. The next real
+gap is that **none of them has ever actually run** — every test so far
+exercises the tools and the planning/dispatch machinery in isolation, but
+nothing has driven a live LLM provider through a full
+plan → dispatch → tool-call → seal-evidence cycle against a real registered
+project on disk. That's the natural next milestone: pick one real,
+already-registered project from the catalog, decompose it, plan its UX (or
+QA) node with a real `targetPath`, and dispatch it against a real LLM
+provider end to end — surfacing whatever breaks in practice (prompt
+quality, tool-call formatting from the actual model, artifact sealing)
+that no unit test can catch, since every test so far uses a scripted
+`LLMProvider` rather than a real one.

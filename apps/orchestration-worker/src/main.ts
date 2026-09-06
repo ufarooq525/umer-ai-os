@@ -28,29 +28,33 @@ const env = loadEnv();
 // (ReadyWorkPackagePlanner needs a real specVersion/specHash, not a made-up
 // one) — read from the SAME spec files apps/agent-worker loads from, so both
 // processes agree on what's actually current. Only 'Implementation', 'UX',
-// and 'QA' map to a real Specialist today: eng.app-delivery, ux.design, and
-// qa.verify are the only ones apps/agent-worker actually registers for
-// dispatch (see its main.ts) — every other node type correctly has no
-// mapping, so ReadyWorkPackagePlanner skips it (reported, not fabricated)
-// rather than building a Work Package no running worker could execute.
+// 'QA', and 'Security' map to a real Specialist today: eng.app-delivery,
+// ux.design, qa.verify, and security.review are the only ones
+// apps/agent-worker actually registers for dispatch (see its main.ts) —
+// every other node type correctly has no mapping, so ReadyWorkPackagePlanner
+// skips it (reported, not fabricated) rather than building a Work Package
+// no running worker could execute.
 //
-// ux.design and qa.verify are additionally gated on a real `targetPath`:
-// both need one to use their filesystem_read tool for anything, so
-// resolveTaskContext (below, in the workgraph.plan handler) only supplies a
-// task context for a UX/QA node when the plan command actually carried one
-// — never a placeholder path.
+// ux.design, qa.verify, and security.review are additionally gated on a
+// real `targetPath`: all three need one to use their filesystem_read /
+// process_run_audit tools for anything, so resolveTaskContext (below, in
+// the workgraph.plan handler) only supplies a task context for a UX/QA/
+// Security node when the plan command actually carried one — never a
+// placeholder path.
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
 const engAppDelivery = await loadSpecFromFile(
   join(repoRoot, 'specialists', 'engineering', 'application-delivery.md'),
 );
 const uxDesign = await loadSpecFromFile(join(repoRoot, 'specialists', 'design', 'ux-design.md'));
 const qaVerify = await loadSpecFromFile(join(repoRoot, 'specialists', 'qa', 'qa-verify.md'));
+const securityReview = await loadSpecFromFile(join(repoRoot, 'specialists', 'security', 'security-review.md'));
 const NODE_TYPE_SPECIALISTS = {
   Implementation: engAppDelivery,
   UX: uxDesign,
   QA: qaVerify,
+  Security: securityReview,
 } as const;
-const TARGET_PATH_REQUIRED_NODE_TYPES = new Set<keyof typeof NODE_TYPE_SPECIALISTS>(['UX', 'QA']);
+const TARGET_PATH_REQUIRED_NODE_TYPES = new Set<keyof typeof NODE_TYPE_SPECIALISTS>(['UX', 'QA', 'Security']);
 
 const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] = (node) => {
   const spec = (NODE_TYPE_SPECIALISTS as Record<string, typeof engAppDelivery | undefined>)[node.type];
@@ -65,13 +69,13 @@ const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] =
 
 /**
  * Real policy for what counts as "enough context to plan" per node type —
- * this is where "UX and QA need a real targetPath, Implementation doesn't"
- * is decided; @umer/orchestration itself stays generic (see
+ * this is where "UX, QA, and Security need a real targetPath, Implementation
+ * doesn't" is decided; @umer/orchestration itself stays generic (see
  * WorkGraphPlanningOptions's doc comment). Never invents a targetPath: if
  * the plan command didn't carry one (because the triggering project has no
  * registryProjectId, or it didn't resolve to a real on-disk codebase — see
- * control-api's plan route), a UX/QA node is skipped with a reason, not
- * dispatched to run ungrounded.
+ * control-api's plan route), a UX/QA/Security node is skipped with a
+ * reason, not dispatched to run ungrounded.
  */
 const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
   if (!raw.taskIds || raw.taskIds.length === 0) return undefined;

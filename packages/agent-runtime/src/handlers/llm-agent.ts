@@ -89,6 +89,11 @@ function inferArtifactType(mandate: SpecialistMandate): ArtifactType {
   if (mandate.contract.mandateDomain === 'Business') return 'ResearchFinding';
   if (mandate.contract.department === 'Design') return 'DesignArtifact';
   if (mandate.contract.department === 'QA') return 'TestPlanResults';
+  // 'Security' has no dedicated ArtifactType in ArtifactTypeSchema (Brief,
+  // ResearchFinding, ADR, DesignArtifact, Code, TestPlanResults, SEOAudit,
+  // MarketingAsset, ReleasePackage, Decision) — none of these fit a security
+  // audit report any better than the generic Brief fallback, so it stays
+  // there rather than forcing an ill-fitting label onto it.
   return 'Brief';
 }
 

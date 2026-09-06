@@ -37,3 +37,11 @@ export {
   type ProcessRecommendInput,
   type ProcessRecommendOutput,
 } from './tools/process-recommend.js';
+export {
+  createProcessRunAuditTool,
+  type AuditDefinition,
+  type ProcessRunAuditInput,
+  type ProcessRunAuditKind,
+  type ProcessRunAuditOutput,
+  type ProcessRunAuditToolOptions,
+} from './tools/process-run-audit.js';

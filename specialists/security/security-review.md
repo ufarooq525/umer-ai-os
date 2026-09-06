@@ -112,9 +112,9 @@ Must refuse penetration testing, writing exploit PoCs, auto-fixing security issu
 ## E7 — Tool Permission Set
 
 - catalog.read
-- filesystem.read
-- filesystem.write.umer_security
-- process.run.audit_allowlist (`npm audit --json`, `composer audit --format=json` only)
+- filesystem_read
+- filesystem_write
+- process_run_audit
 
 ## E8 — Context Contract
 

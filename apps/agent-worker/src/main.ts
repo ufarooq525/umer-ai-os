@@ -16,6 +16,7 @@ import {
   createFilesystemReadTool,
   createFilesystemWriteTool,
   createProcessRecommendTool,
+  createProcessRunAuditTool,
   createSearchWebTool,
   createToolRegistry,
   createToolRouter,
@@ -32,9 +33,10 @@ const specialistsDir = join(repoRoot, 'specialists');
 // eng.app-delivery stays on the deterministic structured-change-set handler
 // (its own mandate forbids invented content); every other specialist below runs
 // through the generic Model Routing → LLM Provider → Tool Router agent loop.
-// ux.design and qa.verify are wired to REAL sandboxed tools (filesystem_read,
-// filesystem_write, process_recommend, below) rather than running ungrounded
-// — both can only actually inspect (or seal evidence into) a project when
+// ux.design, qa.verify, and security.review are wired to REAL sandboxed
+// tools (filesystem_read, filesystem_write, process_recommend,
+// process_run_audit, below) rather than running ungrounded — all three can
+// only actually inspect (or seal evidence into) a project when
 // ReadyWorkPackagePlanner resolved a real targetPath for them (see
 // WorkPackageContract.targetPath); otherwise the planner skips the node
 // rather than dispatch a specialist with nothing real to read. filesystem_write
@@ -42,12 +44,18 @@ const specialistsDir = join(repoRoot, 'specialists');
 // from its specialistId, e.g. ux.design -> .umer/ux/) — it can never touch
 // product code. process_recommend never executes anything itself — it only
 // classifies a proposed command against a fixed allowlist, matching
-// qa.verify's Advise authority class.
+// qa.verify's Advise authority class. process_run_audit is the ONE tool in
+// this codebase that spawns a real subprocess: its surface is a closed enum
+// (npm | composer) mapped in code to a fixed, non-shell argv — the model can
+// never supply its own command or arguments, matching security.review's
+// Advise authority class and its mandate's explicit ban on anything beyond
+// the allowlisted audit CLIs.
 const specPaths = [
   join(specialistsDir, 'engineering', 'application-delivery.md'),
   join(specialistsDir, 'growth', 'opportunity-research.md'),
   join(specialistsDir, 'design', 'ux-design.md'),
   join(specialistsDir, 'qa', 'qa-verify.md'),
+  join(specialistsDir, 'security', 'security-review.md'),
 ];
 
 const loadedSpecs = await Promise.all(specPaths.map((path) => loadSpecFromFile(path)));
@@ -62,6 +70,7 @@ toolRegistry.register(createSearchWebTool());
 toolRegistry.register(createFilesystemReadTool());
 toolRegistry.register(createFilesystemWriteTool());
 toolRegistry.register(createProcessRecommendTool());
+toolRegistry.register(createProcessRunAuditTool());
 const toolRouter = createToolRouter({ registry: toolRegistry });
 const llmProvider = createLLMProviderFromEnv({ env });
 
