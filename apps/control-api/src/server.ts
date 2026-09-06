@@ -136,8 +136,25 @@ export async function createControlApiState(): Promise<ControlApiState> {
         getOpportunity: (id) => state.opportunityReader!.getOpportunity(id),
         saveOpportunity: (opportunity) => state.opportunityReader!.saveOpportunity(opportunity),
       },
-      projects: state.projectStore!,
-      tasks: state.taskStore!,
+      // Same delegation reasoning as `opportunities` above: connectTaskProjectStores()
+      // (main.ts) best-effort-swaps state.projectStore/state.taskStore to the
+      // MySQL-backed adapters after this function returns. Capturing the
+      // stores directly here would have frozen CreateProject/CreateTask/etc.
+      // onto the pre-swap in-memory instances even once GET /v1/work-projects
+      // and GET /v1/tasks were reading real MySQL data.
+      projects: {
+        get: (id) => state.projectStore!.get(id),
+        create: (input, correlationId) => state.projectStore!.create(input, correlationId),
+        list: (filter) => state.projectStore!.list(filter),
+        updateStatus: (id, status, correlationId) => state.projectStore!.updateStatus(id, status, correlationId),
+      },
+      tasks: {
+        get: (id) => state.taskStore!.get(id),
+        create: (input, correlationId) => state.taskStore!.create(input, correlationId),
+        assign: (taskId, agentId, correlationId) => state.taskStore!.assign(taskId, agentId, correlationId),
+        reassign: (taskId, agentId, correlationId) => state.taskStore!.reassign(taskId, agentId, correlationId),
+        updateStatus: (taskId, status, correlationId) => state.taskStore!.updateStatus(taskId, status, correlationId),
+      },
       agentControl: state.agentControlStore!,
     },
     { trust: trustRuntime, auditService },

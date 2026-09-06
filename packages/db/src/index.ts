@@ -13,6 +13,7 @@ import { AI_WORKER_SUPERVISOR_MIGRATIONS } from './ai-worker-supervisor-migratio
 import { WORK_GRAPH_MIGRATIONS } from './work-graph-migration.js';
 import { GATE_WAIT_MIGRATIONS } from './gate-wait-migration.js';
 import { WORK_PACKAGE_MIGRATIONS } from './work-package-migration.js';
+import { WORK_MANAGEMENT_MIGRATIONS } from './work-management-migration.js';
 
 export const ALL_MYSQL_MIGRATIONS = [
   ...OPPORTUNITY_MIGRATIONS,
@@ -26,6 +27,7 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...WORK_GRAPH_MIGRATIONS,
   ...GATE_WAIT_MIGRATIONS,
   ...WORK_PACKAGE_MIGRATIONS,
+  ...WORK_MANAGEMENT_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;

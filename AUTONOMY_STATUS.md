@@ -162,26 +162,36 @@ when `CONTROL_API_SEED_DEMO=true` is explicitly set (for local demos of the
 intake→gate flow). Tests that need the seed call `bootstrapDemoState()`
 directly and are unaffected.
 
-## Persistence gaps (updated 2026-09-06, fourth pass)
+## Persistence gaps (updated 2026-09-06, fifth pass)
 
 Now MySQL-backed, best-effort (same fail-open pattern throughout — falls
 back to in-memory and logs a warning if MySQL is unreachable, never crashes
 the process): Opportunity Intelligence, the Work Graph
-(`work_graph_nodes`/`work_graph_edges`), the **Orchestrator's own Work
-Package store** (`orchestration_work_packages` — the authoritative record
-of every Work Package ever queued/dispatched/run, in `apps/orchestration-worker`),
-and the **Gate Wait store** (`control_plane_gate_waits` — the CEO's actual
-"needs your attention" review queue, in `apps/control-api`). These were
-picked first because losing them on restart is the most damaging: an
-in-flight Work Package (attempt count, timeout tracking, "Running" status
-itself) or a pending Gate silently vanishing is a CEO losing track of real
-work or a real decision that was waiting on them.
+(`work_graph_nodes`/`work_graph_edges`), the Orchestrator's own Work Package
+store (`orchestration_work_packages`), the Gate Wait store
+(`control_plane_gate_waits`), and — added this pass — the **Work Management
+Project and Task stores** (`work_management_projects`/`work_management_tasks`,
+in `apps/control-api`): every `CreateProject`/`CreateTask`/`AssignTask`/
+`ReassignTask` the CEO Command Plane has ever applied, and everything
+`GET /v1/work-projects`/`GET /v1/tasks` reads.
+
+**Bug fixed alongside this**: the CEO Command Plane's `projects`/`tasks`
+ports (unlike its `opportunities` port, which already had a comment
+explaining why) captured `state.projectStore!`/`state.taskStore!` by value
+at construction time instead of delegating through `state.` on every call.
+Swapping those stores post-boot the way every other store here does would
+have silently split the system in two: `CreateTask`/`CreateProject` writing
+to the stale in-memory store forever, while `GET /v1/tasks`/`GET /v1/work-projects`
+read the new MySQL data — an invisible bug that would only surface as
+"my created task doesn't show up." Fixed by wrapping both ports in the same
+delegating-closure pattern `opportunities` already used, before wiring the
+MySQL swap.
 
 Still in-memory, still reset on restart: the Agent Run read model, Agent
 Registry, `state.workPackages` (control-api's own read-projection summary —
-distinct from the Orchestrator's now-durable store above), Task store,
-Project store, and Artifact store. No Postgres schema exists anywhere
-despite `implementation/MONOREPO_BLUEPRINT.md`'s original design assuming
+distinct from the Orchestrator's now-durable store above), and the Artifact
+store. No Postgres schema exists anywhere despite
+`implementation/MONOREPO_BLUEPRINT.md`'s original design assuming
 Postgres as the primary store.
 
 ## Phase progress (revised from prior estimates)
@@ -378,19 +388,50 @@ plumbing), and closes the most damaging class of data loss first.
 is now at 86 tests (was 81) — the `factory.ts` store-type widening is
 covered by its existing tests unchanged.
 
+## This milestone (2026-09-06, fifth pass): Project/Task persistence + a real closure bug
+
+Continued "persist the Runtime Truth" rather than the registered-project
+context option — deliberately, after actually investigating that option
+first: it turned out to require new sandboxed filesystem/process-execution
+tools for `qa.verify`/`security.review`/`ux.design` that don't exist yet
+(their tool permission sets — `filesystem.read`, `process.run.audit_allowlist`,
+etc. — have no implementation in `apps/agent-worker`'s tool registry, which
+today only has `search_web`). Wiring those specialists for dispatch without
+real tools would mean an LLM generating "findings" about a codebase it never
+actually read — exactly the fabrication class this file exists to catch.
+That work is real but belongs in its own carefully-scoped, security-reviewed
+milestone, not rushed as a side effect of this one.
+
+- **New migration** (`packages/db/src/work-management-migration.ts`):
+  `work_management_projects` and `work_management_tasks`.
+- **`MySqlProjectStore`/`MySqlTaskStore`** (`apps/control-api`): implement
+  the existing `ProjectStore`/`TaskStore` interfaces. Live in `apps/control-api`
+  itself (not a shared package) because that's where the interfaces are
+  already defined and owned.
+- **Closure bug found and fixed**: `state.commandService`'s `projects`/`tasks`
+  ports captured the store instances by value at construction time — see the
+  Persistence gaps section above for the full explanation of the split-brain
+  bug this would have caused the moment the MySQL swap landed. Fixed before
+  wiring the swap, not after.
+- **Tests**: `project-store-mysql.test.ts` (6 cases), `task-store-mysql.test.ts`
+  (8 cases) — row-mapping, create/assign/reassign/list/linkWorkPackage
+  behavior, and the "unknown id touches no write" guard for each mutating
+  method. `apps/control-api` is now at 129 tests (was 115).
+
 ## Next highest-value milestone
 
-**Thread real registered-project context into planning**, so
-`qa.verify`/`security.review`/`ux.design` can be safely wired for the (real,
-legitimate) case where a Work Graph Project's `registryProjectId` points at
-an actual catalog codebase — skipping cleanly, as today, when it doesn't.
-Needs: a `WorkPackageContract` field (or a resolvable `contextHandle`) to
-actually carry `absolute_path`/target scope, and `orchestration-worker`
-gaining read access to `@umer/registry`'s catalog (or control-api resolving
-it and passing it through the `workgraph.plan` command, the same pattern
-already used for real Task ids).
+Two real options remain, roughly equal value:
 
-After that: the remaining in-memory stores (Agent Run read model, Agent
-Registry, `state.workPackages`, Task store, Project store, Artifact store)
-are still real, bounded, low-risk persistence work in the same shape as this
-milestone — just not yet the highest-value slice.
+1. **Thread real registered-project context into planning** — the option
+   deferred this pass. Now scoped accurately: needs (a) real sandboxed
+   filesystem/process tools in `apps/agent-worker` (the actual gap, and the
+   security-sensitive part), (b) a `WorkPackageContract` field to carry a
+   resolved `absolute_path`, and (c) `orchestration-worker` or control-api
+   resolving `registryProjectId` → catalog path and threading it through
+   `workgraph.plan`. Plan the tool sandboxing first — everything else is
+   straightforward once that exists.
+2. **Persist the last two in-memory stores**: the Agent Run read model +
+   Agent Registry (pure event-projections — arguably recoverable from
+   JetStream retention if configured, so lower urgency) and the Artifact
+   store (not recoverable any other way). Same low-risk shape as the last
+   three milestones.

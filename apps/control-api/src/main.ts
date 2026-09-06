@@ -12,6 +12,7 @@ import { connectOpportunityReader } from './opportunity-link.js';
 import { connectRuntimeWorkPackageBridge } from './runtime-work-package-bridge.js';
 import { connectWorkGraphStore } from './work-graph-link.js';
 import { connectGateWaitStore } from './gate-store-link.js';
+import { connectWorkManagementStores } from './work-management-store-link.js';
 
 const serviceName = 'control-api';
 const log = createLogger(serviceName);
@@ -19,6 +20,7 @@ const log = createLogger(serviceName);
 const env = loadEnv();
 const state = await createControlApiState();
 await connectGateWaitStore(state);
+await connectWorkManagementStores(state);
 
 // seedDemoState() fabricates a sample Work Package, Gate, and audit trail —
 // useful for local demos of the intake→gate flow, but it must never run
