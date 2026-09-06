@@ -1,24 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryAgentRunReadModelStore } from '@umer/observability';
 import { createControlApiState } from './server.js';
 import { startAgentRunReadModelSubscription } from './agent-run-subscription.js';
 
-// These exercise the real createMessageFabric() connection attempt against
-// whatever NATS_URL is configured for this test run. In this environment (and
-// in CI, which has no NATS broker) nothing is listening there, so the
-// connection is refused — exactly the "Message Fabric unreachable" path this
-// test proves control-api survives. Where NATS_URL does point at a live
-// broker, the subscription simply succeeds instead, which is equally fine —
-// either way createControlApiState()/startAgentRunReadModelSubscription must
-// never throw or hang the process.
+// These exercise the real createMessageFabric() connection attempt (and,
+// since this milestone, a real MySQL ping) against whatever is configured
+// for this test run. Where nothing is reachable, both fail open to the
+// in-memory defaults; where a broker/database IS reachable (as MySQL happens
+// to be in this dev sandbox), the swap simply succeeds instead — either way
+// createControlApiState()/startAgentRunReadModelSubscription must never
+// throw or hang the process, so these assert on that contract rather than on
+// which concrete store class wins.
 
 describe('startAgentRunReadModelSubscription', () => {
-  it('never throws, and always leaves agentRunReadModel usable, regardless of Message Fabric reachability', async () => {
+  it('never throws, and always leaves agentRunReadModel usable, regardless of Message Fabric/MySQL reachability', async () => {
     const state = await createControlApiState();
 
     const subscription = await startAgentRunReadModelSubscription(state);
 
-    expect(state.agentRunReadModel).toBeInstanceOf(InMemoryAgentRunReadModelStore);
+    expect(state.agentRunReadModel).toBeDefined();
     expect(await state.agentRunReadModel!.list()).toEqual([]);
 
     await subscription?.stop();

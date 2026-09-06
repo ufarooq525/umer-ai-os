@@ -1,6 +1,13 @@
-import { createLogger, InMemoryAgentRegistryStore, InMemoryAgentRunReadModelStore } from '@umer/observability';
+import {
+  createLogger,
+  InMemoryAgentRegistryStore,
+  InMemoryAgentRunReadModelStore,
+  MySqlAgentRegistryStore,
+  MySqlAgentRunReadModelStore,
+} from '@umer/observability';
 import { subscribeAgentRunReadModel } from '@umer/agent-runtime';
 import { createMessageFabric, type SubscriptionHandle } from '@umer/message-fabric';
+import { pingMySql, createMySqlExecutor } from '@umer/db';
 import type { ControlApiState } from './state.js';
 
 const log = createLogger('control-api');
@@ -31,6 +38,27 @@ export async function startAgentRunReadModelSubscription(
   }
   if (!state.agentRegistry) {
     state.agentRegistry = new InMemoryAgentRegistryStore();
+  }
+
+  // Best-effort MySQL swap — same fail-open pattern as every other store in
+  // this file. Done before subscribing so every projected event lands on the
+  // durable store from the start, not just ones that arrive after a later
+  // swap. Without MySQL, both stay in-memory and reset on restart, same as
+  // before this existed.
+  try {
+    if (await pingMySql()) {
+      const db = createMySqlExecutor();
+      state.agentRunReadModel = new MySqlAgentRunReadModelStore({ db });
+      state.agentRegistry = new MySqlAgentRegistryStore({ db });
+      log.info('agent-run read model + agent registry connected to MySQL');
+    } else {
+      throw new Error('pingMySql returned false');
+    }
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'agent-run read model / agent registry MySQL unavailable — using in-memory stores; they will not survive a restart until this recovers',
+    );
   }
 
   try {

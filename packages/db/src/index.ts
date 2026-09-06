@@ -14,6 +14,8 @@ import { WORK_GRAPH_MIGRATIONS } from './work-graph-migration.js';
 import { GATE_WAIT_MIGRATIONS } from './gate-wait-migration.js';
 import { WORK_PACKAGE_MIGRATIONS } from './work-package-migration.js';
 import { WORK_MANAGEMENT_MIGRATIONS } from './work-management-migration.js';
+import { ARTIFACT_MIGRATIONS } from './artifact-migration.js';
+import { OBSERVABILITY_MIGRATIONS } from './observability-migration.js';
 
 export const ALL_MYSQL_MIGRATIONS = [
   ...OPPORTUNITY_MIGRATIONS,
@@ -28,6 +30,8 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...GATE_WAIT_MIGRATIONS,
   ...WORK_PACKAGE_MIGRATIONS,
   ...WORK_MANAGEMENT_MIGRATIONS,
+  ...ARTIFACT_MIGRATIONS,
+  ...OBSERVABILITY_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;

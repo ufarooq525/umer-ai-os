@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SCHEMA_VERSION, type CommandEnvelope, type EventEnvelope } from '@umer/contracts';
 import type { MessageFabricClient } from '@umer/message-fabric';
+import { createArtifactStack } from '@umer/artifacts';
 import { AgentWorker } from './worker.js';
 import type { AgentRuntime } from './runtime.js';
 import { WORK_PACKAGE_DISPATCH_COMMAND } from './constants.js';
@@ -232,5 +233,65 @@ describe('AgentWorker', () => {
       department: 'Growth',
       capabilityIds: ['cap.growth.discovery'],
     });
+  });
+
+  it('carries the full sealed artifact on artifact.sealed when a real ArtifactEngine seals one', async () => {
+    const { fabric, published, getHandler } = fakeFabric();
+    const { engine: artifactEngine } = createArtifactStack();
+    const draftArtifact = {
+      id: 'art-hdr-7',
+      schemaVersion: SCHEMA_VERSION,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      updatedAt: '2026-09-06T00:00:00.000Z',
+      metadata: { labels: {}, annotations: {} },
+      kind: 'artifact' as const,
+      artifactId: 'art-7',
+      artifactType: 'ResearchFinding' as const,
+      version: 'wp-7:1',
+      producedBy: 'growth.opportunity-research',
+      producedFor: 'EXEC-1',
+      acceptanceStatus: 'draft' as const,
+      acceptanceCriteriaMet: [],
+      contentRef: 'memory://artifacts/art-7',
+    };
+    const runtime = {
+      execute: vi.fn().mockResolvedValue({
+        workPackageId: 'wp-7',
+        runId: 'wp-7:corr-worker-1',
+        specialistId: 'growth.opportunity-research',
+        summary: 'done',
+        artifact: draftArtifact,
+      }),
+    } as unknown as AgentRuntime;
+
+    const worker = new AgentWorker({ runtime, fabric, producer: 'agent-worker', artifactEngine });
+    await worker.start();
+    await getHandler()!(makeCommand({ workPackage: { workPackageId: 'wp-7' } }), { ack: vi.fn() });
+
+    const sealedEvent = published.find((e) => e.name === 'artifact.sealed');
+    expect((sealedEvent?.payload as { artifact?: { acceptanceStatus?: string; artifactId?: string } }).artifact).toMatchObject({
+      artifactId: 'art-7',
+      acceptanceStatus: 'submitted', // seal() always moves draft -> submitted
+    });
+  });
+
+  it('omits the artifact field on artifact.sealed when no ArtifactEngine is configured', async () => {
+    const { fabric, published, getHandler } = fakeFabric();
+    const runtime = {
+      execute: vi.fn().mockResolvedValue({
+        workPackageId: 'wp-8',
+        runId: 'wp-8:corr-worker-1',
+        specialistId: 'growth.opportunity-research',
+        summary: 'done',
+        artifact: { artifactId: 'art-8', artifactType: 'ResearchFinding' },
+      }),
+    } as unknown as AgentRuntime;
+
+    const worker = new AgentWorker({ runtime, fabric, producer: 'agent-worker' });
+    await worker.start();
+    await getHandler()!(makeCommand({ workPackage: { workPackageId: 'wp-8' } }), { ack: vi.fn() });
+
+    const sealedEvent = published.find((e) => e.name === 'artifact.sealed');
+    expect(sealedEvent?.payload.artifact).toBeUndefined();
   });
 });

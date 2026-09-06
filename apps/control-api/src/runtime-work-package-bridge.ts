@@ -8,6 +8,7 @@ import {
   type SubscriptionHandle,
 } from '@umer/message-fabric';
 import type { ControlApiState, WorkGraphPlanResult, WorkPackageSummary } from './state.js';
+import { projectArtifactSealedEvent } from './artifact-bridge.js';
 
 const log = createLogger('control-api');
 
@@ -201,10 +202,23 @@ export async function connectRuntimeWorkPackageBridge(
         ctx.ack();
       },
     );
-    log.info('runtime work package bridge subscribed to evt.runtime.agent.run.> and evt.runtime.workgraph.planned');
+    const artifactSub = await fabric.subscribeEvents(
+      {
+        stream: STREAMS.EVENTS,
+        durable: 'control-api-artifact-bridge',
+        filterSubject: `${SUBJECTS.EVT_RUNTIME}.artifact.sealed`,
+      },
+      async (event, ctx) => {
+        await projectArtifactSealedEvent(state, event);
+        ctx.ack();
+      },
+    );
+    log.info(
+      'runtime work package bridge subscribed to evt.runtime.agent.run.>, evt.runtime.workgraph.planned, and evt.runtime.artifact.sealed',
+    );
     return {
       stop: async () => {
-        await Promise.all([workPackageSub.stop(), planSub.stop()]);
+        await Promise.all([workPackageSub.stop(), planSub.stop(), artifactSub.stop()]);
       },
     };
   } catch (err) {

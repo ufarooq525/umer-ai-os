@@ -16,6 +16,11 @@ export type {
 export { ArtifactEngineError, type ArtifactEngineErrorCode } from './errors.js';
 export { isArtifactImmutable, computeArtifactContentHash } from './hash.js';
 export { InMemoryArtifactStore, type ArtifactStore } from './store.js';
+export {
+  MySqlArtifactStore,
+  type MySqlExecutor,
+  type MySqlArtifactStoreOptions,
+} from './mysql-store.js';
 export { validateArtifact } from './validate.js';
 export { type ArtifactEventPublisher, createNoopArtifactEventPublisher } from './events.js';
 export {

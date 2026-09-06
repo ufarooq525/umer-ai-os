@@ -1,6 +1,6 @@
 import type { ArtifactEngine } from '@umer/artifacts';
 import type { AuditService } from '@umer/audit';
-import type { CommandEnvelope } from '@umer/contracts';
+import type { ArtifactContract, CommandEnvelope } from '@umer/contracts';
 import {
   createEventEnvelope,
   STREAMS,
@@ -121,17 +121,18 @@ export class AgentWorker {
 
     try {
       const result = await this.runtime.execute(command.payload, command.correlationId);
+      let sealedArtifact: ArtifactContract | undefined;
       if (this.artifactEngine) {
-        const sealed = await this.artifactEngine.seal(result.artifact, command.correlationId);
+        sealedArtifact = await this.artifactEngine.seal(result.artifact, command.correlationId);
         await this.auditService?.append(
           {
             action: 'artifact.sealed',
             actor: result.specialistId,
             resourceType: 'artifact',
-            resourceId: sealed.artifactId,
+            resourceId: sealedArtifact.artifactId,
             outcome: 'success',
             correlationId: command.correlationId,
-            detail: { artifactType: sealed.artifactType },
+            detail: { artifactType: sealedArtifact.artifactType },
           },
           command.correlationId,
         );
@@ -154,6 +155,14 @@ export class AgentWorker {
             workPackageId: result.workPackageId,
             artifactId: result.artifact.artifactId,
             artifactType: result.artifact.artifactType,
+            // Full sealed contract, only when a real ArtifactEngine actually
+            // sealed one — lets subscribers (control-api's artifact-bridge.ts)
+            // reconstruct the real artifact without a second cross-process
+            // store to query. Before this, control-api's own ArtifactStore was
+            // never populated by anything in production: it lived in a
+            // separate process from agent-worker's ArtifactEngine, and this
+            // event only ever carried IDs.
+            ...(sealedArtifact ? { artifact: sealedArtifact } : {}),
           },
         }),
       );
