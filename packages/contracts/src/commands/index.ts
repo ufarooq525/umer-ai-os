@@ -72,7 +72,12 @@ export const RejectOpportunityPayloadSchema = z
   .strict();
 
 export const CreateProjectPayloadSchema = z
-  .object({ name: z.string().min(1), owner: z.string().min(1).optional() })
+  .object({
+    name: z.string().min(1),
+    owner: z.string().min(1).optional(),
+    /** Links this project to a real, catalog-registered codebase — see ProjectContract's field of the same name. */
+    registryProjectId: z.string().min(1).optional(),
+  })
   .strict();
 
 export const CreateProjectFromOpportunityPayloadSchema = z

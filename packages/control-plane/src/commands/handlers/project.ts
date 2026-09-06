@@ -25,7 +25,10 @@ export async function createProject(
   payload: CreateProjectPayload,
   correlationId: string,
 ): Promise<HandlerOutcome<ProjectContract>> {
-  const project = await deps.projects.create({ name: payload.name, owner: payload.owner }, correlationId);
+  const project = await deps.projects.create(
+    { name: payload.name, owner: payload.owner, registryProjectId: payload.registryProjectId },
+    correlationId,
+  );
   return {
     data: project,
     events: [{ name: 'project.created', payload: { projectId: project.projectId }, alreadyPublished: true }],

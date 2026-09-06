@@ -360,6 +360,15 @@ describe('CeoCommandService', () => {
       expect((result.data as ProjectContract).status).toBe('Forming');
     });
 
+    it('CreateProject threads registryProjectId through to the created project', async () => {
+      const command = buildCommand({
+        name: 'CreateProject',
+        payload: { name: 'Linked Project', registryProjectId: 'erp_web_dashboard' },
+      });
+      const result = await service.execute(command);
+      expect((result.data as ProjectContract).registryProjectId).toBe('erp_web_dashboard');
+    });
+
     it('PauseProject / ResumeProject round-trip', async () => {
       const project = await projects.create({ name: 'X' }, 'corr-seed');
       await service.execute(buildCommand({ name: 'PauseProject', payload: { projectId: project.projectId } }));
