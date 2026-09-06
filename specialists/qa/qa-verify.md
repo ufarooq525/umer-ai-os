@@ -113,9 +113,9 @@ Must refuse silent production deploys, rewriting Engineering unit tests as a sub
 ## E7 — Tool Permission Set
 
 - catalog.read
-- filesystem.read
+- filesystem_read
 - filesystem.write.umer_qa
-- process.recommend (does not execute destructive commands)
+- process_recommend
 
 ## E8 — Context Contract
 

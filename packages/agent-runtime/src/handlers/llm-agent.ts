@@ -88,6 +88,7 @@ function buildUserMessage(workPackage: WorkPackageContract): string {
 function inferArtifactType(mandate: SpecialistMandate): ArtifactType {
   if (mandate.contract.mandateDomain === 'Business') return 'ResearchFinding';
   if (mandate.contract.department === 'Design') return 'DesignArtifact';
+  if (mandate.contract.department === 'QA') return 'TestPlanResults';
   return 'Brief';
 }
 

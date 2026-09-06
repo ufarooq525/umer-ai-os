@@ -27,3 +27,8 @@ export {
   type FilesystemReadInput,
   type FilesystemReadOutput,
 } from './tools/filesystem-read.js';
+export {
+  createProcessRecommendTool,
+  type ProcessRecommendInput,
+  type ProcessRecommendOutput,
+} from './tools/process-recommend.js';

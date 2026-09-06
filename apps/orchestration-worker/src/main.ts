@@ -27,24 +27,33 @@ const env = loadEnv();
 // Real, currently-dispatchable Specialist metadata for the planning path
 // (ReadyWorkPackagePlanner needs a real specVersion/specHash, not a made-up
 // one) — read from the SAME spec files apps/agent-worker loads from, so both
-// processes agree on what's actually current. Only 'Implementation' and 'UX'
-// map to a real Specialist today: eng.app-delivery and ux.design are the
-// only ones apps/agent-worker actually registers for dispatch (see its
-// main.ts) — every other node type correctly has no mapping, so
-// ReadyWorkPackagePlanner skips it (reported, not fabricated) rather than
-// building a Work Package no running worker could execute.
+// processes agree on what's actually current. Only 'Implementation', 'UX',
+// and 'QA' map to a real Specialist today: eng.app-delivery, ux.design, and
+// qa.verify are the only ones apps/agent-worker actually registers for
+// dispatch (see its main.ts) — every other node type correctly has no
+// mapping, so ReadyWorkPackagePlanner skips it (reported, not fabricated)
+// rather than building a Work Package no running worker could execute.
 //
-// ux.design is additionally gated on a real `targetPath`: it needs one to
-// use its filesystem_read tool for anything, so resolveTaskContext (below,
-// in the workgraph.plan handler) only supplies a task context for a UX node
-// when the plan command actually carried one — never a placeholder path.
+// ux.design and qa.verify are additionally gated on a real `targetPath`:
+// both need one to use their filesystem_read tool for anything, so
+// resolveTaskContext (below, in the workgraph.plan handler) only supplies a
+// task context for a UX/QA node when the plan command actually carried one
+// — never a placeholder path.
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
 const engAppDelivery = await loadSpecFromFile(
   join(repoRoot, 'specialists', 'engineering', 'application-delivery.md'),
 );
 const uxDesign = await loadSpecFromFile(join(repoRoot, 'specialists', 'design', 'ux-design.md'));
+const qaVerify = await loadSpecFromFile(join(repoRoot, 'specialists', 'qa', 'qa-verify.md'));
+const NODE_TYPE_SPECIALISTS = {
+  Implementation: engAppDelivery,
+  UX: uxDesign,
+  QA: qaVerify,
+} as const;
+const TARGET_PATH_REQUIRED_NODE_TYPES = new Set<keyof typeof NODE_TYPE_SPECIALISTS>(['UX', 'QA']);
+
 const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] = (node) => {
-  const spec = node.type === 'Implementation' ? engAppDelivery : node.type === 'UX' ? uxDesign : undefined;
+  const spec = (NODE_TYPE_SPECIALISTS as Record<string, typeof engAppDelivery | undefined>)[node.type];
   return spec
     ? {
         specialistId: spec.binding.specialistId,
@@ -56,16 +65,17 @@ const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] =
 
 /**
  * Real policy for what counts as "enough context to plan" per node type —
- * this is where "UX needs a real targetPath, Implementation doesn't" is
- * decided; @umer/orchestration itself stays generic (see WorkGraphPlanningOptions's
- * doc comment). Never invents a targetPath: if the plan command didn't carry
- * one (because the triggering project has no registryProjectId, or it
- * didn't resolve to a real on-disk codebase — see control-api's plan route),
- * a UX node is skipped with a reason, not dispatched to run ungrounded.
+ * this is where "UX and QA need a real targetPath, Implementation doesn't"
+ * is decided; @umer/orchestration itself stays generic (see
+ * WorkGraphPlanningOptions's doc comment). Never invents a targetPath: if
+ * the plan command didn't carry one (because the triggering project has no
+ * registryProjectId, or it didn't resolve to a real on-disk codebase — see
+ * control-api's plan route), a UX/QA node is skipped with a reason, not
+ * dispatched to run ungrounded.
  */
 const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
   if (!raw.taskIds || raw.taskIds.length === 0) return undefined;
-  if (node.type === 'UX') {
+  if (TARGET_PATH_REQUIRED_NODE_TYPES.has(node.type as keyof typeof NODE_TYPE_SPECIALISTS)) {
     return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath } : undefined;
   }
   return { taskIds: raw.taskIds };

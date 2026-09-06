@@ -208,10 +208,10 @@ Postgres as the primary store.
 | V1 Foundation | 100% | 100% | Confirmed. |
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
-| Phase 3 — Product & Architecture | ~0% | **~20%** | The graph's Architecture/Product/UX nodes are real and correctly gated by real dependency edges. `ux.design` can now genuinely execute against a real registered codebase's files (the first specialist in this phase's scope to do so) — Product/Architecture themselves still have no dispatchable Specialist at all. |
-| Phase 4 — Software Factory | ~30% | ~15% | Unchanged from the fabrication-fix pass: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA — the `targetPath`/tool-sandboxing work this pass benefits Phase 3/6, not this one directly. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~68%** | Everything from the prior estimate, plus: two Specialists (`Implementation`, `UX`) now map to real, dispatchable work instead of one, and the planner/projector/context-resolution machinery has proven it generalizes (adding UX required no changes to the engine, persistence, or planner core — only new policy wiring in the app layer, exactly as designed). |
-| Phase 6 — Autonomous Operations | ~7% | **~15%** | `ux.design` is the first Specialist in this codebase that can produce a finding grounded in a real file it actually read, not a self-reported LLM guess or a no-op — a genuine (if narrow) step toward routine work happening for real without fabrication. The plan route still requires a named human `approver` per invocation, which remains correct. |
+| Phase 3 — Product & Architecture | ~0% | **~22%** | The graph's Architecture/Product/UX/QA nodes are real and correctly gated by real dependency edges. `ux.design` and now `qa.verify` can genuinely execute against a real registered codebase's files — Product/Architecture themselves still have no dispatchable Specialist at all. |
+| Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~70%** | Everything from the prior estimate, plus: three Specialists (`Implementation`, `UX`, `QA`) now map to real, dispatchable work, and the planner/projector/context-resolution machinery has proven it generalizes across two different `targetPath`-requiring node types with zero engine changes — only app-layer policy wiring, exactly as designed. |
+| Phase 6 — Autonomous Operations | ~7% | **~18%** | `qa.verify` is now the second Specialist that can produce a finding grounded in a real file it actually read, plus a non-executing `process_recommend` tool for surfacing "run this" findings without ever running anything itself — still not real automated verification (nothing executes the recommended command), but a further step past self-reported LLM guesses. The plan route still requires a named human `approver` per invocation, which remains correct. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -544,16 +544,73 @@ model ever tries). This pilot proved the sandbox/threading model end to end
 with the lowest-risk case (read-only, no subprocess); extending it is now
 mechanical repetition of this same pattern, not new design.
 
+## This milestone (2026-09-06, eighth pass): a second grounded Specialist, and a non-executing tool
+
+Extended the exact pattern from the seventh pass to `qa.verify` — proving
+the mechanism/policy split generalizes to a second Specialist and a second
+tool with zero changes to `packages/orchestration`'s engine, only new policy
+wiring at the app layer, as the prior pass predicted.
+
+- **New tool** (`packages/extension/src/tools/process-recommend.ts`,
+  `process_recommend`): records a recommended verification command
+  (e.g. a test-runner invocation) and classifies it against a fixed
+  allowlist of known read-only verification-command prefixes
+  (`npx playwright test`, `./vendor/bin/phpunit`, `pnpm test`, etc.). It has
+  **no subprocess-execution capability at all** — not "executes but is
+  restricted," genuinely cannot run anything — matching `qa.verify`'s
+  `Advise` authority class exactly. 7 tests: allowlisted match, non-match,
+  prefix-plus-arguments match, a same-prefix-different-word rejection
+  (`npm testing-something-else` is not `npm test`), and malformed-input
+  rejection for both required fields.
+- **Mandate correction**: `specialists/qa/qa-verify.md`'s E7 list had the
+  same two defects the prior pass found and fixed in `ux-design.md`:
+  `filesystem.read` (a dot — renamed to `filesystem_read` to match the real
+  tool) and `process.recommend (does not execute destructive commands)` (the
+  parenthetical would have polluted the exact-match allowlist check even
+  after fixing the dot — renamed to bare `process_recommend`).
+  `catalog.read` and `filesystem.write.umer_qa` are left as dotted
+  placeholders, consistent with how `ux-design.md` still lists
+  `filesystem.write.umer_ux` — neither has a real tool behind it yet, so the
+  literal name doesn't matter until one exists.
+- **`inferArtifactType`** (`llm-agent.ts`) gained a `QA` department →
+  `TestPlanResults` mapping (an artifact type that already existed in
+  `ArtifactTypeSchema` but nothing produced until now).
+- **Registration**: `qa.verify` added to `apps/agent-worker`'s `specPaths`
+  and its `process_recommend` tool registered alongside `filesystem_read`;
+  added to `orchestration-worker`'s `resolveSpecialist` mapping (`QA` →
+  `qa.verify`) and to the `targetPath`-required set alongside `UX` (QA needs
+  a real project to read before it can recommend anything about it).
+- **Tests**: 7 new in `process-recommend.test.ts`, 1 new in
+  `llm-agent.test.ts` (Design → `DesignArtifact` and QA → `TestPlanResults`
+  mapping, closing a coverage gap the Design branch had had since the prior
+  pass). `packages/extension`: 28 tests (was 21). `packages/agent-runtime`:
+  39 (was 37). `packages/orchestration` and `apps/control-api` unaffected
+  (89 / 135) — the generic `resolveTaskContext` hook these depend on was
+  already fully covered by the UX-specific tests; only the app-layer wiring
+  changed, which (consistent with every other `main.ts` change in this repo)
+  has no dedicated test file of its own.
+
+**What this does NOT yet do**: `qa.verify` still cannot write its
+`TEST_PLAN`/`APPLY_REPORT` output to `.umer/qa/` (`filesystem.write.umer_qa`
+doesn't exist as a real tool), and `process_recommend` never executes
+anything — a human or a separately-audited runner still has to actually run
+the recommended command. `security.review` remains unregistered; it's the
+one that genuinely needs subprocess execution and deserves its own focused
+review before it's wired.
+
 ## Next highest-value milestone
 
-**Extend the same pattern to `qa.verify`**, the next-lowest-risk specialist
-(read + a non-executing `process.recommend`, no real subprocess spawning
-yet). Needs: register it in `agent-worker`'s `specPaths`, add its mapping to
-`orchestration-worker`'s `resolveSpecialist`/`resolveTaskContext` (same
-`targetPath` requirement as UX), and clean its E7 list the same way
-`ux.design`'s was (check every entry for the dot-vs-underscore /
-parenthetical-pollution issues this pass found). `security.review` should
-come last — it's the one that needs actual process execution
-(`npm audit`/`composer audit`), which is qualitatively higher-risk than pure
-file reads and deserves its own focused review of the exact allowlist
-mechanism before it's wired for real.
+Two viable directions, roughly comparable value:
+
+1. **A real `filesystem.write.umer_*` tool**, scoped the same way
+   `filesystem_read` is (sandboxed to `targetPath`, but additionally
+   confined to writing only under a fixed `.umer/<department>/` subtree so
+   a Specialist can never touch product code) — this is what would let
+   `ux.design` and `qa.verify` actually seal evidence to disk instead of
+   only returning a summary string, and is a prerequisite either way.
+2. **`security.review`**, the last of the three specialists flagged in this
+   pass's scope — but it genuinely needs process execution
+   (`npm audit`/`composer audit`), which is qualitatively higher-risk than
+   pure file reads and deserves its own focused review of the exact
+   allowlist/sandboxing mechanism before it's wired for real, rather than
+   being treated as more mechanical repetition of the read-only pattern.

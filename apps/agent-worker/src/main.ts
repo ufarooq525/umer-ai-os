@@ -12,7 +12,13 @@ import {
 import { InMemoryRegistryAdapter, loadSpecFromFile } from '@umer/specialist-sdk';
 import { createArtifactStack } from '@umer/artifacts';
 import { createLLMProviderFromEnv } from '@umer/model-routing';
-import { createFilesystemReadTool, createSearchWebTool, createToolRegistry, createToolRouter } from '@umer/extension';
+import {
+  createFilesystemReadTool,
+  createProcessRecommendTool,
+  createSearchWebTool,
+  createToolRegistry,
+  createToolRouter,
+} from '@umer/extension';
 
 const serviceName = 'agent-worker';
 const log = createLogger(serviceName);
@@ -25,16 +31,19 @@ const specialistsDir = join(repoRoot, 'specialists');
 // eng.app-delivery stays on the deterministic structured-change-set handler
 // (its own mandate forbids invented content); every other specialist below runs
 // through the generic Model Routing → LLM Provider → Tool Router agent loop.
-// ux.design is the first specialist wired to a REAL sandboxed tool
-// (filesystem_read, below) rather than running ungrounded — it can only
+// ux.design and qa.verify are wired to REAL sandboxed tools (filesystem_read,
+// process_recommend, below) rather than running ungrounded — both can only
 // actually inspect a project when ReadyWorkPackagePlanner resolved a real
-// targetPath for it (see WorkPackageContract.targetPath); otherwise the
-// planner skips the node rather than dispatch a specialist with nothing
-// real to read.
+// targetPath for them (see WorkPackageContract.targetPath); otherwise the
+// planner skips the node rather than dispatch a specialist with nothing real
+// to read. process_recommend never executes anything itself — it only
+// classifies a proposed command against a fixed allowlist, matching
+// qa.verify's Advise authority class.
 const specPaths = [
   join(specialistsDir, 'engineering', 'application-delivery.md'),
   join(specialistsDir, 'growth', 'opportunity-research.md'),
   join(specialistsDir, 'design', 'ux-design.md'),
+  join(specialistsDir, 'qa', 'qa-verify.md'),
 ];
 
 const loadedSpecs = await Promise.all(specPaths.map((path) => loadSpecFromFile(path)));
@@ -47,6 +56,7 @@ const mandatesById = new Map(loadedSpecs.map((loaded) => [loaded.binding.special
 const toolRegistry = createToolRegistry();
 toolRegistry.register(createSearchWebTool());
 toolRegistry.register(createFilesystemReadTool());
+toolRegistry.register(createProcessRecommendTool());
 const toolRouter = createToolRouter({ registry: toolRegistry });
 const llmProvider = createLLMProviderFromEnv({ env });
 

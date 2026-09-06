@@ -15,10 +15,14 @@ import type { ChatRequest, ChatResponse, LLMProvider } from '@umer/model-routing
 import { AgentRuntimeError } from '../errors.js';
 import { runLlmAgent, type LlmAgentDependencies } from './llm-agent.js';
 
-async function loadGrowthMandate(): Promise<SpecialistMandate> {
+async function loadMandateFromRepo(...relativePath: string[]): Promise<SpecialistMandate> {
   const root = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..', '..');
-  const content = await readFile(join(root, 'specialists', 'growth', 'opportunity-research.md'), 'utf8');
+  const content = await readFile(join(root, 'specialists', ...relativePath), 'utf8');
   return loadSpecFromString(content).mandate;
+}
+
+async function loadGrowthMandate(): Promise<SpecialistMandate> {
+  return loadMandateFromRepo('growth', 'opportunity-research.md');
 }
 
 function buildWorkPackage(mandate: SpecialistMandate, overrides: Partial<WorkPackageContract> = {}): WorkPackageContract {
@@ -143,6 +147,28 @@ describe('runLlmAgent', () => {
       expect(criterion.status).toBe('N_A');
       expect(criterion.evidenceRef).toBeUndefined();
     }
+  });
+
+  it('maps a Design department mandate to a DesignArtifact and a QA department mandate to TestPlanResults', async () => {
+    const uxMandate = await loadMandateFromRepo('design', 'ux-design.md');
+    const uxWorkPackage = buildWorkPackage(uxMandate);
+    const uxResult = await runLlmAgent(
+      uxWorkPackage,
+      uxMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-design',
+    );
+    expect(uxResult.artifact.artifactType).toBe('DesignArtifact');
+
+    const qaMandate = await loadMandateFromRepo('qa', 'qa-verify.md');
+    const qaWorkPackage = buildWorkPackage(qaMandate);
+    const qaResult = await runLlmAgent(
+      qaWorkPackage,
+      qaMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-qa',
+    );
+    expect(qaResult.artifact.artifactType).toBe('TestPlanResults');
   });
 
   it("threads the Work Package's targetPath through to the tool's execution context", async () => {
