@@ -231,8 +231,15 @@ export class OrchestrationWorker {
         const result = await this.orchestrator.handleAgentFailure(workPackageId, event.correlationId, errorMessage);
         // handleAgentFailure retries (status back to Queued) under the max-attempts
         // ceiling, or leaves the Work Package terminally Failed once it's exceeded —
-        // the graph node should reflect whichever actually happened.
+        // the graph node should reflect whichever actually happened. Queued alone
+        // does not re-run anything: dispatch() is the only thing that actually
+        // publishes a fresh cmd.agent.dispatch, so a retried Work Package needs
+        // this call or it would sit at Queued forever with nothing to redispatch
+        // it — found live, where nothing but JetStream's own (uncoordinated, now
+        // removed — see agent-runtime's worker.ts) redelivery was ever making a
+        // failed run try again.
         if (result.status === 'Queued') {
+          await this.orchestrator.dispatch(workPackageId, event.correlationId);
           await this.workGraphProjector?.onRetried(workPackageId);
         } else {
           await this.workGraphProjector?.onFailed(workPackageId);

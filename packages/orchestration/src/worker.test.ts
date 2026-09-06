@@ -13,6 +13,7 @@ import type { WorkPackageDispatcher } from './dispatcher.js';
 type Harness = {
   worker: OrchestrationWorker;
   orchestrator: Orchestrator;
+  dispatcher: WorkPackageDispatcher;
   fabric: {
     subscribeCommands: ReturnType<typeof vi.fn>;
     subscribeEvents: ReturnType<typeof vi.fn>;
@@ -52,7 +53,7 @@ async function createWorkerHarness(): Promise<Harness> {
   });
   await worker.start();
 
-  return { worker, orchestrator, fabric, commandHandler, eventHandler };
+  return { worker, orchestrator, dispatcher, fabric, commandHandler, eventHandler };
 }
 
 const ackCtx = {
@@ -259,8 +260,8 @@ describe('OrchestrationWorker', () => {
     expect((await orchestrator.get('wp-3'))?.status).toBe('AwaitingReview');
   });
 
-  it('handles agent failure with auto-retry', async () => {
-    const { commandHandler, eventHandler, orchestrator } = await createWorkerHarness();
+  it('handles agent failure with auto-retry, and actually redispatches rather than leaving it stuck at Queued', async () => {
+    const { commandHandler, eventHandler, orchestrator, dispatcher } = await createWorkerHarness();
     await commandHandler(
       createCommandEnvelope({
         name: ORCHESTRATION_COMMANDS.QUEUE,
@@ -297,9 +298,58 @@ describe('OrchestrationWorker', () => {
       }),
       ackCtx,
     );
+    // Queued alone would leave this stuck forever -- nothing else notices a
+    // Queued status and redispatches it. handleAgentEvent's agent.run.failed
+    // case must call dispatch() itself, moving the retry all the way to
+    // Dispatched and invoking the real dispatcher a second time.
     const wp = await orchestrator.get('wp-4');
-    expect(wp?.status).toBe('Queued');
+    expect(wp?.status).toBe('Dispatched');
     expect(wp?.attempt).toBe(2);
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a Work Package terminally Failed (never Queued/redispatched) once max attempts are exhausted', async () => {
+    const { commandHandler, eventHandler, orchestrator, dispatcher } = await createWorkerHarness();
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.QUEUE,
+        producer: 'control-api',
+        correlationId: 'corr-exhaust',
+        payload: { workPackage: createTestWorkPackage({ workPackageId: 'wp-exhaust', attempt: 3 }) },
+      }),
+      ackCtx,
+    );
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.DISPATCH,
+        producer: 'control-api',
+        correlationId: 'corr-exhaust',
+        payload: { workPackageId: 'wp-exhaust' },
+      }),
+      ackCtx,
+    );
+    await eventHandler(
+      createEventEnvelope({
+        name: 'agent.run.started',
+        producer: 'agent-worker',
+        correlationId: 'corr-exhaust',
+        payload: { workPackageId: 'wp-exhaust' },
+      }),
+      ackCtx,
+    );
+    const dispatchCallsBeforeFailure = (dispatcher.dispatch as ReturnType<typeof vi.fn>).mock.calls.length;
+    await eventHandler(
+      createEventEnvelope({
+        name: 'agent.run.failed',
+        producer: 'agent-worker',
+        correlationId: 'corr-exhaust',
+        payload: { workPackageId: 'wp-exhaust', errorMessage: 'boom' },
+      }),
+      ackCtx,
+    );
+    const wp = await orchestrator.get('wp-exhaust');
+    expect(wp?.status).toBe('Failed');
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(dispatchCallsBeforeFailure);
   });
 
   it('stops subscriptions', async () => {

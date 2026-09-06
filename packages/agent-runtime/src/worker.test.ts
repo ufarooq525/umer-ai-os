@@ -120,7 +120,7 @@ describe('AgentWorker', () => {
     expect(completed?.payload).toMatchObject({ workPackageId: 'wp-3', runId: 'wp-3:corr-worker-1', artifactId: 'art-3' });
   });
 
-  it('publishes agent.run.failed and rethrows when execution fails', async () => {
+  it('publishes agent.run.failed and acks (does not rethrow) when execution fails', async () => {
     const { fabric, published, getHandler } = fakeFabric();
     const runtime = {
       execute: vi.fn().mockRejectedValue(new Error('boom')),
@@ -129,9 +129,16 @@ describe('AgentWorker', () => {
     const worker = new AgentWorker({ runtime, fabric, producer: 'agent-worker' });
     await worker.start();
 
-    await expect(
-      getHandler()!(makeCommand({ workPackage: { workPackageId: 'wp-4' } }), { ack: vi.fn() }),
-    ).rejects.toThrow('boom');
+    const ack = vi.fn();
+    // Deliberately does not reject: rethrowing here used to leave the
+    // underlying NATS message unacked, causing JetStream to redeliver the
+    // exact same stale dispatch on its own schedule -- an uncoordinated
+    // second retry path racing the Orchestrator's own bounded
+    // attempt/maxAttempts mechanism (see orchestration's handleAgentEvent).
+    // Publishing agent.run.failed is enough; the retry decision belongs to
+    // the Orchestrator alone now.
+    await getHandler()!(makeCommand({ workPackage: { workPackageId: 'wp-4' } }), { ack });
+    expect(ack).toHaveBeenCalledTimes(1);
 
     const failed = published.find((e) => e.name === 'agent.run.failed');
     expect(failed?.payload).toMatchObject({ workPackageId: 'wp-4', errorMessage: 'boom' });
@@ -191,12 +198,10 @@ describe('AgentWorker', () => {
     const runtimeFail = { execute: vi.fn().mockRejectedValue(new Error('boom')) } as unknown as AgentRuntime;
     const workerFail = new AgentWorker({ runtime: runtimeFail, fabric: fabricFail, producer: 'agent-worker' });
     await workerFail.start();
-    await expect(
-      getHandlerFail()!(
-        makeCommand({ workPackage: { workPackageId: 'wp-7', specialistId: 'eng.app-delivery' } }),
-        { ack: vi.fn() },
-      ),
-    ).rejects.toThrow('boom');
+    await getHandlerFail()!(
+      makeCommand({ workPackage: { workPackageId: 'wp-7', specialistId: 'eng.app-delivery' } }),
+      { ack: vi.fn() },
+    );
     expect(publishedFail.find((e) => e.name === 'agent.run.failed')?.payload).toMatchObject({
       agentId: 'agent-worker:eng.app-delivery',
     });

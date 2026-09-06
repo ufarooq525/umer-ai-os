@@ -174,7 +174,16 @@ export class AgentWorker {
         code: err instanceof AgentRuntimeError ? err.code : 'HANDLER_FAILED',
         ...(dispatchAgentId ? { agentId: dispatchAgentId } : {}),
       });
-      throw err;
+      // Deliberately does not rethrow: publishing agent.run.failed already
+      // hands the retry decision to the Orchestrator's own bounded
+      // attempt/maxAttempts mechanism (see orchestration's handleAgentEvent
+      // -> handleAgentFailure). Rethrowing here used to also leave this
+      // command's underlying NATS message unacked, so JetStream redelivered
+      // the exact same stale dispatch on its own uncoordinated schedule --
+      // a second, unbounded retry path racing the real one, confirmed live:
+      // a Work Package that kept exceeding its iteration cap got redelivered
+      // 5 times before silently landing in the DLQ, never reaching the
+      // Orchestrator's real (3-attempt) terminal Failed state at all.
     }
   }
 
