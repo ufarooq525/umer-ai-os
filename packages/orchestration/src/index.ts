@@ -35,6 +35,7 @@ export {
   createOrchestrationWorker,
   type OrchestrationWorkerOptions,
   type WorkGraphPlanningOptions,
+  type PlanRawNodeContext,
 } from './worker.js';
 export { WorkGraph, canTransitionNode } from './work-graph.js';
 export {

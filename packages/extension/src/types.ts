@@ -8,6 +8,8 @@ export type ToolExecutionContext = {
   correlationId: string;
   toolCallId: string;
   signal?: AbortSignal;
+  /** Real, resolved filesystem root this run is sandboxed to — see WorkPackageContract's targetPath. Undefined when the Work Package has none; filesystem-scoped tools must fail closed rather than fall back to an unrestricted root. */
+  targetPath?: string;
 };
 
 /**

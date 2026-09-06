@@ -386,6 +386,25 @@ export function createControlApiServer(state: ControlApiState) {
         taskIdsByNodeId[node.nodeId] = [task.taskId];
       }
 
+      // Real registered-codebase context, only when the Work Management
+      // Project this graph belongs to actually links to one (registryProjectId)
+      // AND that catalog entry resolves to something genuinely on disk.
+      // Never a guess: a Specialist whose mandate needs real file access
+      // (e.g. ux.design) is skipped by the planner rather than dispatched
+      // without one — see orchestration-worker's resolveTaskContext.
+      let targetPath: string | undefined;
+      const wmProject = await state.projectStore?.get(projectId);
+      if (wmProject?.registryProjectId) {
+        try {
+          const registered = state.projectRegistry.get(wmProject.registryProjectId);
+          if (registered.onDisk) {
+            targetPath = registered.absolutePath;
+          }
+        } catch {
+          // Unknown/stale registryProjectId — leave targetPath unresolved rather than guess.
+        }
+      }
+
       const execId = `EXEC-${Date.now()}`;
       const contextHandle = `ctx-plan-${projectId}-${Date.now()}`;
       const command = createCommandEnvelope({
@@ -393,7 +412,7 @@ export function createControlApiServer(state: ControlApiState) {
         producer: 'control-api',
         correlationId,
         idempotencyKey: correlationId,
-        payload: { projectId, execId, contextHandle, taskIdsByNodeId },
+        payload: { projectId, execId, contextHandle, taskIdsByNodeId, ...(targetPath ? { targetPath } : {}) },
       });
       await state.fabric.publishCommand(SUBJECTS.CMD_ORCHESTRATION, command);
 
@@ -405,7 +424,7 @@ export function createControlApiServer(state: ControlApiState) {
           resourceId: projectId,
           outcome: 'success',
           correlationId,
-          detail: { readyNodeIds: ready.map((n) => n.nodeId), taskIdsByNodeId, execId },
+          detail: { readyNodeIds: ready.map((n) => n.nodeId), taskIdsByNodeId, execId, targetPath },
         },
         correlationId,
       );
@@ -416,6 +435,7 @@ export function createControlApiServer(state: ControlApiState) {
         execId,
         readyNodeIds: ready.map((n) => n.nodeId),
         taskIdsByNodeId,
+        targetPath: targetPath ?? null,
         message: 'Planning requested. Check GET /v1/work-graph/:projectId shortly for the result.',
       });
       return;

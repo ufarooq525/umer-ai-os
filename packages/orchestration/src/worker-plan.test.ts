@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createCommandEnvelope } from '@umer/message-fabric';
 import type { CommandHandler, EventEnvelope } from '@umer/message-fabric';
-import { OrchestrationWorker } from './worker.js';
+import { OrchestrationWorker, type WorkGraphPlanningOptions } from './worker.js';
 import { Orchestrator } from './orchestrator.js';
 import { InMemoryWorkPackageStore } from './store.js';
 import { InMemoryWorkGraphStore, PersistentWorkGraph } from './work-graph-store.js';
@@ -13,7 +13,9 @@ import type { WorkPackageDispatcher } from './dispatcher.js';
 
 const ackCtx = { correlationId: 'corr-1', deliveryCount: 1, ack: vi.fn(), nak: vi.fn(), term: vi.fn() };
 
-async function createHarness(options: { withPlanning?: boolean } = {}) {
+async function createHarness(
+  options: { withPlanning?: boolean; resolveTaskContext?: WorkGraphPlanningOptions['resolveTaskContext'] } = {},
+) {
   const wpStore = new InMemoryWorkPackageStore();
   const events: EventPublisher = { publish: vi.fn(async () => undefined) };
   const dispatcher: WorkPackageDispatcher = { dispatch: vi.fn(async () => undefined) };
@@ -42,7 +44,10 @@ async function createHarness(options: { withPlanning?: boolean } = {}) {
           resolveSpecialist: (node) =>
             node.type === 'Implementation'
               ? { specialistId: 'eng.app-delivery', specialistSpecVersion: '1.1.0', specialistSpecHash: 'hash-1' }
-              : undefined,
+              : node.type === 'UX'
+                ? { specialistId: 'ux.design', specialistSpecVersion: '1.0.0', specialistSpecHash: 'hash-ux' }
+                : undefined,
+          resolveTaskContext: options.resolveTaskContext,
         }
       : undefined,
   });
@@ -142,5 +147,92 @@ describe('OrchestrationWorker — workgraph.plan', () => {
 
     const [, event] = publishEvent.mock.calls[0] as [string, EventEnvelope];
     expect((event.payload as { skipped: Array<{ reason: string }> }).skipped[0]!.reason).toContain('Specialist');
+  });
+
+  it('with the default resolveTaskContext (omitted), plans a UX node purely from task ids — no targetPath required', async () => {
+    const { graphStore, commandHandler, orchestrator } = await createHarness({ withPlanning: true });
+    await graphStore.saveNode(createTestWorkGraphNode({ nodeId: 'ux', type: 'UX', title: 'UX', status: 'Planned' }));
+
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.PLAN_PROJECT,
+        producer: 'control-api',
+        correlationId: 'corr-1',
+        payload: { projectId: 'proj-1', execId: 'EXEC-1', contextHandle: 'ctx-1', taskIdsByNodeId: { ux: ['task-1'] } },
+      }),
+      ackCtx,
+    );
+
+    const node = (await graphStore.listNodes('proj-1')).find((n) => n.nodeId === 'ux');
+    const wp = await orchestrator.get(node!.workPackageId!);
+    expect(wp?.targetPath).toBeUndefined();
+  });
+
+  it('a deployment-supplied resolveTaskContext can require a real targetPath for UX and skip cleanly without one', async () => {
+    const requireTargetPathForUx: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
+      if (!raw.taskIds || raw.taskIds.length === 0) return undefined;
+      if (node.type === 'UX') {
+        return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath } : undefined;
+      }
+      return { taskIds: raw.taskIds };
+    };
+    const { graphStore, commandHandler, publishEvent } = await createHarness({
+      withPlanning: true,
+      resolveTaskContext: requireTargetPathForUx,
+    });
+    await graphStore.saveNode(createTestWorkGraphNode({ nodeId: 'ux', type: 'UX', title: 'UX', status: 'Planned' }));
+
+    // No targetPath in the plan command's payload — the real project has no registered codebase link.
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.PLAN_PROJECT,
+        producer: 'control-api',
+        correlationId: 'corr-1',
+        payload: { projectId: 'proj-1', execId: 'EXEC-1', contextHandle: 'ctx-1', taskIdsByNodeId: { ux: ['task-1'] } },
+      }),
+      ackCtx,
+    );
+
+    const nodeWithout = (await graphStore.listNodes('proj-1')).find((n) => n.nodeId === 'ux');
+    expect(nodeWithout?.workPackageId).toBeUndefined();
+    const [, skippedEvent] = publishEvent.mock.calls[0] as [string, EventEnvelope];
+    expect((skippedEvent.payload as { skipped: unknown[] }).skipped).toHaveLength(1);
+  });
+
+  it('with a real targetPath in the plan command, the same UX-requiring resolver plans it and carries targetPath onto the Work Package', async () => {
+    const requireTargetPathForUx: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
+      if (!raw.taskIds || raw.taskIds.length === 0) return undefined;
+      if (node.type === 'UX') {
+        return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath } : undefined;
+      }
+      return { taskIds: raw.taskIds };
+    };
+    const { graphStore, commandHandler, orchestrator } = await createHarness({
+      withPlanning: true,
+      resolveTaskContext: requireTargetPathForUx,
+    });
+    await graphStore.saveNode(createTestWorkGraphNode({ nodeId: 'ux', type: 'UX', title: 'UX', status: 'Planned' }));
+
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.PLAN_PROJECT,
+        producer: 'control-api',
+        correlationId: 'corr-1',
+        payload: {
+          projectId: 'proj-1',
+          execId: 'EXEC-1',
+          contextHandle: 'ctx-1',
+          taskIdsByNodeId: { ux: ['task-1'] },
+          targetPath: '/real/registered/project',
+        },
+      }),
+      ackCtx,
+    );
+
+    const node = (await graphStore.listNodes('proj-1')).find((n) => n.nodeId === 'ux');
+    expect(node?.workPackageId).toBeDefined();
+    const wp = await orchestrator.get(node!.workPackageId!);
+    expect(wp?.targetPath).toBe('/real/registered/project');
+    expect(wp?.specialistId).toBe('ux.design');
   });
 });

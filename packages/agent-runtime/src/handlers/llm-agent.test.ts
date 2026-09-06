@@ -145,6 +145,36 @@ describe('runLlmAgent', () => {
     }
   });
 
+  it("threads the Work Package's targetPath through to the tool's execution context", async () => {
+    const mandate = await loadGrowthMandate();
+    const workPackage = buildWorkPackage(mandate, { targetPath: '/real/registered/project' });
+    const provider = new ScriptedProvider([
+      toolCallResponse('search_web', '{"query":"x"}'),
+      finalResponse('done'),
+    ]);
+
+    const registry = createToolRegistry();
+    let capturedTargetPath: string | undefined;
+    registry.register({
+      name: 'search_web',
+      description: 'search',
+      parameters: { type: 'object', properties: { query: { type: 'string' } } },
+      handler: async (_input, ctx) => {
+        capturedTargetPath = ctx.targetPath;
+        return { results: [] };
+      },
+    });
+
+    await runLlmAgent(
+      workPackage,
+      mandate,
+      { provider, toolRegistry: registry, toolRouter: createToolRouter({ registry }), maxIterations: 5 },
+      'corr-target-path',
+    );
+
+    expect(capturedTargetPath).toBe('/real/registered/project');
+  });
+
   it('supports multiple tool round trips before a final answer (model → tool → model → tool → model → final)', async () => {
     const mandate = await loadGrowthMandate();
     const workPackage = buildWorkPackage(mandate);

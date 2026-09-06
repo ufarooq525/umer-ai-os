@@ -26,25 +26,50 @@ const env = loadEnv();
 
 // Real, currently-dispatchable Specialist metadata for the planning path
 // (ReadyWorkPackagePlanner needs a real specVersion/specHash, not a made-up
-// one) — read from the SAME spec file apps/agent-worker loads eng.app-delivery
-// from, so both processes agree on what's actually current. Only
-// 'Implementation' maps to a real Specialist today: eng.app-delivery is the
-// only one apps/agent-worker actually registers for dispatch (see its
+// one) — read from the SAME spec files apps/agent-worker loads from, so both
+// processes agree on what's actually current. Only 'Implementation' and 'UX'
+// map to a real Specialist today: eng.app-delivery and ux.design are the
+// only ones apps/agent-worker actually registers for dispatch (see its
 // main.ts) — every other node type correctly has no mapping, so
 // ReadyWorkPackagePlanner skips it (reported, not fabricated) rather than
 // building a Work Package no running worker could execute.
+//
+// ux.design is additionally gated on a real `targetPath`: it needs one to
+// use its filesystem_read tool for anything, so resolveTaskContext (below,
+// in the workgraph.plan handler) only supplies a task context for a UX node
+// when the plan command actually carried one — never a placeholder path.
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
 const engAppDelivery = await loadSpecFromFile(
   join(repoRoot, 'specialists', 'engineering', 'application-delivery.md'),
 );
-const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] = (node) =>
-  node.type === 'Implementation'
+const uxDesign = await loadSpecFromFile(join(repoRoot, 'specialists', 'design', 'ux-design.md'));
+const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] = (node) => {
+  const spec = node.type === 'Implementation' ? engAppDelivery : node.type === 'UX' ? uxDesign : undefined;
+  return spec
     ? {
-        specialistId: engAppDelivery.binding.specialistId,
-        specialistSpecVersion: engAppDelivery.binding.specVersion,
-        specialistSpecHash: engAppDelivery.binding.specHash,
+        specialistId: spec.binding.specialistId,
+        specialistSpecVersion: spec.binding.specVersion,
+        specialistSpecHash: spec.binding.specHash,
       }
     : undefined;
+};
+
+/**
+ * Real policy for what counts as "enough context to plan" per node type —
+ * this is where "UX needs a real targetPath, Implementation doesn't" is
+ * decided; @umer/orchestration itself stays generic (see WorkGraphPlanningOptions's
+ * doc comment). Never invents a targetPath: if the plan command didn't carry
+ * one (because the triggering project has no registryProjectId, or it
+ * didn't resolve to a real on-disk codebase — see control-api's plan route),
+ * a UX node is skipped with a reason, not dispatched to run ungrounded.
+ */
+const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
+  if (!raw.taskIds || raw.taskIds.length === 0) return undefined;
+  if (node.type === 'UX') {
+    return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath } : undefined;
+  }
+  return { taskIds: raw.taskIds };
+};
 
 const fabric = await createMessageFabric({ producer: serviceName });
 
@@ -99,6 +124,7 @@ const worker = createOrchestrationWorker({
   workGraphPlanning: {
     persistentGraph: persistentWorkGraph,
     resolveSpecialist: workGraphPlanningResolver,
+    resolveTaskContext: workGraphTaskContextResolver,
   },
 });
 

@@ -22,3 +22,8 @@ export {
   type SearchWebResultItem,
   type SearchWebToolOptions,
 } from './tools/search-web.js';
+export {
+  createFilesystemReadTool,
+  type FilesystemReadInput,
+  type FilesystemReadOutput,
+} from './tools/filesystem-read.js';

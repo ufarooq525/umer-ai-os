@@ -5,16 +5,47 @@ import { createEventEnvelope, STREAMS, SUBJECTS } from '@umer/message-fabric';
 import { ORCHESTRATION_COMMANDS } from './constants.js';
 import { OrchestrationError } from './errors.js';
 import type { Orchestrator } from './orchestrator.js';
-import { ReadyWorkPackagePlanner, type ResolvedSpecialist } from './ready-work-package-planner.js';
+import {
+  ReadyWorkPackagePlanner,
+  type ResolvedSpecialist,
+  type ResolvedTaskContext,
+} from './ready-work-package-planner.js';
 import type { PersistentWorkGraph } from './work-graph-store.js';
 import type { WorkGraphProjector } from './work-graph-projector.js';
+
+/** The real materials a `workgraph.plan` command actually carried for one node — nothing here is ever invented if absent. */
+export type PlanRawNodeContext = {
+  taskIds?: string[];
+  /** Real, resolved filesystem root for the triggering project, if its registryProjectId resolved to one — see WorkPackageContract's targetPath. */
+  targetPath?: string;
+};
 
 /** Enables handling `workgraph.plan` commands — see PLAN_PROJECT's case in handleCommand. */
 export type WorkGraphPlanningOptions = {
   persistentGraph: PersistentWorkGraph;
   /** Returning undefined for a node type this deployment has no real dispatchable Specialist for is correct — ReadyWorkPackagePlanner skips it rather than fabricating one. */
   resolveSpecialist: (node: WorkGraphNodeContract) => ResolvedSpecialist | undefined;
+  /**
+   * Decides whether a node has enough REAL context to plan, given exactly
+   * what the triggering `workgraph.plan` command carried — this is where a
+   * deployment encodes node-type-specific policy (e.g. "a UX node needs a
+   * real targetPath, an Implementation node doesn't") without this package
+   * needing to know what any node type actually requires. Defaults to "real
+   * Task ids are enough" when omitted, matching this package's behavior
+   * before targetPath existed.
+   */
+  resolveTaskContext?: (
+    node: WorkGraphNodeContract,
+    raw: PlanRawNodeContext,
+  ) => ResolvedTaskContext | undefined;
 };
+
+function defaultResolveTaskContext(
+  _node: WorkGraphNodeContract,
+  raw: PlanRawNodeContext,
+): ResolvedTaskContext | undefined {
+  return raw.taskIds && raw.taskIds.length > 0 ? { taskIds: raw.taskIds } : undefined;
+}
 
 export type OrchestrationWorkerOptions = {
   orchestrator: Orchestrator;
@@ -135,15 +166,15 @@ export class OrchestrationWorker {
         const execId = String(payload.execId ?? '');
         const contextHandle = String(payload.contextHandle ?? '');
         const taskIdsByNodeId = (payload.taskIdsByNodeId ?? {}) as Record<string, string[] | undefined>;
+        const targetPath = payload.targetPath ? String(payload.targetPath) : undefined;
+        const resolveTaskContext = this.workGraphPlanning.resolveTaskContext ?? defaultResolveTaskContext;
 
         const planner = new ReadyWorkPackagePlanner({
           orchestrator: this.orchestrator,
           persistentGraph: this.workGraphPlanning.persistentGraph,
           resolveSpecialist: this.workGraphPlanning.resolveSpecialist,
-          resolveTaskContext: (node) => {
-            const taskIds = taskIdsByNodeId[node.nodeId];
-            return taskIds && taskIds.length > 0 ? { taskIds } : undefined;
-          },
+          resolveTaskContext: (node) =>
+            resolveTaskContext(node, { taskIds: taskIdsByNodeId[node.nodeId], targetPath }),
         });
 
         const result = await planner.planProject(projectId, { execId, contextHandle, correlationId });

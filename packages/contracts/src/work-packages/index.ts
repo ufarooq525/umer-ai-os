@@ -48,6 +48,16 @@ export const WorkPackageContractSchema = withContractHeader({
   attempt: z.number().int().positive().default(1),
   parentWorkPackageId: WorkPackageIdSchema.optional(),
   correlationId: z.string().min(1).optional(),
+  /**
+   * Real, resolved filesystem root a Specialist's tools (filesystem_read,
+   * etc.) are sandboxed to — set only when the originating Work Graph
+   * Project's `registryProjectId` resolves to an actual, on-disk registered
+   * codebase (@umer/registry). Never a guess or a placeholder: a Specialist
+   * whose mandate needs real file access is skipped by the planner rather
+   * than dispatched without one — see ReadyWorkPackagePlanner's
+   * resolveTaskContext contract.
+   */
+  targetPath: z.string().min(1).optional(),
 });
 
 export type WorkPackageStatus = z.infer<typeof WorkPackageStatusSchema>;

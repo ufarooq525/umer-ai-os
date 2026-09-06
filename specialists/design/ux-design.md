@@ -114,9 +114,9 @@ Must refuse silent UI code mutation, treating UX as a performance Lighthouse run
 ## E7 — Tool Permission Set
 
 - catalog.read
-- filesystem.read
+- filesystem_read
 - filesystem.write.umer_ux
-- process.recommend (does not execute destructive commands)
+- process.recommend
 
 ## E8 — Context Contract
 

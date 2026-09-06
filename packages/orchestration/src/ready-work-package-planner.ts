@@ -29,6 +29,8 @@ export type ResolvedTaskContext = {
   taskIds: string[];
   capabilityIds?: string[];
   toolAllowlist?: string[];
+  /** Real, resolved filesystem root for a Specialist whose tools need real file access — see WorkPackageContract's targetPath. Omit when none was resolved; a node whose Specialist requires one should have its resolveTaskContext return undefined instead of a made-up path. */
+  targetPath?: string;
 };
 
 export type ReadyWorkPackagePlannerOptions = {
@@ -121,6 +123,7 @@ export class ReadyWorkPackagePlanner {
         resourceEnvelope: { parallelism: 1 },
         attempt: 1,
         correlationId: execution.correlationId,
+        ...(taskContext.targetPath ? { targetPath: taskContext.targetPath } : {}),
       });
 
       const queued = await this.options.orchestrator.queue(workPackage, execution.correlationId);

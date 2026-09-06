@@ -86,7 +86,9 @@ function buildUserMessage(workPackage: WorkPackageContract): string {
 }
 
 function inferArtifactType(mandate: SpecialistMandate): ArtifactType {
-  return mandate.contract.mandateDomain === 'Business' ? 'ResearchFinding' : 'Brief';
+  if (mandate.contract.mandateDomain === 'Business') return 'ResearchFinding';
+  if (mandate.contract.department === 'Design') return 'DesignArtifact';
+  return 'Brief';
 }
 
 function toolResultContent(status: string, output: unknown, error: string | undefined): string {
@@ -254,6 +256,7 @@ export async function runLlmAgent(
       workPackageId: workPackage.workPackageId,
       correlationId,
       signal,
+      targetPath: workPackage.targetPath,
     });
 
     await events.publish(result.status === 'completed' ? 'agent.tool.completed' : 'agent.tool.failed', correlationId, {

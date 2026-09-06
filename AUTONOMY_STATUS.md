@@ -203,15 +203,15 @@ Postgres as the primary store.
 
 ## Phase progress (revised from prior estimates)
 
-| Phase | 2026-09-05 estimate | Revised 2026-09-06 | Why revised |
+| Phase | 2026-09-05 estimate | Revised 2026-09-06 (end of session) | Why revised |
 |---|---:|---:|---|
 | V1 Foundation | 100% | 100% | Confirmed. |
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
-| Phase 3 — Product & Architecture | ~0% | ~15% | The graph's Architecture/Product/UX nodes are real and correctly gated by real dependency edges (Architecture and UX both required before Implementation is Ready). No specialist yet actually produces a Product/Architecture artifact for these nodes — the graph structure is real, the content-producing work behind each node is not yet connected. |
-| Phase 4 — Software Factory | ~30% | **~15%** | Confirmed by reading the actual handler code (not just its mandate doc) that `eng.app-delivery` — the one Engineering specialist wired for real dispatch — produces zero real code today: `runEngineeringApplicationDelivery` never scoped, diffed, or applied anything (see the fabrication fix below); `WorkPackageContractSchema` has no field to carry a change-set even if one existed. The 30% figure was based on the mandate's prose, not verified against the code behind it. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~65%** | The Work Graph engine, persistence, planner, projector, AND a real CEO-triggered planning path (`POST /v1/work-graph/:projectId/plan`, real Task creation, real dispatch) are all built, wired cross-process, and tested end-to-end. The remaining gap is breadth, not plumbing: only `Implementation` nodes map to a Specialist agent-worker can actually execute, and that Specialist itself does no real code work yet (see Phase 4). |
-| Phase 6 — Autonomous Operations | ~7% | ~12% | `WorkGraphProjector` makes Work Package status changes visible on the graph automatically. The plan route still requires a named human `approver` per invocation — genuinely CEO-triggered, not yet autonomous — which is the correct conservative default until this path has a track record. |
+| Phase 3 — Product & Architecture | ~0% | **~20%** | The graph's Architecture/Product/UX nodes are real and correctly gated by real dependency edges. `ux.design` can now genuinely execute against a real registered codebase's files (the first specialist in this phase's scope to do so) — Product/Architecture themselves still have no dispatchable Specialist at all. |
+| Phase 4 — Software Factory | ~30% | ~15% | Unchanged from the fabrication-fix pass: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA — the `targetPath`/tool-sandboxing work this pass benefits Phase 3/6, not this one directly. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~68%** | Everything from the prior estimate, plus: two Specialists (`Implementation`, `UX`) now map to real, dispatchable work instead of one, and the planner/projector/context-resolution machinery has proven it generalizes (adding UX required no changes to the engine, persistence, or planner core — only new policy wiring in the app layer, exactly as designed). |
+| Phase 6 — Autonomous Operations | ~7% | **~15%** | `ux.design` is the first Specialist in this codebase that can produce a finding grounded in a real file it actually read, not a self-reported LLM guess or a no-op — a genuine (if narrow) step toward routine work happening for real without fabrication. The plan route still requires a named human `approver` per invocation, which remains correct. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -465,16 +465,95 @@ fixed a deeper bug than persistence along the way:
   (was 21). `packages/agent-runtime`: 37 tests (was 35). `apps/control-api`:
   132 tests (was 129).
 
+## This milestone (2026-09-06, seventh pass): the first grounded Specialist
+
+Closed the last deferred item — threaded real registered-project context
+into planning, end to end, for one specialist (`ux.design`) as a deliberate
+pilot before extending further. This is the first time this codebase
+dispatches a Specialist that can genuinely read a real project's files
+rather than either running a deterministic no-op (`eng.app-delivery`) or an
+LLM working from a raw-text instruction alone.
+
+- **Contract**: `WorkPackageContractSchema` gained an optional `targetPath`
+  — the real, resolved filesystem root a Specialist's tools are sandboxed
+  to. Never a guess: only set when a real registered codebase actually
+  resolved (see below).
+- **The tool** (`packages/extension/src/tools/filesystem-read.ts`,
+  `filesystem_read`): the first real filesystem tool in this codebase.
+  Fails closed with no `targetPath` configured; rejects `../` traversal, an
+  absolute-path escape, and a symlink that resolves outside the root
+  (checked via `realpath()`, both before and after resolving symlinks).
+  8 tests, including a real temp-directory fixture (the symlink case skips
+  gracefully where the OS denies unprivileged symlink creation — confirmed
+  that's a real Windows permission limitation in this dev environment, not
+  a gap in the tool's logic, since the same containment check also covers
+  the non-symlink escape tests, which do run everywhere).
+- **Threading `targetPath` through**: `ToolExecutionContext` (`@umer/extension`)
+  gained the field; `llm-agent.ts` now passes `workPackage.targetPath` into
+  every tool call's context — the one place in the whole chain that could
+  have silently dropped it.
+- **Mandate correction**: `specialists/design/ux-design.md`'s E7 list named
+  a tool as `filesystem.read` (a dot) — `readList()`
+  (`@umer/specialist-sdk`) parses E7 verbatim into `toolAllowlist`, and
+  tool-calling APIs don't allow dots in tool names, so that entry could
+  never have matched a real registered tool. Renamed to `filesystem_read` to
+  match; this is also the first time this repo has actually needed E7's
+  parsed literalness to matter, since every other LLM-dispatched specialist
+  (`growth.opportunity-research`) only ever used `search_web`, which was
+  already written correctly.
+- **Mechanism/policy split** (`packages/orchestration/src/worker.ts`):
+  `WorkGraphPlanningOptions` gained an optional `resolveTaskContext` hook
+  taking `(node, {taskIds, targetPath})` — this is where "a UX node needs a
+  real targetPath, an Implementation node doesn't" is decided, entirely in
+  `apps/orchestration-worker`'s deployment-specific wiring. `packages/orchestration`
+  itself stays generic; it doesn't know what any node type requires. Omitting
+  the hook falls back to the pre-`targetPath` behavior (real Task ids alone
+  are enough) — nothing about the existing `Implementation` path changed.
+- **Real resolution** (`apps/control-api`'s plan route): looks up the Work
+  Graph's owning `ProjectContract`, and only when its `registryProjectId`
+  resolves to a catalog entry that's genuinely `onDisk` does `targetPath`
+  get set — an unknown/stale `registryProjectId`, or no link at all,
+  produces `targetPath: null` in the response and no `targetPath` in the
+  `workgraph.plan` command payload, never a fabricated path.
+- **Registration**: `ux.design` added to `apps/agent-worker`'s `specPaths`
+  (now genuinely dispatchable) and to `orchestration-worker`'s
+  `resolveSpecialist` mapping (UX → ux.design, loaded from the same spec
+  file agent-worker loads, same pattern as `eng.app-delivery`).
+- **`inferArtifactType`** (`llm-agent.ts`) also gained a `Design` department
+  → `DesignArtifact` mapping, rather than the generic `Brief` fallback every
+  non-Business specialist got before.
+- **Tests**: 8 new in `filesystem-read.test.ts`, 1 new in `llm-agent.test.ts`
+  (targetPath threading), 3 new in `worker-plan.test.ts` (default behavior
+  unchanged, a custom resolver skipping cleanly without targetPath, and
+  planning successfully with one), 3 new in
+  `work-graph-plan-target-path.test.ts` (real on-disk resolution, no link,
+  stale link) using a self-contained fixture catalog rather than depending
+  on whatever happens to be checked out on this machine.
+  `packages/extension`: 21 tests (was 13). `packages/agent-runtime`: still
+  37 (one test changed, none added net-new beyond the targetPath one which
+  replaced no test). `packages/orchestration`: 89 (was 86).
+  `apps/control-api`: 135 (was 132).
+
+**What this does NOT yet do**: `qa.verify` and `security.review` are still
+unregistered — they need `filesystem.write.umer_*` and
+`process.run.audit_allowlist` tools respectively, neither of which exist.
+`ux.design`'s own `filesystem.write.umer_ux` and `process.recommend`
+permissions are also still just aspirational list entries with no real tool
+behind them (harmless: the router fails closed with `unknown_tool` if the
+model ever tries). This pilot proved the sandbox/threading model end to end
+with the lowest-risk case (read-only, no subprocess); extending it is now
+mechanical repetition of this same pattern, not new design.
+
 ## Next highest-value milestone
 
-**Thread real registered-project context into planning** — deferred twice
-now, and the only remaining item from the running list. Needs (a) real
-sandboxed filesystem/process tools in `apps/agent-worker` (the actual gap,
-and the security-sensitive part — plan this first), (b) a
-`WorkPackageContract` field to carry a resolved `absolute_path`, and (c)
-`orchestration-worker` or control-api resolving `registryProjectId` →
-catalog path and threading it through `workgraph.plan`. This is the last
-honestly-scoped gap between "the Work Graph pipeline is real" and "the Work
-Graph pipeline can do QA/Security/UX work for real" — everything else in
-that pipeline (contracts, engine, persistence, planner, projector,
-decomposition, the planning trigger) is built, tested, and now durable.
+**Extend the same pattern to `qa.verify`**, the next-lowest-risk specialist
+(read + a non-executing `process.recommend`, no real subprocess spawning
+yet). Needs: register it in `agent-worker`'s `specPaths`, add its mapping to
+`orchestration-worker`'s `resolveSpecialist`/`resolveTaskContext` (same
+`targetPath` requirement as UX), and clean its E7 list the same way
+`ux.design`'s was (check every entry for the dot-vs-underscore /
+parenthetical-pollution issues this pass found). `security.review` should
+come last — it's the one that needs actual process execution
+(`npm audit`/`composer audit`), which is qualitatively higher-risk than pure
+file reads and deserves its own focused review of the exact allowlist
+mechanism before it's wired for real.
