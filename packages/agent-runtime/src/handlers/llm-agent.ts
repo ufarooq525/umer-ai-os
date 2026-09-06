@@ -14,8 +14,15 @@ import { AgentRuntimeError } from '../errors.js';
 import { createNoopAgentEventPublisher, type AgentEventPublisher } from '../events.js';
 import type { SpecialistRunResult } from './engineering.js';
 
-const DEFAULT_MAX_ITERATIONS = 8;
-const DEFAULT_RUN_TIMEOUT_MS = 300_000;
+// Confirmed live against a real model doing genuine multi-file exploration
+// (list root -> list a subdirectory -> read a file -> list another
+// subdirectory -> ...): 8 iterations was not enough room to reach a real
+// finding, only enough to start exploring. Raised alongside the timeout,
+// since more iterations of a real model take real wall-clock time.
+const DEFAULT_MAX_ITERATIONS = 20;
+const DEFAULT_RUN_TIMEOUT_MS = 600_000;
+/** How many iterations before the cap to start nudging the model to wrap up — see buildWrapUpNudge. */
+const WRAP_UP_THRESHOLD = 2;
 
 export type LlmAgentDependencies = {
   provider: LLMProvider;
@@ -111,6 +118,27 @@ function buildGroundingHint(workPackage: WorkPackageContract, allowlist: readonl
   return (
     'You have real, sandboxed access to the project you are reviewing — do not ask a human for file paths ' +
     `or assume you lack access. ${hints.join(' ')}`
+  );
+}
+
+/**
+ * Confirmed live: a real model doing genuine multi-file exploration ran out
+ * of iterations mid-exploration with no warning, three times in a row, on
+ * the same Work Package. Raising the cap alone just delays the same
+ * failure at a bigger number — this gives the model a chance to actually
+ * converge on a final answer using what it has already found, instead of
+ * continuing to explore right up to (and past) the limit.
+ */
+function buildWrapUpNudge(remaining: number): string {
+  if (remaining <= 1) {
+    return (
+      'This is your last turn before this run ends without an answer. Stop calling tools now and give your ' +
+      'final answer based on what you have already found.'
+    );
+  }
+  return (
+    `You have ${remaining} tool-call turns left before this run ends. Wrap up soon: use any remaining turns ` +
+    'only to confirm essential details, then give your final answer without further tool calls.'
   );
 }
 
@@ -252,6 +280,11 @@ export async function runLlmAgent(
 
       for (const toolCall of toolCalls) {
         await handleToolCall(toolCall, messages, toolCallLog, signal, iteration);
+      }
+
+      const remaining = maxIterations - iteration;
+      if (remaining > 0 && remaining <= WRAP_UP_THRESHOLD) {
+        messages.push({ role: 'user', content: buildWrapUpNudge(remaining) });
       }
     }
 

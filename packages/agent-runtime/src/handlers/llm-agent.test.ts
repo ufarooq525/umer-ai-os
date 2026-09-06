@@ -357,6 +357,26 @@ describe('runLlmAgent', () => {
     expect(provider.calls).toHaveLength(3);
   });
 
+  it('nudges the model to wrap up as it approaches the iteration cap, escalating on the final turn', async () => {
+    const mandate = await loadGrowthMandate();
+    const workPackage = buildWorkPackage(mandate);
+    const provider = new ScriptedProvider([toolCallResponse('search_web', '{"query":"loop"}')]);
+
+    await expect(
+      runLlmAgent(workPackage, mandate, baseDeps(provider, { maxIterations: 3 }), 'corr-wrap-up'),
+    ).rejects.toMatchObject({ code: 'MAX_ITERATIONS_EXCEEDED' });
+
+    // `messages` is mutated in place across iterations, so every captured
+    // request shares the same final array — inspect its content and, more
+    // importantly, the order the two nudges were appended in.
+    const contents = provider.calls[provider.calls.length - 1]!.messages.map((m) => m.content);
+    const generalNudgeIndex = contents.findIndex((c) => c.includes('You have 2 tool-call turns left'));
+    const finalNudgeIndex = contents.findIndex((c) => c.includes('This is your last turn'));
+
+    expect(generalNudgeIndex).toBeGreaterThan(-1);
+    expect(finalNudgeIndex).toBeGreaterThan(generalNudgeIndex);
+  });
+
   it('wraps a provider failure in AgentRuntimeError LLM_PROVIDER_ERROR', async () => {
     const mandate = await loadGrowthMandate();
     const workPackage = buildWorkPackage(mandate);

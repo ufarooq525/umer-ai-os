@@ -53,10 +53,18 @@ export const envSchema = z.object({
   LLM_REQUEST_TIMEOUT_MS: z.coerce.number().default(60_000),
   LLM_MAX_TOKENS: z.coerce.number().default(2048),
   LLM_TEMPERATURE: z.coerce.number().default(0.2),
-  /** Agent loop safeguard: hard ceiling on model↔tool round trips per run. */
-  AGENT_LOOP_MAX_ITERATIONS: z.coerce.number().default(8),
+  /**
+   * Agent loop safeguard: hard ceiling on model↔tool round trips per run.
+   * Confirmed live against a real model doing genuine multi-file
+   * exploration: 8 was enough to start exploring, not enough to reach a
+   * finding — raised alongside the timeout below, since more iterations of
+   * a real model take real wall-clock time. The agent loop also nudges the
+   * model to wrap up as it nears this cap (see llm-agent.ts) rather than
+   * relying on a bigger number alone.
+   */
+  AGENT_LOOP_MAX_ITERATIONS: z.coerce.number().default(20),
   /** Agent loop safeguard: wall-clock budget for an entire agent run. */
-  AGENT_LOOP_TIMEOUT_MS: z.coerce.number().default(300_000),
+  AGENT_LOOP_TIMEOUT_MS: z.coerce.number().default(600_000),
 
   /**
    * CEO Command Plane: the principalId granted full authority over `ceo.command.*`
