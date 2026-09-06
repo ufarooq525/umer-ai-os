@@ -79,10 +79,11 @@ const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] =
  */
 const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
   if (!raw.taskIds || raw.taskIds.length === 0) return undefined;
+  const taskDetails = raw.taskDetails ? { taskDetails: raw.taskDetails } : {};
   if (TARGET_PATH_REQUIRED_NODE_TYPES.has(node.type as keyof typeof NODE_TYPE_SPECIALISTS)) {
-    return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath } : undefined;
+    return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath, ...taskDetails } : undefined;
   }
-  return { taskIds: raw.taskIds };
+  return { taskIds: raw.taskIds, ...taskDetails };
 };
 
 const fabric = await createMessageFabric({ producer: serviceName });

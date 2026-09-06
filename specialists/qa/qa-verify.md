@@ -114,6 +114,7 @@ Must refuse silent production deploys, rewriting Engineering unit tests as a sub
 
 - catalog.read
 - filesystem_read
+- filesystem_list
 - filesystem_write
 - process_recommend
 

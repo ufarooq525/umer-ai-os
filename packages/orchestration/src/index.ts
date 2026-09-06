@@ -55,6 +55,7 @@ export {
   type PlanningExecutionContext,
   type ResolvedSpecialist,
   type ResolvedTaskContext,
+  type ResolvedTaskDetail,
   type PlanResult,
   type PlanSkip,
 } from './ready-work-package-planner.js';

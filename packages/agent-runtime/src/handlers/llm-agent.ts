@@ -87,11 +87,16 @@ function buildGroundingHint(workPackage: WorkPackageContract, allowlist: readonl
     return undefined;
   }
   const hints: string[] = [];
+  if (allowlist.includes('filesystem_list')) {
+    hints.push(
+      'Use filesystem_list first to see what files and directories actually exist (start with no "path" ' +
+        'argument to list the project root) — do not guess file paths.',
+    );
+  }
   if (allowlist.includes('filesystem_read')) {
     hints.push(
-      'Use filesystem_read to read real files from the project (paths are relative to the project root, ' +
-        'e.g. "src/app.tsx") — start by identifying and reading the files most relevant to this task before ' +
-        'answering.',
+      'Use filesystem_read to read the real files most relevant to this task (paths are relative to the ' +
+        'project root, e.g. "src/app.tsx") before answering.',
     );
   }
   if (allowlist.includes('filesystem_write')) {

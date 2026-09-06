@@ -115,6 +115,7 @@ Must refuse silent UI code mutation, treating UX as a performance Lighthouse run
 
 - catalog.read
 - filesystem_read
+- filesystem_list
 - filesystem_write
 - process.recommend
 

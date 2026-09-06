@@ -363,7 +363,14 @@ export function createControlApiServer(state: ControlApiState) {
 
       const correlationId = `corr-plan-${projectId}-${Date.now()}`;
       const taskIdsByNodeId: Record<string, string[]> = {};
+      // The real Task's own title/description, keyed by node — carried
+      // alongside the bare id so the dispatched Specialist's prompt has
+      // actual content to act on instead of just "Tasks: <id>" (see
+      // ReadyWorkPackagePlanner's taskDetails -> metadata.annotations.instruction).
+      const taskDetailsByNodeId: Record<string, Array<{ taskId: string; title: string; description: string }>> = {};
       for (const node of ready) {
+        const title = node.title;
+        const description = `Deliver "${node.title}" for project ${projectId}, per its Work Graph decomposition.`;
         const taskEnvelope = {
           commandId: `cmd-${randomUUID()}`,
           schemaVersion: SCHEMA_VERSION,
@@ -374,8 +381,8 @@ export function createControlApiServer(state: ControlApiState) {
           payload: {
             epicId: `epic-${projectId}`,
             projectId,
-            title: node.title,
-            description: `Deliver "${node.title}" for project ${projectId}, per its Work Graph decomposition.`,
+            title,
+            description,
             acceptanceCriteria: [`${node.title} artifact accepted by human review`],
           },
           actor: { principalId: body.approver, kind: 'human' as const },
@@ -384,6 +391,7 @@ export function createControlApiServer(state: ControlApiState) {
         const result = await state.commandService.execute(taskEnvelope);
         const task = result.data as { taskId: string };
         taskIdsByNodeId[node.nodeId] = [task.taskId];
+        taskDetailsByNodeId[node.nodeId] = [{ taskId: task.taskId, title, description }];
       }
 
       // Real registered-codebase context, only when the Work Management
@@ -412,7 +420,14 @@ export function createControlApiServer(state: ControlApiState) {
         producer: 'control-api',
         correlationId,
         idempotencyKey: correlationId,
-        payload: { projectId, execId, contextHandle, taskIdsByNodeId, ...(targetPath ? { targetPath } : {}) },
+        payload: {
+          projectId,
+          execId,
+          contextHandle,
+          taskIdsByNodeId,
+          taskDetailsByNodeId,
+          ...(targetPath ? { targetPath } : {}),
+        },
       });
       await state.fabric.publishCommand(SUBJECTS.CMD_ORCHESTRATION, command);
 

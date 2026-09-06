@@ -105,6 +105,36 @@ describe('OrchestrationWorker — workgraph.plan', () => {
     expect(event.payload).toMatchObject({ projectId: 'proj-1', created: [node!.workPackageId], skipped: [] });
   });
 
+  it('threads real taskDetailsByNodeId through the default resolver into the Work Package instruction', async () => {
+    const { graphStore, commandHandler, orchestrator } = await createHarness({ withPlanning: true });
+    await graphStore.saveNode(
+      createTestWorkGraphNode({ nodeId: 'impl', type: 'Implementation', title: 'Implementation', status: 'Planned' }),
+    );
+
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.PLAN_PROJECT,
+        producer: 'control-api',
+        correlationId: 'corr-1',
+        payload: {
+          projectId: 'proj-1',
+          execId: 'EXEC-1',
+          contextHandle: 'ctx-1',
+          taskIdsByNodeId: { impl: ['task-real-1'] },
+          taskDetailsByNodeId: {
+            impl: [{ taskId: 'task-real-1', title: 'Ship the login page', description: 'Real description text.' }],
+          },
+        },
+      }),
+      ackCtx,
+    );
+
+    const node = (await graphStore.listNodes('proj-1')).find((n) => n.nodeId === 'impl');
+    const wp = await orchestrator.get(node!.workPackageId!);
+    expect(wp?.metadata.annotations?.instruction).toContain('Ship the login page');
+    expect(wp?.metadata.annotations?.instruction).toContain('Real description text.');
+  });
+
   it('skips a node with no real task ids supplied, and reports it in the published event', async () => {
     const { graphStore, commandHandler, publishEvent } = await createHarness({ withPlanning: true });
     await graphStore.saveNode(

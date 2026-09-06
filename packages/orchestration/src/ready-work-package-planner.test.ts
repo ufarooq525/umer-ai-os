@@ -100,6 +100,31 @@ describe('ReadyWorkPackagePlanner', () => {
     ]);
   });
 
+  it('builds metadata.annotations.instruction from real taskDetails when the resolver supplies them', async () => {
+    const { planner, graphStore } = createTestPlanner({
+      resolveTaskContext: () => ({
+        taskIds: ['task-1'],
+        taskDetails: [{ taskId: 'task-1', title: 'Audit checkout flow', description: 'Review the checkout UX for gaps.' }],
+      }),
+    });
+    await graphStore.saveNode(createTestWorkGraphNode({ nodeId: 'requirements', status: 'Planned' }));
+
+    const result = await planner.planProject('proj-1', VALID_EXECUTION);
+
+    const instruction = result.created[0]!.metadata.annotations?.instruction;
+    expect(instruction).toContain('Audit checkout flow');
+    expect(instruction).toContain('Review the checkout UX for gaps.');
+  });
+
+  it('leaves metadata.annotations empty when the resolver supplies no taskDetails (never fabricated)', async () => {
+    const { planner, graphStore } = createTestPlanner();
+    await graphStore.saveNode(createTestWorkGraphNode({ nodeId: 'requirements', status: 'Planned' }));
+
+    const result = await planner.planProject('proj-1', VALID_EXECUTION);
+
+    expect(result.created[0]!.metadata.annotations?.instruction).toBeUndefined();
+  });
+
   it('never re-plans a node that already has a Work Package attached', async () => {
     const { planner, graphStore } = createTestPlanner();
     await graphStore.saveNode(createTestWorkGraphNode({ nodeId: 'requirements', status: 'Planned' }));

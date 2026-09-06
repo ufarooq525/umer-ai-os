@@ -113,6 +113,7 @@ Must refuse penetration testing, writing exploit PoCs, auto-fixing security issu
 
 - catalog.read
 - filesystem_read
+- filesystem_list
 - filesystem_write
 - process_run_audit
 

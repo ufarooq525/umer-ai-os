@@ -9,6 +9,7 @@ import {
   ReadyWorkPackagePlanner,
   type ResolvedSpecialist,
   type ResolvedTaskContext,
+  type ResolvedTaskDetail,
 } from './ready-work-package-planner.js';
 import type { PersistentWorkGraph } from './work-graph-store.js';
 import type { WorkGraphProjector } from './work-graph-projector.js';
@@ -18,6 +19,8 @@ export type PlanRawNodeContext = {
   taskIds?: string[];
   /** Real, resolved filesystem root for the triggering project, if its registryProjectId resolved to one — see WorkPackageContract's targetPath. */
   targetPath?: string;
+  /** The real Task(s)' own title/description, when the triggering command carried them — see ResolvedTaskContext.taskDetails. */
+  taskDetails?: ResolvedTaskDetail[];
 };
 
 /** Enables handling `workgraph.plan` commands — see PLAN_PROJECT's case in handleCommand. */
@@ -44,7 +47,9 @@ function defaultResolveTaskContext(
   _node: WorkGraphNodeContract,
   raw: PlanRawNodeContext,
 ): ResolvedTaskContext | undefined {
-  return raw.taskIds && raw.taskIds.length > 0 ? { taskIds: raw.taskIds } : undefined;
+  return raw.taskIds && raw.taskIds.length > 0
+    ? { taskIds: raw.taskIds, ...(raw.taskDetails ? { taskDetails: raw.taskDetails } : {}) }
+    : undefined;
 }
 
 export type OrchestrationWorkerOptions = {
@@ -166,6 +171,10 @@ export class OrchestrationWorker {
         const execId = String(payload.execId ?? '');
         const contextHandle = String(payload.contextHandle ?? '');
         const taskIdsByNodeId = (payload.taskIdsByNodeId ?? {}) as Record<string, string[] | undefined>;
+        const taskDetailsByNodeId = (payload.taskDetailsByNodeId ?? {}) as Record<
+          string,
+          ResolvedTaskDetail[] | undefined
+        >;
         const targetPath = payload.targetPath ? String(payload.targetPath) : undefined;
         const resolveTaskContext = this.workGraphPlanning.resolveTaskContext ?? defaultResolveTaskContext;
 
@@ -174,7 +183,11 @@ export class OrchestrationWorker {
           persistentGraph: this.workGraphPlanning.persistentGraph,
           resolveSpecialist: this.workGraphPlanning.resolveSpecialist,
           resolveTaskContext: (node) =>
-            resolveTaskContext(node, { taskIds: taskIdsByNodeId[node.nodeId], targetPath }),
+            resolveTaskContext(node, {
+              taskIds: taskIdsByNodeId[node.nodeId],
+              targetPath,
+              taskDetails: taskDetailsByNodeId[node.nodeId],
+            }),
         });
 
         const result = await planner.planProject(projectId, { execId, contextHandle, correlationId });

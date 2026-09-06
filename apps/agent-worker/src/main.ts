@@ -13,6 +13,7 @@ import { InMemoryRegistryAdapter, loadSpecFromFile } from '@umer/specialist-sdk'
 import { createArtifactStack } from '@umer/artifacts';
 import { createLLMProviderFromEnv } from '@umer/model-routing';
 import {
+  createFilesystemListTool,
   createFilesystemReadTool,
   createFilesystemWriteTool,
   createProcessRecommendTool,
@@ -34,8 +35,9 @@ const specialistsDir = join(repoRoot, 'specialists');
 // (its own mandate forbids invented content); every other specialist below runs
 // through the generic Model Routing → LLM Provider → Tool Router agent loop.
 // ux.design, qa.verify, and security.review are wired to REAL sandboxed
-// tools (filesystem_read, filesystem_write, process_recommend,
-// process_run_audit, below) rather than running ungrounded — all three can
+// tools (filesystem_read, filesystem_list, filesystem_write,
+// process_recommend, process_run_audit, below) rather than running
+// ungrounded — all three can
 // only actually inspect (or seal evidence into) a project when
 // ReadyWorkPackagePlanner resolved a real targetPath for them (see
 // WorkPackageContract.targetPath); otherwise the planner skips the node
@@ -68,6 +70,7 @@ const mandatesById = new Map(loadedSpecs.map((loaded) => [loaded.binding.special
 const toolRegistry = createToolRegistry();
 toolRegistry.register(createSearchWebTool());
 toolRegistry.register(createFilesystemReadTool());
+toolRegistry.register(createFilesystemListTool());
 toolRegistry.register(createFilesystemWriteTool());
 toolRegistry.register(createProcessRecommendTool());
 toolRegistry.register(createProcessRunAuditTool());

@@ -171,7 +171,7 @@ describe('runLlmAgent', () => {
     expect(qaResult.artifact.artifactType).toBe('TestPlanResults');
   });
 
-  it('grounds the user message with a filesystem_read/write hint when a real targetPath is present and those tools are allowlisted', async () => {
+  it('grounds the user message with filesystem_list/read/write hints when a real targetPath is present and those tools are allowlisted', async () => {
     const uxMandate = await loadMandateFromRepo('design', 'ux-design.md');
     const workPackage = buildWorkPackage(uxMandate, { targetPath: '/real/registered/project' });
     const provider = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
@@ -179,9 +179,28 @@ describe('runLlmAgent', () => {
     await runLlmAgent(workPackage, uxMandate, baseDeps(provider), 'corr-grounding');
 
     const userMessage = provider.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(userMessage?.content).toContain('filesystem_list');
     expect(userMessage?.content).toContain('filesystem_read');
     expect(userMessage?.content).toContain('filesystem_write');
     expect(userMessage?.content).toContain('do not ask a human for file paths');
+  });
+
+  it('combines a real instruction (e.g. from a real Task) with the grounding hint, not one or the other', async () => {
+    const uxMandate = await loadMandateFromRepo('design', 'ux-design.md');
+    const workPackage = buildWorkPackage(uxMandate, {
+      targetPath: '/real/registered/project',
+      metadata: {
+        labels: {},
+        annotations: { instruction: 'Task: Audit the checkout flow\nReview navigation and error states.' },
+      },
+    });
+    const provider = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
+
+    await runLlmAgent(workPackage, uxMandate, baseDeps(provider), 'corr-instruction-plus-grounding');
+
+    const userMessage = provider.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(userMessage?.content).toContain('Audit the checkout flow');
+    expect(userMessage?.content).toContain('filesystem_list');
   });
 
   it('omits the grounding hint when the Work Package has no real targetPath', async () => {

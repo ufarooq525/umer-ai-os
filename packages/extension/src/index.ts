@@ -33,6 +33,12 @@ export {
   type FilesystemWriteOutput,
 } from './tools/filesystem-write.js';
 export {
+  createFilesystemListTool,
+  type FilesystemListEntry,
+  type FilesystemListInput,
+  type FilesystemListOutput,
+} from './tools/filesystem-list.js';
+export {
   createProcessRecommendTool,
   type ProcessRecommendInput,
   type ProcessRecommendOutput,
