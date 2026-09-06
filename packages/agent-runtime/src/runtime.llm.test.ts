@@ -14,6 +14,11 @@ async function loadGrowthSpec(): Promise<string> {
   return readFile(join(root, 'specialists', 'growth', 'opportunity-research.md'), 'utf8');
 }
 
+async function loadSecurityReviewSpec(): Promise<string> {
+  const root = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
+  return readFile(join(root, 'specialists', 'security', 'security-review.md'), 'utf8');
+}
+
 describe('AgentRuntime — LLM agent path', () => {
   it('fails closed with LLM_NOT_CONFIGURED for a non-deterministic specialist when no llm deps are wired', async () => {
     const loaded = loadSpecFromString(await loadGrowthSpec());
@@ -131,5 +136,52 @@ describe('AgentRuntime — LLM agent path', () => {
     expect(result.summary).toContain('Telehealth billing automation');
     expect(result.artifact.artifactType).toBe('ResearchFinding');
     expect(result.artifact.producedBy).toBe('growth.opportunity-research');
+  });
+
+  it('does not refuse a real security.review Work Package whose id contains the specialist\'s own domain name — regression for a real live bug', async () => {
+    // Confirmed live: every security.review Work Package's id contains
+    // "security" (the Security node type's own name), which is also a
+    // keyword this mandate's own E5 non-goal text happens to use ("...
+    // auto-fixing security issues ..."). The old runtime.ts fed the raw
+    // workPackageId into the non-goal keyword check, so this permanently and
+    // unconditionally refused every single security.review dispatch.
+    const loaded = loadSpecFromString(await loadSecurityReviewSpec());
+    const workPackage = parseContract(WorkPackageContractSchema, {
+      id: 'wp-hdr',
+      schemaVersion: SCHEMA_VERSION,
+      createdAt: '2026-09-06T00:00:00.000Z',
+      updatedAt: '2026-09-06T00:00:00.000Z',
+      metadata: { labels: {}, annotations: {} },
+      kind: 'work_package',
+      workPackageId: 'wp-proj-1-security-live-test-1',
+      execId: 'EXEC-900',
+      stage: 'Security',
+      status: 'Dispatched',
+      specialistId: 'security.review',
+      specialistSpecVersion: loaded.mandate.specVersion,
+      specialistSpecHash: loaded.mandate.specHash,
+      taskIds: ['task-1'],
+      capabilityIds: loaded.mandate.contract.capabilityIds,
+      contextHandle: 'ctx-1',
+      toolAllowlist: loaded.mandate.contract.toolAllowlist,
+      resourceEnvelope: { parallelism: 1 },
+      attempt: 1,
+    });
+
+    const provider: LLMProvider = {
+      providerId: 'fake',
+      async chat(): Promise<ChatResponse> {
+        return { message: { role: 'assistant', content: 'No issues found.' }, finishReason: 'stop' };
+      },
+    };
+
+    const runtime = createAgentRuntime({
+      resolveMandate: async (id) =>
+        id === loaded.binding.specialistId ? { mandate: loaded.mandate, binding: loaded.binding } : undefined,
+      llm: { provider, toolRegistry: createToolRegistry(), toolRouter: createToolRouter({ registry: createToolRegistry() }) },
+    });
+
+    const result = await runtime.execute({ workPackage }, 'corr-security-regression');
+    expect(result.summary).toContain('No issues found');
   });
 });

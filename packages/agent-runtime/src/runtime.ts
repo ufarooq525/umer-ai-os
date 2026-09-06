@@ -110,10 +110,18 @@ export class AgentRuntime {
 
     const toolName =
       workPackage.toolAllowlist[0] ?? resolved.mandate.contract.toolAllowlist[0];
-    const refusal = evaluateRefusal(resolved.mandate, {
-      action: `execute work package ${workPackage.workPackageId}`,
-      toolName,
-    });
+    // No `action` here — deliberately: a synthetic string built from the
+    // Work Package's own id/stage is an opaque identifier, not a real
+    // description of what's being requested, and checking it against the
+    // mandate's own non-goal keywords risks a false refusal from incidental
+    // vocabulary overlap alone (confirmed live: every security.review Work
+    // Package's id contains "security" — the node type's own name, and also
+    // a keyword in that mandate's own non-goals — an unconditional, always-
+    // on false refusal with no relationship to what was actually asked).
+    // The specialist's non-goals are still surfaced to the model itself via
+    // buildSystemPrompt, where real semantic judgment about a real
+    // instruction belongs. The toolName-vs-allowlist check below still runs.
+    const refusal = evaluateRefusal(resolved.mandate, { toolName });
     if (refusal.refused) {
       throw new AgentRuntimeError('MANDATE_REFUSED', refusal.reason ?? 'mandate refused');
     }
