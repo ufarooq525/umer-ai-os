@@ -134,6 +134,15 @@ describe('runLlmAgent', () => {
     expect(names).toContain('agent.tool.started');
     expect(names).toContain('agent.tool.completed');
     expect(names).toContain('agent.decision');
+
+    // The run finishing is not independent verification that each task's
+    // acceptance criterion was actually met — that's what the human Gate
+    // review is for. Never claim VERIFIED (or an unresolvable evidenceRef)
+    // for a self-reported LLM run.
+    for (const criterion of result.artifact.acceptanceCriteriaMet) {
+      expect(criterion.status).toBe('N_A');
+      expect(criterion.evidenceRef).toBeUndefined();
+    }
   });
 
   it('supports multiple tool round trips before a final answer (model → tool → model → tool → model → final)', async () => {

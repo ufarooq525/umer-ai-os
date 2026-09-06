@@ -305,10 +305,16 @@ export async function runLlmAgent(
       producedBy: mandate.contract.specialistId,
       producedFor: workPackage.execId,
       acceptanceStatus: 'submitted',
+      // 'N_A', not 'VERIFIED': the agent's own run completing is not
+      // independent verification that each task's criterion was actually
+      // met, and `mem://runs/<id>` here was never a real, resolvable memory
+      // reference — nothing writes to it (see engineering.ts's handler doc
+      // comment for the sibling fabrication this replaced). The real
+      // evidence is the run's own toolCallsSummary/summary text above; a
+      // human reviewer at the Gate is the actual verification step.
       acceptanceCriteriaMet: workPackage.taskIds.map((taskId) => ({
         criterion: `Task ${taskId} delivery evidence`,
-        status: 'VERIFIED' as const,
-        evidenceRef: `mem://runs/${workPackage.workPackageId}`,
+        status: 'N_A' as const,
       })),
       sourceTaskId: workPackage.taskIds[0],
       contentRef: `memory://artifacts/${artifactId}`,

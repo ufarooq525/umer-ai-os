@@ -185,8 +185,8 @@ in-memory `Map`s).
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
 | Phase 3 — Product & Architecture | ~0% | ~15% | The graph's Architecture/Product/UX nodes are real and correctly gated by real dependency edges (Architecture and UX both required before Implementation is Ready). No specialist yet actually produces a Product/Architecture artifact for these nodes — the graph structure is real, the content-producing work behind each node is not yet connected. |
-| Phase 4 — Software Factory | ~30% | ~30% | Not re-audited this pass. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~65%** | The Work Graph engine, persistence, planner, projector, AND a real CEO-triggered planning path (`POST /v1/work-graph/:projectId/plan`, real Task creation, real dispatch) are all built, wired cross-process, and tested end-to-end. The remaining gap is breadth, not plumbing: only `Implementation` nodes map to a Specialist agent-worker can actually execute. |
+| Phase 4 — Software Factory | ~30% | **~15%** | Confirmed by reading the actual handler code (not just its mandate doc) that `eng.app-delivery` — the one Engineering specialist wired for real dispatch — produces zero real code today: `runEngineeringApplicationDelivery` never scoped, diffed, or applied anything (see the fabrication fix below); `WorkPackageContractSchema` has no field to carry a change-set even if one existed. The 30% figure was based on the mandate's prose, not verified against the code behind it. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~65%** | The Work Graph engine, persistence, planner, projector, AND a real CEO-triggered planning path (`POST /v1/work-graph/:projectId/plan`, real Task creation, real dispatch) are all built, wired cross-process, and tested end-to-end. The remaining gap is breadth, not plumbing: only `Implementation` nodes map to a Specialist agent-worker can actually execute, and that Specialist itself does no real code work yet (see Phase 4). |
 | Phase 6 — Autonomous Operations | ~7% | ~12% | `WorkGraphProjector` makes Work Package status changes visible on the graph automatically. The plan route still requires a named human `approver` per invocation — genuinely CEO-triggered, not yet autonomous — which is the correct conservative default until this path has a track record. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
@@ -270,23 +270,84 @@ has a genuine, invokable end-to-end path, not just tested library code:
   `packages/orchestration` is now at 81 tests (up from 77); `control-api` at
   115 (up from 108).
 
+## Critical fabrication bug found and fixed (2026-09-06, third pass)
+
+While investigating "register more Specialists" (the milestone named below
+in the prior version of this file), inspecting the REAL handler code behind
+`eng.app-delivery` — not just its `.md` mandate — turned up a serious,
+pre-existing fabrication: `runEngineeringApplicationDelivery`
+(`packages/agent-runtime/src/handlers/engineering.ts`) unconditionally
+marked every task's acceptance criterion `VERIFIED` with an `evidenceRef`
+of `mem://runs/<workPackageId>` — a URI nothing in the codebase ever writes
+to — regardless of whether any real work happened. `WorkPackageContractSchema`
+has no change-set/target-files field at all, so this handler could never
+have actually scoped, diffed, or applied anything; it was a placeholder from
+milestone M6 that fabricated a "verified, completed delivery" for work that
+never occurred. The exact same pattern existed in `runLlmAgent`
+(`handlers/llm-agent.ts`), used by every other specialist — an LLM
+self-reporting its own run as `VERIFIED` evidence, with the same
+unresolvable `mem://runs/` reference.
+
+**Why this matters more than an ordinary bug**: this session's Work Graph +
+planner + plan-trigger milestones are the first thing that makes
+`eng.app-delivery` genuinely, repeatedly reachable from a CEO-initiated
+action — before this, almost nothing in the codebase dispatched real Work
+Packages through it. Shipping the planning trigger without this fix would
+have meant every CEO-triggered "plan" could produce a Gate showing "delivery
+completed, criteria verified" for a task where literally zero code was
+written or checked.
+
+**Fix**: both handlers now report `N_A` (not independently verified) with
+no evidence reference, and `eng.app-delivery`'s summary says "needs manual
+scoping" instead of "completed" — matching what its own mandate says should
+happen for a missing change-set. `ArtifactEngine.seal()` still moves the
+artifact to `acceptanceStatus: 'submitted'` (unchanged, and correct — a
+Gate should still open so a human can see the honest "nothing to review yet"
+state), but no criterion claims verification that didn't happen. Confirmed
+no other code decides anything based on `VERIFIED` specifically (it's
+schema-validated, not used for auto-approval anywhere) — nothing else broke.
+4 new tests in `engineering.test.ts`, 1 new assertion in `llm-agent.test.ts`;
+`packages/agent-runtime` is at 35 tests.
+
+## Corrected understanding: what "register more Specialists" actually requires
+
+The other specialist mandates (`qa.verify`, `security.review`, `ux.design`,
+`pm.intake`) all declare a Context Contract requiring `project_id, goal,
+absolute_path, acceptance_criteria` — `absolute_path` being a real
+filesystem path to a **registered catalog codebase**
+(`projects/catalog.json`, owned by `@umer/registry`), the same system the
+separate audit-pipeline intake flow operates on. A generic Work Graph
+Project (`ProjectContract`) is a different notion of "project" and is not
+guaranteed to have one (it MAY reference one via `registryProjectId` — see
+the doc comment on `ProjectContractSchema`). Wiring these specialists into
+`ReadyWorkPackagePlanner` today, for a Work Graph project with no such link,
+would force a choice between skipping the node (correct, but no better than
+today) or inventing an `absolute_path` / letting an LLM run ungrounded
+(fabrication of exactly the kind this file exists to catch) — so this
+milestone did not do either. There is also nowhere on
+`WorkPackageContractSchema` to carry a resolved `absolute_path` even if one
+existed, and `orchestration-worker` (where `resolveSpecialist` runs) has no
+access to `@umer/registry`'s catalog or the Work Management `ProjectStore`
+today — both live only in `control-api`'s process. Registering more
+Specialists for real, grounded Work Graph dispatch is real work spanning a
+contract change and cross-process context threading, not a quick
+`specPaths` edit — scope it as its own milestone rather than rushing it.
+
 ## Next highest-value milestone
 
-**Register more Specialists for real dispatch.** The planning path is now
-completely real and wired end-to-end, but only `Implementation` nodes can
-actually be planned into an executable Work Package, because
-`apps/agent-worker` only registers `eng.app-delivery` (and
-`growth.opportunity-research`, which doesn't fit this pipeline) for
-dispatch — the other specialist `.md` files under `specialists/` exist but
-aren't loaded by any running worker. Wiring `qa.verify`, `security.review`,
-`design.ux-design`, etc. into `apps/agent-worker`'s `specPaths` (and giving
-`OrchestrationWorker`'s `resolveSpecialist` the matching node-type mapping)
-would let a decomposed project's QA/Security/UX nodes actually plan and
-execute, not just sit correctly-skipped.
+Two real options, roughly equal value:
 
-After that, unchanged from the prior milestone: **persist the Runtime
-Truth** for the stores that are still in-memory (Work Package summaries,
-Gate Wait records, Agent Run read model, Agent Registry, Task/Project
-stores) — the Work Graph is now the second MySQL-backed domain after
-Opportunity Intelligence, but everything else listed here still resets on
-restart.
+1. **Thread real registered-project context into planning**, so
+   `qa.verify`/`security.review`/`ux.design` can be safely wired for the
+   (real, legitimate) case where a Work Graph Project's `registryProjectId`
+   points at an actual catalog codebase — skipping cleanly, as today, when
+   it doesn't. Needs: a `WorkPackageContract` field (or a resolvable
+   `contextHandle`) to actually carry `absolute_path`/target scope, and
+   `orchestration-worker` gaining read access to `@umer/registry`'s catalog
+   (or control-api resolving it and passing it through the `workgraph.plan`
+   command, the same pattern already used for real Task ids).
+2. **Persist the Runtime Truth** for the stores still in-memory (Work
+   Package summaries, Gate Wait records, Agent Run read model, Agent
+   Registry, Task/Project stores) — the Work Graph is now the second
+   MySQL-backed domain after Opportunity Intelligence, but everything else
+   listed here still resets on restart.
