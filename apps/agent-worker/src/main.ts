@@ -14,6 +14,7 @@ import { createArtifactStack } from '@umer/artifacts';
 import { createLLMProviderFromEnv } from '@umer/model-routing';
 import {
   createFilesystemReadTool,
+  createFilesystemWriteTool,
   createProcessRecommendTool,
   createSearchWebTool,
   createToolRegistry,
@@ -32,11 +33,14 @@ const specialistsDir = join(repoRoot, 'specialists');
 // (its own mandate forbids invented content); every other specialist below runs
 // through the generic Model Routing → LLM Provider → Tool Router agent loop.
 // ux.design and qa.verify are wired to REAL sandboxed tools (filesystem_read,
-// process_recommend, below) rather than running ungrounded — both can only
-// actually inspect a project when ReadyWorkPackagePlanner resolved a real
-// targetPath for them (see WorkPackageContract.targetPath); otherwise the
-// planner skips the node rather than dispatch a specialist with nothing real
-// to read. process_recommend never executes anything itself — it only
+// filesystem_write, process_recommend, below) rather than running ungrounded
+// — both can only actually inspect (or seal evidence into) a project when
+// ReadyWorkPackagePlanner resolved a real targetPath for them (see
+// WorkPackageContract.targetPath); otherwise the planner skips the node
+// rather than dispatch a specialist with nothing real to read. filesystem_write
+// confines each specialist to its own .umer/<slug>/ evidence subtree (derived
+// from its specialistId, e.g. ux.design -> .umer/ux/) — it can never touch
+// product code. process_recommend never executes anything itself — it only
 // classifies a proposed command against a fixed allowlist, matching
 // qa.verify's Advise authority class.
 const specPaths = [
@@ -56,6 +60,7 @@ const mandatesById = new Map(loadedSpecs.map((loaded) => [loaded.binding.special
 const toolRegistry = createToolRegistry();
 toolRegistry.register(createSearchWebTool());
 toolRegistry.register(createFilesystemReadTool());
+toolRegistry.register(createFilesystemWriteTool());
 toolRegistry.register(createProcessRecommendTool());
 const toolRouter = createToolRouter({ registry: toolRegistry });
 const llmProvider = createLLMProviderFromEnv({ env });

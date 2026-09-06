@@ -208,10 +208,10 @@ Postgres as the primary store.
 | V1 Foundation | 100% | 100% | Confirmed. |
 | Phase 1 — Commercial Engine | ~35% | ~35% | Not re-audited this pass; no evidence to revise. |
 | Phase 2 — Requirements Intake | ~10% | ~20% | `decomposeRequirementIntoWorkGraph` now turns a project into a real, persisted Requirements→...→Operations graph. Still missing: a `RequestContract`-driven trigger that calls it automatically from the existing `/v1/intake` flow (today it's a standalone route, `POST /v1/work-graph/:projectId/decompose`, called on demand). |
-| Phase 3 — Product & Architecture | ~0% | **~22%** | The graph's Architecture/Product/UX/QA nodes are real and correctly gated by real dependency edges. `ux.design` and now `qa.verify` can genuinely execute against a real registered codebase's files — Product/Architecture themselves still have no dispatchable Specialist at all. |
+| Phase 3 — Product & Architecture | ~0% | **~26%** | The graph's Architecture/Product/UX/QA nodes are real and correctly gated by real dependency edges. `ux.design` and `qa.verify` can genuinely execute against a real registered codebase's files, and — new this pass — can seal real findings to disk under their own sandboxed `.umer/<slug>/` evidence subtree rather than only returning a summary string. Product/Architecture themselves still have no dispatchable Specialist at all. |
 | Phase 4 — Software Factory | ~30% | ~15% | Unchanged: `eng.app-delivery` still produces zero real code (no change-set field exists on the contract for it to act on). This phase is specifically Engineering delivery, not UX/QA — the `targetPath`/tool-sandboxing work benefits Phase 3/6, not this one directly. |
-| Phase 5 — Delivery & Work Graph | ~20% | **~70%** | Everything from the prior estimate, plus: three Specialists (`Implementation`, `UX`, `QA`) now map to real, dispatchable work, and the planner/projector/context-resolution machinery has proven it generalizes across two different `targetPath`-requiring node types with zero engine changes — only app-layer policy wiring, exactly as designed. |
-| Phase 6 — Autonomous Operations | ~7% | **~18%** | `qa.verify` is now the second Specialist that can produce a finding grounded in a real file it actually read, plus a non-executing `process_recommend` tool for surfacing "run this" findings without ever running anything itself — still not real automated verification (nothing executes the recommended command), but a further step past self-reported LLM guesses. The plan route still requires a named human `approver` per invocation, which remains correct. |
+| Phase 5 — Delivery & Work Graph | ~20% | **~70%** | Unchanged this pass — `filesystem_write` needed no new orchestration/planner wiring at all (it derives its sandbox from `specialistId`, already present on every tool context), which is itself further evidence the mechanism/policy split holds. |
+| Phase 6 — Autonomous Operations | ~7% | **~20%** | `ux.design` and `qa.verify` can now seal real evidence files, closing the gap between what their mandates promise ("seal findings under `.umer/ux/`" / "`.umer/qa/`") and what the code actually does — still no end-to-end run has exercised this against a live LLM provider (only unit-tested in isolation), and `process_recommend` still never executes anything itself. The plan route still requires a named human `approver` per invocation, which remains correct. |
 | Phase 7 — Autonomous Company | ~10% | ~10% | Not re-audited this pass. |
 
 ## This milestone (2026-09-06)
@@ -598,19 +598,63 @@ the recommended command. `security.review` remains unregistered; it's the
 one that genuinely needs subprocess execution and deserves its own focused
 review before it's wired.
 
+## This milestone (2026-09-06, ninth pass): Specialists can seal real evidence to disk
+
+Closed the gap the eighth pass flagged: `ux.design` and `qa.verify` can now
+actually write their findings under a real, sandboxed `.umer/<slug>/`
+evidence subtree instead of only returning a summary string on the
+Artifact — the last missing piece of what both mandates already promised
+("seal findings under `.umer/ux/<runId>/`" / "seal evidence under
+`.umer/qa/`").
+
+- **New tool** (`packages/extension/src/tools/filesystem-write.ts`,
+  `filesystem_write`): writes one text file under the calling specialist's
+  own `.umer/<slug>/` evidence subtree inside its Work Package's real
+  `targetPath`. `<slug>` is derived generically from the specialistId's
+  first dot-segment (`ux.design` → `ux`, `qa.verify` → `qa`) — never chosen
+  by the model, so one specialist's evidence subtree is structurally
+  unreachable to another, and product code outside `.umer/` is unreachable
+  to any of them. Containment is checked with `realpath()` after every
+  directory-creating step (an intermediate symlinked directory, or the
+  target file itself being a symlink, are both caught before the write),
+  the same before/after-symlink-resolution pattern `filesystem_read` uses.
+  Also enforces a 2MB single-write cap and rejects writing onto an existing
+  directory. 13 tests, including a symlinked-evidence-root escape test that
+  skips gracefully on this Windows environment's unprivileged-symlink
+  limitation (same accommodation as `filesystem-read.test.ts`).
+- **Mandate correction**: both `ux-design.md`'s `filesystem.write.umer_ux`
+  and `qa-verify.md`'s `filesystem.write.umer_qa` — each a distinct dotted,
+  per-specialist tool name — are replaced with the single bare
+  `filesystem_write`, since containment is now enforced by the tool
+  deriving its own subtree from context, not by registering a differently
+  named tool per specialist.
+- **Registration**: `filesystem_write` registered in `agent-worker`'s tool
+  registry alongside `filesystem_read` and `process_recommend`. No
+  orchestration-worker or control-api changes needed — deriving the subtree
+  from `specialistId` (already present on every `ToolExecutionContext`)
+  needed no new context field and no new app-layer policy wiring, unlike
+  `targetPath` itself.
+- **Tests**: 13 new in `filesystem-write.test.ts`. `packages/extension`: 41
+  tests (was 28). No other package's test count changed — `llm-agent.ts`
+  needed no changes since `targetPath` was already threaded through to every
+  tool call, including this new one.
+
+**What this does NOT yet do**: nothing in this codebase actually calls
+`filesystem_write` yet outside of its own unit tests — the pilot proved the
+sandbox is safe to grant, but no end-to-end run has driven an LLM through
+"read via `filesystem_read`, then seal a real `FINDINGS.md` via
+`filesystem_write`" against a live provider. `security.review` remains
+unregistered.
+
 ## Next highest-value milestone
 
-Two viable directions, roughly comparable value:
-
-1. **A real `filesystem.write.umer_*` tool**, scoped the same way
-   `filesystem_read` is (sandboxed to `targetPath`, but additionally
-   confined to writing only under a fixed `.umer/<department>/` subtree so
-   a Specialist can never touch product code) — this is what would let
-   `ux.design` and `qa.verify` actually seal evidence to disk instead of
-   only returning a summary string, and is a prerequisite either way.
-2. **`security.review`**, the last of the three specialists flagged in this
-   pass's scope — but it genuinely needs process execution
-   (`npm audit`/`composer audit`), which is qualitatively higher-risk than
-   pure file reads and deserves its own focused review of the exact
-   allowlist/sandboxing mechanism before it's wired for real, rather than
-   being treated as more mechanical repetition of the read-only pattern.
+**`security.review`** is now the only one of the three specialists flagged
+in the seventh pass's scope still unregistered, and the only remaining
+piece of "next steps" left over from that pass. It genuinely needs process
+execution (`npm audit`/`composer audit`), which is qualitatively
+higher-risk than pure file reads (`filesystem_read`, now `filesystem_write`,
+both non-executing) and deserves its own focused review of the exact
+allowlist/sandboxing mechanism — a fixed, non-shell-interpreted argv rather
+than a free-text command string like `process_recommend` accepts, and a
+real allowlist of resolvable binaries — before it's wired for real, rather
+than being treated as mechanical repetition of the read-only pattern.

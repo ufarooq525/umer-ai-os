@@ -114,7 +114,7 @@ Must refuse silent production deploys, rewriting Engineering unit tests as a sub
 
 - catalog.read
 - filesystem_read
-- filesystem.write.umer_qa
+- filesystem_write
 - process_recommend
 
 ## E8 — Context Contract

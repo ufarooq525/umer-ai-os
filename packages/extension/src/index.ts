@@ -28,6 +28,11 @@ export {
   type FilesystemReadOutput,
 } from './tools/filesystem-read.js';
 export {
+  createFilesystemWriteTool,
+  type FilesystemWriteInput,
+  type FilesystemWriteOutput,
+} from './tools/filesystem-write.js';
+export {
   createProcessRecommendTool,
   type ProcessRecommendInput,
   type ProcessRecommendOutput,

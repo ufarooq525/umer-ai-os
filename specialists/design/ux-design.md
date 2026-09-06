@@ -115,7 +115,7 @@ Must refuse silent UI code mutation, treating UX as a performance Lighthouse run
 
 - catalog.read
 - filesystem_read
-- filesystem.write.umer_ux
+- filesystem_write
 - process.recommend
 
 ## E8 — Context Contract
