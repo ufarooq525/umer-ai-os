@@ -8,6 +8,7 @@ export type { ContractsVersion, SchemaVersion } from './version.js';
 
 export * from './common/index.js';
 export * from './requests/index.js';
+export * from './requirements/index.js';
 export * from './work-packages/index.js';
 export * from './specialists/index.js';
 export * from './agents/index.js';
