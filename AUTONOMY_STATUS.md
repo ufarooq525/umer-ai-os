@@ -58,7 +58,7 @@ The system must never fabricate agents, projects, tasks, Work Packages, opportun
 5. Commercial intelligence does not yet form a complete automated sales pipeline through outreach execution, response handling, proposal, close, project creation, and revenue attribution.
 6. Customer support/success, finance/revenue operations, learning/feedback, and closed-loop market iteration are incomplete.
 7. Production durability policy still needs to distinguish development fallback from production truth; MySQL-unavailable fallback must not silently imply durable company state.
-8. Current CI on `main` is failing during workspace typecheck: `packages/db/src/index.ts(1,25): Cannot find module '@umer/config' or its corresponding type declarations.`
+8. M0 CI verification is still pending after fixing the workspace build ordering issue. The root typecheck now explicitly builds `@umer/config` before `@umer/contracts`, resolving the observed `@umer/db → @umer/config` declaration-output failure path.
 9. Older audit/intake flows remain separate from the generic runtime and must not be presented as real autonomous Agent Runtime execution.
 10. The Command Center needs richer owner/project/task/evidence/next-action linkage so the CEO can understand company state without inspecting technical runtime pages.
 
@@ -72,7 +72,7 @@ The system must never fabricate agents, projects, tasks, Work Packages, opportun
 
 **Goal:** make `main` typecheck, lint, test, and build cleanly.
 
-- Fix the `@umer/db → @umer/config` workspace typecheck/build dependency-order/output issue.
+- Fix the `@umer/db → @umer/config` workspace typecheck/build dependency-order/output issue. **Implemented: root typecheck now builds `@umer/config` before dependent workspace checks. CI verification pending.**
 - Run/fix root typecheck.
 - Run/fix lint.
 - Run/fix unit/integration tests.
