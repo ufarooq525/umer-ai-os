@@ -940,19 +940,75 @@ gap no unit test in this codebase had caught, because every existing test
 before this arc used either an in-memory store or a scripted `LLMProvider`
 — never both real infrastructure and a real model at once.
 
+## This milestone (2026-09-07, fifteenth pass): all three specialists confirmed on two more real projects — two more real bugs found
+
+Per the owner's direction, `erp_web_dashboard` live-testing stopped; this
+pass ran the full `ux.design`/`qa.verify`/`security.review` matrix against
+two projects the owner actually wants worked on: `school-app` (a real,
+substantial Laravel + separate React `frontend-spa` app) and
+`umer-portfolio-research` — a real local Laravel CMS checkout found
+completely unregistered in the catalog and added as its own entry
+(`c9836f8`) rather than assumed to be the same project as the existing,
+explicitly-remote-only `umer-portfolio` entry.
+
+**5 of 6 runs completed cleanly** with real, specific, sealed findings —
+`ux.design` and `qa.verify` on both projects, plus `security.review` on
+`umer-portfolio-research` (found real, uncomfortable facts: `APP_DEBUG=true`
+and empty DB/mail credentials in a real `.env` file). Two more real bugs
+surfaced and fixed along the way, both — like every bug this whole arc has
+found — invisible to any test that doesn't exercise real infrastructure
+end to end:
+
+- **`fix(orchestration)` `5424ef2`**: the first real retry-with-redispatch
+  against a Work Package that originated from an actual Work Graph node
+  (school-app's first `ux.design` attempt, which needed a retry) threw
+  `Illegal Work Graph node transition: InProgress → Ready` — `onRetried()`
+  tried a transition edge that doesn't exist in the node's own state
+  machine (only `InProgress → Failed → Ready`, two hops, not one). Worse,
+  `OrchestrationWorker`'s event subscription didn't catch that throw
+  either, so the same event got redelivered by JetStream up to 5 times,
+  identically failing every time, before landing in the DLQ — the Work
+  Package's own status legitimately reached `Failed`, but the retry itself
+  never actually happened. No existing test had ever attached a real
+  `WorkGraphProjector` to a retry scenario, so nothing caught it until a
+  real one occurred.
+- **`fix(agent-runtime)` `03bfd97`**: `qa.verify` against
+  `umer-portfolio-research` "completed" with a summary of just "Agent run
+  completed for `<id>`" — zero real findings. The real event log showed
+  `finishReason: "length"`: the model (a real reasoning model, qwen3-8b)
+  ran out of its 2048-token output budget mid-generation, almost certainly
+  because its own hidden reasoning consumed most of it before writing
+  anything visible. The agent loop treated any non-`tool_calls` finish
+  reason as a valid final answer, so an empty, truncated response fell
+  straight through to the generic fallback text — fabricating the
+  appearance of a real conclusion the model never reached. Now a real
+  failure (`RESPONSE_TRUNCATED`) that retries instead. `LLM_MAX_TOKENS`
+  also raised 2048 → 4096.
+
+**The one non-code finding**: `school-app`'s `security.review` run hit a
+genuine LM Studio config limit — the 8192-token context window filled up
+after reading `.env`/`composer.json`/a helpers file plus two audit calls,
+causing an outright HTTP 400 on the first attempt. This isn't something to
+fix in this codebase; it's a real local-model sizing limitation the owner
+would need to address in LM Studio's own settings if they want
+`security.review` to reliably finish on larger, file-heavy real codebases.
+
 ## Next highest-value milestone
 
-`ux.design` is now proven end to end against a real project and a real
-model. The natural next step is breadth, not depth: run the same
-plan → dispatch → explore → seal cycle for `qa.verify` and
-`security.review` (both already registered, sandboxed, and gated on
-`targetPath` exactly like `ux.design` — nothing new to build, just the same
-kind of live confirmation this arc just finished for UX) to check whether
-each specialist's own mandate/tools ground a real model the same way, or
-surface their own specialist-specific gaps the same way this arc found
-`ux.design`'s. Also worth a real decision (not urgent, but real): the
-Requirements → Product → Architecture stages of the standard Work Graph
-decomposition still have no dispatchable Specialist at all, so a project
-decomposed the "official" way can never actually reach its `UX`/`QA`/
-`Security` nodes without the kind of manual seeding this arc's live tests
-used to bypass that gap.
+Both of this pass's fixes have now been live-retested and confirmed
+working (the retry-with-redispatch scenario completed cleanly on retest;
+`qa.verify` against `umer-portfolio-research` hit `RESPONSE_TRUNCATED` on
+attempt 1 exactly as designed, then succeeded on attempt 2). The remaining
+open items are the same two flagged at the end of the fourteenth pass,
+still real and still unaddressed:
+
+1. The Requirements → Product → Architecture stages of the standard Work
+   Graph decomposition still have no dispatchable Specialist, so the
+   "official" decomposition pipeline still can't reach `UX`/`QA`/`Security`
+   nodes without the manual seeding this arc's live tests have all used to
+   bypass that gap.
+2. `security.review`'s context-window ceiling on larger codebases (see
+   above) — worth deciding whether this codebase should do anything
+   defensive on its own side (e.g. a tighter `filesystem_read` cap, or
+   summarizing rather than including full file contents) rather than
+   relying entirely on the operator raising LM Studio's own context size.
