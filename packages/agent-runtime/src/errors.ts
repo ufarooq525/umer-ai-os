@@ -9,7 +9,8 @@ export type AgentRuntimeErrorCode =
   | 'LLM_PROVIDER_ERROR'
   | 'MAX_ITERATIONS_EXCEEDED'
   | 'RUN_TIMEOUT'
-  | 'RUN_CANCELLED';
+  | 'RUN_CANCELLED'
+  | 'RESPONSE_TRUNCATED';
 
 export class AgentRuntimeError extends Error {
   readonly code: AgentRuntimeErrorCode;

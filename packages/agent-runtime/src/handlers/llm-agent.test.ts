@@ -82,6 +82,10 @@ function finalResponse(content: string): ChatResponse {
   return { message: { role: 'assistant', content }, finishReason: 'stop' };
 }
 
+function truncatedResponse(content = ''): ChatResponse {
+  return { message: { role: 'assistant', content }, finishReason: 'length' };
+}
+
 function collectEvents() {
   const log: Array<{ name: RuntimeEventName; payload: Record<string, unknown> }> = [];
   return {
@@ -344,6 +348,34 @@ describe('runLlmAgent', () => {
     expect(result.summary).toContain('reporting the gap');
     const toolCall = provider.calls[1]?.messages.find((m) => m.role === 'tool');
     expect(toolCall && 'content' in toolCall ? toolCall.content : '').toContain('upstream search provider unavailable');
+  });
+
+  it('fails closed with RESPONSE_TRUNCATED instead of fabricating a summary when the model runs out of output budget', async () => {
+    // Confirmed live against a real reasoning model: finishReason "length"
+    // with empty content (the model's hidden reasoning consumed the whole
+    // output budget before it wrote a visible answer) used to fall through
+    // to buildResult()'s generic "Agent run completed for <id>" fallback --
+    // fabricating the appearance of a real conclusion that was never
+    // actually reached.
+    const mandate = await loadGrowthMandate();
+    const workPackage = buildWorkPackage(mandate);
+    const provider = new ScriptedProvider([truncatedResponse('')]);
+
+    await expect(runLlmAgent(workPackage, mandate, baseDeps(provider), 'corr-truncated')).rejects.toMatchObject({
+      code: 'RESPONSE_TRUNCATED',
+    });
+  });
+
+  it('fails closed with RESPONSE_TRUNCATED even when the truncated response has partial text', async () => {
+    // A mid-sentence fragment is not a real answer either -- never accepted
+    // just because *some* content happens to be present.
+    const mandate = await loadGrowthMandate();
+    const workPackage = buildWorkPackage(mandate);
+    const provider = new ScriptedProvider([truncatedResponse('Telehealth billing automation looks promising bec')]);
+
+    await expect(runLlmAgent(workPackage, mandate, baseDeps(provider), 'corr-truncated-2')).rejects.toMatchObject({
+      code: 'RESPONSE_TRUNCATED',
+    });
   });
 
   it('fails closed with MAX_ITERATIONS_EXCEEDED when the model never stops requesting tools', async () => {

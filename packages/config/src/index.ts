@@ -51,7 +51,15 @@ export const envSchema = z.object({
   /** Local LM Studio does not require a key; set for hosted OpenAI-compatible providers. */
   LLM_API_KEY: z.string().optional(),
   LLM_REQUEST_TIMEOUT_MS: z.coerce.number().default(60_000),
-  LLM_MAX_TOKENS: z.coerce.number().default(2048),
+  /**
+   * Confirmed live against a real reasoning model (qwen3-8b): 2048 was too
+   * small — the model spends part of this budget on its own hidden
+   * reasoning before writing the visible answer, and a real synthesis after
+   * real exploration sometimes ran out of room entirely (finishReason
+   * "length", empty content). Raised alongside llm-agent.ts's fix to treat
+   * a truncated response as a real failure to retry, not a valid answer.
+   */
+  LLM_MAX_TOKENS: z.coerce.number().default(4096),
   LLM_TEMPERATURE: z.coerce.number().default(0.2),
   /**
    * Agent loop safeguard: hard ceiling on model↔tool round trips per run.

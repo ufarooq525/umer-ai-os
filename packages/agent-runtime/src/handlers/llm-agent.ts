@@ -267,6 +267,34 @@ export async function runLlmAgent(
         toolCalls: response.message.toolCalls,
       });
 
+      // Confirmed live against a real reasoning model (qwen3-8b): `length`
+      // means the provider's own output-token budget ran out mid-generation
+      // -- often because the model spends most of that budget on its own
+      // hidden reasoning before ever writing the visible answer, leaving
+      // `content` empty or a mid-sentence fragment. The loop below used to
+      // treat any non-tool_calls finishReason as "the specialist's real
+      // final answer", so a truncated, empty response silently fell through
+      // to buildResult()'s "Agent run completed for <id>" placeholder --
+      // fabricating the appearance of a real conclusion the model never
+      // actually reached. Same reasoning for content_filter: a provider
+      // refusal/redaction is not a real answer either. Both are treated as
+      // a genuine failure so the Orchestrator's retry mechanism gets a
+      // fresh attempt (a clean conversation, not more of the same budget
+      // problem) instead of a fabricated summary.
+      if (response.finishReason === 'length' || response.finishReason === 'content_filter') {
+        await events.publish('agent.decision', correlationId, {
+          ...baseEventPayload,
+          action: 'response_truncated',
+          reason: `Model response ended with finishReason "${response.finishReason}" instead of a real answer (iteration ${iteration}) — not accepted as complete.`,
+        });
+        throw new AgentRuntimeError(
+          'RESPONSE_TRUNCATED',
+          `Agent loop for ${workPackage.workPackageId} ended with finishReason "${response.finishReason}" ` +
+            `(iteration ${iteration}) instead of a complete answer — the provider's output budget likely ran out ` +
+            'mid-generation.',
+        );
+      }
+
       const toolCalls = response.message.toolCalls ?? [];
       if (response.finishReason !== 'tool_calls' || toolCalls.length === 0) {
         finalText = response.message.content;
