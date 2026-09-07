@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { createMySqlExecutor } from '@umer/db';
 import { recoverExpiredKernelTasks } from './ai-kernel-runtime';
 
+type Row = Record<string, unknown>;
+type CountRow = { count: number };
+
 const HEARTBEAT_TIMEOUT_SECONDS = Math.max(60, Number(process.env.AI_WORKER_HEARTBEAT_TIMEOUT_SECONDS ?? 180) || 180);
 
 type SupervisorAgent = {
@@ -23,8 +26,8 @@ async function event(db: ReturnType<typeof createMySqlExecutor>, input: { eventT
 export async function recordWorkerHeartbeat(input: { agentId: string; workerId: string; status?: string; lastTaskId?: string | null; metadata?: unknown }) {
   const db = createMySqlExecutor();
   const [queue, active] = await Promise.all([
-    db.execute<any[]>(`SELECT COUNT(*) AS count FROM ai_tasks WHERE status='QUEUED'`),
-    db.execute<any[]>(`SELECT COUNT(*) AS count FROM ai_task_leases WHERE status='ACTIVE' AND agent_id=?`, [input.agentId]),
+    db.execute<CountRow[]>(`SELECT COUNT(*) AS count FROM ai_tasks WHERE status='QUEUED'`),
+    db.execute<CountRow[]>(`SELECT COUNT(*) AS count FROM ai_task_leases WHERE status='ACTIVE' AND agent_id=?`, [input.agentId]),
   ]);
   await db.execute(
     `INSERT INTO ai_worker_heartbeats (heartbeat_id, agent_id, worker_id, status, queue_depth, active_tasks, last_task_id, metadata_json, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
@@ -51,10 +54,10 @@ export async function superviseWorkers() {
   }
 
   const [queue, running, leases, recentEvents] = await Promise.all([
-    db.execute<any[]>(`SELECT COUNT(*) AS count FROM ai_tasks WHERE status='QUEUED'`),
-    db.execute<any[]>(`SELECT COUNT(*) AS count FROM ai_tasks WHERE status IN ('RUNNING','ASSIGNED','WAITING','BLOCKED')`),
-    db.execute<any[]>(`SELECT COUNT(*) AS count FROM ai_task_leases WHERE status='ACTIVE'`),
-    db.execute<any[]>(`SELECT event_id, event_type, agent_id, worker_id, severity, message, occurred_at FROM ai_worker_supervisor_events ORDER BY occurred_at DESC LIMIT 25`),
+    db.execute<CountRow[]>(`SELECT COUNT(*) AS count FROM ai_tasks WHERE status='QUEUED'`),
+    db.execute<CountRow[]>(`SELECT COUNT(*) AS count FROM ai_tasks WHERE status IN ('RUNNING','ASSIGNED','WAITING','BLOCKED')`),
+    db.execute<CountRow[]>(`SELECT COUNT(*) AS count FROM ai_task_leases WHERE status='ACTIVE'`),
+    db.execute<Row[]>(`SELECT event_id, event_type, agent_id, worker_id, severity, message, occurred_at FROM ai_worker_supervisor_events ORDER BY occurred_at DESC LIMIT 25`),
   ]);
   await event(db, { eventType: 'supervisor.reconciled', severity: staleAgents.length ? 'warning' : 'info', message: `Worker supervision completed: ${recoveredTasks} task lease(s) recovered`, metadata: { recoveredTasks, staleAgents, queueDepth: Number(queue[0]?.count ?? 0) } });
 

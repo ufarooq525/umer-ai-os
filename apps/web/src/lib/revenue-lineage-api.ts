@@ -2,21 +2,22 @@ import { randomUUID } from 'node:crypto';
 import { createMySqlExecutor } from '@umer/db';
 
 type Entity = { type: string; id: string };
+type Row = Record<string, unknown>;
 
-async function addDerived(db: ReturnType<typeof createMySqlExecutor>, edges: any[], from: Entity, relation: string, to: Entity, why: unknown) {
+async function addDerived(db: ReturnType<typeof createMySqlExecutor>, edges: Row[], from: Entity, relation: string, to: Entity, why: unknown) {
   edges.push({ fromType: from.type, fromId: from.id, relation, toType: to.type, toId: to.id, why });
   await db.execute(`INSERT IGNORE INTO ai_business_lineage (lineage_id, from_type, from_id, relation, to_type, to_id, why_json, created_by_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'SYSTEM', UTC_TIMESTAMP(3))`, [randomUUID(), from.type, from.id, relation, to.type, to.id, JSON.stringify(why)]);
 }
 
 function ids(value: unknown): string[] { if (!Array.isArray(value)) return []; return value.filter(v => typeof v === 'string' || typeof v === 'number').map(String); }
-function json(value: unknown): any { if (value == null) return null; if (typeof value === 'object') return value; try { return JSON.parse(String(value)); } catch { return null; } }
+function json(value: unknown): unknown { if (value == null) return null; if (typeof value === 'object') return value; try { return JSON.parse(String(value)); } catch { return null; } }
 
 export async function getRevenueLineage(entityType: string, entityId: string) {
-  const db = createMySqlExecutor(); const edges: any[] = [];
-  const existing = await db.execute<any[]>(`SELECT lineage_id, from_type, from_id, relation, to_type, to_id, confidence, why_json, metadata_json, created_by_type, created_at FROM ai_business_lineage WHERE (from_type=? AND from_id=?) OR (to_type=? AND to_id=?) ORDER BY created_at ASC`, [entityType, entityId, entityType, entityId]);
+  const db = createMySqlExecutor(); const edges: Row[] = [];
+  const existing = await db.execute<Row[]>(`SELECT lineage_id, from_type, from_id, relation, to_type, to_id, confidence, why_json, metadata_json, created_by_type, created_at FROM ai_business_lineage WHERE (from_type=? AND from_id=?) OR (to_type=? AND to_id=?) ORDER BY created_at ASC`, [entityType, entityId, entityType, entityId]);
   existing.forEach(e => edges.push(e));
   if (entityType === 'opportunity') {
-    const rows = await db.execute<any[]>(`SELECT id, business_id, niche_id, problem_ids_json, evidence_refs_json, score_json, status, estimated_value_min, estimated_value_max, currency FROM opportunity_opportunities WHERE id=? LIMIT 1`, [entityId]);
+    const rows = await db.execute<Row[]>(`SELECT id, business_id, niche_id, problem_ids_json, evidence_refs_json, score_json, status, estimated_value_min, estimated_value_max, currency FROM opportunity_opportunities WHERE id=? LIMIT 1`, [entityId]);
     const o = rows[0]; if (o) {
       if (o.business_id) await addDerived(db, edges, { type: 'opportunity', id: entityId }, 'targets_business', { type: 'business', id: String(o.business_id) }, { source: 'opportunity_opportunities.business_id' });
       if (o.niche_id) await addDerived(db, edges, { type: 'opportunity', id: entityId }, 'belongs_to_niche', { type: 'niche', id: String(o.niche_id) }, { source: 'opportunity_opportunities.niche_id' });
@@ -24,15 +25,15 @@ export async function getRevenueLineage(entityType: string, entityId: string) {
       ids(json(o.evidence_refs_json)).forEach(id => void addDerived(db, edges, { type: 'opportunity', id: entityId }, 'supported_by', { type: 'evidence', id }, { source: 'opportunity_opportunities.evidence_refs_json' }));
     }
   } else if (entityType === 'problem') {
-    const rows = await db.execute<any[]>(`SELECT id, business_id, niche_id, run_id, evidence_refs_json FROM opportunity_problems WHERE id=? LIMIT 1`, [entityId]); const p = rows[0];
+    const rows = await db.execute<Row[]>(`SELECT id, business_id, niche_id, run_id, evidence_refs_json FROM opportunity_problems WHERE id=? LIMIT 1`, [entityId]); const p = rows[0];
     if (p) { if (p.business_id) await addDerived(db, edges, { type: 'problem', id: entityId }, 'concerns_business', { type: 'business', id: String(p.business_id) }, { source: 'opportunity_problems.business_id' }); if (p.niche_id) await addDerived(db, edges, { type: 'problem', id: entityId }, 'belongs_to_niche', { type: 'niche', id: String(p.niche_id) }, { source: 'opportunity_problems.niche_id' }); ids(json(p.evidence_refs_json)).forEach(id => void addDerived(db, edges, { type: 'problem', id: entityId }, 'supported_by', { type: 'evidence', id }, { source: 'opportunity_problems.evidence_refs_json' })); }
   } else if (entityType === 'business') {
-    const rows = await db.execute<any[]>(`SELECT id, niche_id FROM opportunity_businesses WHERE id=? LIMIT 1`, [entityId]); if (rows[0]?.niche_id) await addDerived(db, edges, { type: 'business', id: entityId }, 'belongs_to_niche', { type: 'niche', id: String(rows[0].niche_id) }, { source: 'opportunity_businesses.niche_id' });
+    const rows = await db.execute<Row[]>(`SELECT id, niche_id FROM opportunity_businesses WHERE id=? LIMIT 1`, [entityId]); if (rows[0]?.niche_id) await addDerived(db, edges, { type: 'business', id: entityId }, 'belongs_to_niche', { type: 'niche', id: String(rows[0].niche_id) }, { source: 'opportunity_businesses.niche_id' });
   } else if (entityType === 'evidence') {
-    const rows = await db.execute<any[]>(`SELECT id, supports_json FROM opportunity_evidence WHERE id=? LIMIT 1`, [entityId]); ids(json(rows[0]?.supports_json)).forEach(id => void addDerived(db, edges, { type: 'evidence', id: entityId }, 'supports', { type: 'opportunity', id }, { source: 'opportunity_evidence.supports_json' }));
+    const rows = await db.execute<Row[]>(`SELECT id, supports_json FROM opportunity_evidence WHERE id=? LIMIT 1`, [entityId]); ids(json(rows[0]?.supports_json)).forEach(id => void addDerived(db, edges, { type: 'evidence', id: entityId }, 'supports', { type: 'opportunity', id }, { source: 'opportunity_evidence.supports_json' }));
   }
-  const outcomes = await db.execute<any[]>(`SELECT outcome_id, entity_type, entity_id, outcome_type, status, amount, currency, occurred_at, metadata_json FROM ai_business_outcomes WHERE entity_id=? OR (entity_type=? AND entity_id=?) ORDER BY created_at DESC`, [entityId, entityType, entityId]);
-  const costs = await db.execute<any[]>(`SELECT COALESCE(SUM(amount),0) AS amount FROM ai_cost_events WHERE task_id=? OR project_id=?`, [entityId, entityId]);
+  const outcomes = await db.execute<Row[]>(`SELECT outcome_id, entity_type, entity_id, outcome_type, status, amount, currency, occurred_at, metadata_json FROM ai_business_outcomes WHERE entity_id=? OR (entity_type=? AND entity_id=?) ORDER BY created_at DESC`, [entityId, entityType, entityId]);
+  const costs = await db.execute<Row[]>(`SELECT COALESCE(SUM(amount),0) AS amount FROM ai_cost_events WHERE task_id=? OR project_id=?`, [entityId, entityId]);
   return { entity: { type: entityType, id: entityId }, edges, outcomes, trackedCost: Number(costs[0]?.amount ?? 0) };
 }
 

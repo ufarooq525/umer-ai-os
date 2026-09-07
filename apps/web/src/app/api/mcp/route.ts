@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { authorizeMcpToolCall, getMcpControlState } from '@/lib/mcp-control-api';
 
 export const dynamic = 'force-dynamic';

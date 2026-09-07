@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { createMySqlExecutor } from '@umer/db';
 
 export const dynamic = 'force-dynamic';

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { buildBusinessIdentity, createMySqlOpportunityPersistence } from '@umer/opportunity-intelligence';
 
 export const dynamic = 'force-dynamic';

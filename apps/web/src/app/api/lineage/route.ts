@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { addRevenueLineageEdge, getRevenueLineage, recordBusinessOutcome } from '@/lib/revenue-lineage-api';
 
 export const dynamic = 'force-dynamic';

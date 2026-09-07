@@ -96,8 +96,9 @@ export async function migrate(client: MySqlClient = createMySqlClient()): Promis
   try { await client.query('ALTER TABLE schema_migrations MODIFY checksum VARCHAR(191) NOT NULL'); } catch { /* already compatible */ }
   for (const migration of ALL_MYSQL_MIGRATIONS) {
     for (const statement of migration.statements) {
-      try { await client.query(statement); } catch (err: any) {
-        if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME', '1060', '1061'].includes(err?.code || String(err?.errno))) throw err;
+      try { await client.query(statement); } catch (err) {
+        const code = (err as { code?: string; errno?: number } | undefined)?.code ?? String((err as { errno?: number } | undefined)?.errno);
+        if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME', '1060', '1061'].includes(code)) throw err;
       }
     }
     const [rows] = await client.query<RowDataPacket[]>('SELECT id FROM schema_migrations WHERE id = ?', [migration.id]);

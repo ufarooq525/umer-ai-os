@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { createMySqlExecutor } from '@umer/db';
 
+type Row = Record<string, unknown>;
+type AgentStatusRow = { agent_id: string; status: string };
+type TaskStatusRow = { task_id: string; status: string; assigned_agent_id: string | null; priority: number; attempts: number; max_attempts: number; error_message: string | null };
+
 export type CEOControlAction = 'pause_agent' | 'resume_agent' | 'retry_task' | 'reassign_task' | 'cancel_task';
 
 type ControlInput = { action: CEOControlAction; targetId: string; agentId?: string | null; reason?: string | null };
@@ -26,7 +30,7 @@ export async function executeCEOControl(input: ControlInput) {
   const db = createMySqlExecutor();
   if (!input.targetId.trim()) throw new Error('targetId is required');
   if (input.action === 'pause_agent') {
-    const rows = await db.execute<any[]>(`SELECT agent_id, status FROM ai_agents WHERE agent_id=? LIMIT 1`, [input.targetId]);
+    const rows = await db.execute<AgentStatusRow[]>(`SELECT agent_id, status FROM ai_agents WHERE agent_id=? LIMIT 1`, [input.targetId]);
     if (!rows.length) throw new Error('Agent not found');
     const before = rows[0];
     await db.execute(`UPDATE ai_agents SET status='PAUSED', updated_at=UTC_TIMESTAMP(3), last_error=NULL WHERE agent_id=?`, [input.targetId]);
@@ -35,7 +39,7 @@ export async function executeCEOControl(input: ControlInput) {
     return after;
   }
   if (input.action === 'resume_agent') {
-    const rows = await db.execute<any[]>(`SELECT agent_id, status FROM ai_agents WHERE agent_id=? LIMIT 1`, [input.targetId]);
+    const rows = await db.execute<AgentStatusRow[]>(`SELECT agent_id, status FROM ai_agents WHERE agent_id=? LIMIT 1`, [input.targetId]);
     if (!rows.length) throw new Error('Agent not found');
     const before = rows[0];
     if (before.status !== 'PAUSED') throw new Error(`Agent is ${before.status}, not PAUSED`);
@@ -44,7 +48,7 @@ export async function executeCEOControl(input: ControlInput) {
     await audit(db, input, before, after); await event(db, 'agent', input.targetId, `CEO resumed agent ${input.targetId}`, { action: input.action, reason: input.reason ?? null });
     return after;
   }
-  const rows = await db.execute<any[]>(`SELECT task_id, status, assigned_agent_id, priority, attempts, max_attempts, error_message FROM ai_tasks WHERE task_id=? LIMIT 1`, [input.targetId]);
+  const rows = await db.execute<TaskStatusRow[]>(`SELECT task_id, status, assigned_agent_id, priority, attempts, max_attempts, error_message FROM ai_tasks WHERE task_id=? LIMIT 1`, [input.targetId]);
   if (!rows.length) throw new Error('Task not found');
   const before = rows[0];
   if (input.action === 'retry_task') {
@@ -56,13 +60,13 @@ export async function executeCEOControl(input: ControlInput) {
     await db.execute(`UPDATE ai_task_leases SET status='RELEASED', released_at=UTC_TIMESTAMP(3) WHERE task_id=? AND status='ACTIVE'`, [input.targetId]);
   } else if (input.action === 'reassign_task') {
     if (!input.agentId?.trim()) throw new Error('agentId is required for reassignment');
-    const agents = await db.execute<any[]>(`SELECT agent_id, status FROM ai_agents WHERE agent_id=? LIMIT 1`, [input.agentId]);
+    const agents = await db.execute<AgentStatusRow[]>(`SELECT agent_id, status FROM ai_agents WHERE agent_id=? LIMIT 1`, [input.agentId]);
     if (!agents.length) throw new Error('Target agent not found');
     if (agents[0].status === 'PAUSED') throw new Error('Cannot assign work to a paused agent');
     if (['COMPLETED', 'CANCELLED'].includes(before.status)) throw new Error(`Task cannot be reassigned from ${before.status}`);
     await db.execute(`UPDATE ai_tasks SET assigned_agent_id=?, status=CASE WHEN status IN ('QUEUED','ASSIGNED') THEN 'ASSIGNED' ELSE status END, updated_at=UTC_TIMESTAMP(3) WHERE task_id=?`, [input.agentId, input.targetId]);
   } else throw new Error(`Unsupported action: ${input.action}`);
-  const afterRows = await db.execute<any[]>(`SELECT task_id, status, assigned_agent_id, priority, attempts, max_attempts, error_message FROM ai_tasks WHERE task_id=? LIMIT 1`, [input.targetId]);
+  const afterRows = await db.execute<TaskStatusRow[]>(`SELECT task_id, status, assigned_agent_id, priority, attempts, max_attempts, error_message FROM ai_tasks WHERE task_id=? LIMIT 1`, [input.targetId]);
   const after = afterRows[0];
   await audit(db, input, before, after);
   await event(db, 'task', input.targetId, `CEO ${input.action.replaceAll('_', ' ')} on task ${input.targetId}`, { action: input.action, reason: input.reason ?? null, agentId: input.agentId ?? null });
@@ -72,9 +76,9 @@ export async function executeCEOControl(input: ControlInput) {
 export async function getControlState() {
   const db = createMySqlExecutor();
   const [agents, tasks, auditRows] = await Promise.all([
-    db.execute<any[]>(`SELECT agent_id, name, status, current_task, current_run_id, updated_at FROM ai_agents ORDER BY department, name`),
-    db.execute<any[]>(`SELECT task_id, title, status, assigned_agent_id, priority, attempts, max_attempts, error_message, updated_at FROM ai_tasks WHERE status NOT IN ('COMPLETED') ORDER BY updated_at DESC LIMIT 100`),
-    db.execute<any[]>(`SELECT audit_id, action, target_type, target_id, reason, before_json, after_json, occurred_at FROM ai_control_audit_events ORDER BY occurred_at DESC LIMIT 50`),
+    db.execute<Row[]>(`SELECT agent_id, name, status, current_task, current_run_id, updated_at FROM ai_agents ORDER BY department, name`),
+    db.execute<Row[]>(`SELECT task_id, title, status, assigned_agent_id, priority, attempts, max_attempts, error_message, updated_at FROM ai_tasks WHERE status NOT IN ('COMPLETED') ORDER BY updated_at DESC LIMIT 100`),
+    db.execute<Row[]>(`SELECT audit_id, action, target_type, target_id, reason, before_json, after_json, occurred_at FROM ai_control_audit_events ORDER BY occurred_at DESC LIMIT 50`),
   ]);
   return { agents, tasks, audit: auditRows };
 }

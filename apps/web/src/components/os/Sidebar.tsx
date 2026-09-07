@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { brandName, colors, fonts, radii, spacing } from '@umer/ui';
+import { brandName, colors, fonts, spacing } from '@umer/ui';
 
 type NavEntry = { href: string; label: string; icon: string; badgeKey?: 'attention' };
 type NavSection = { title: string; items: NavEntry[] };
