@@ -119,6 +119,21 @@
         "Local folder is not on this machine as of 2026-09-04 — do not apply code until the repo is present"
       ],
       "tags": ["hr", "sensitive", "internal"]
+    },
+    {
+      "projectId": "umer-portfolio-research",
+      "name": "Umer Portfolio Research",
+      "slug": "umer-portfolio-research",
+      "path": "umer-portfolio-research",
+      "status": "active",
+      "category": "digital-product",
+      "stack": ["fullstack", "laravel", "php"],
+      "defaultSpecialists": ["pm.intake", "ux.design", "eng.app-delivery", "qa.verify", "security.review"],
+      "constraints": [
+        "Real local Laravel checkout — a CMS-backed portfolio/marketing site with a public site (home/about/services/work/faq/contact) and an authenticated admin panel (testimonials, industries, projects, services, FAQs, footer, home/about content, media library)",
+        "Distinct from the existing 'umer-portfolio' catalog entry (https://umerfarooqtech.com, explicitly no local repo) — not assumed to be the same deployment target unless the owner confirms it"
+      ],
+      "tags": ["portfolio", "research", "laravel", "cms"]
     }
   ]
 }
