@@ -141,6 +141,12 @@ const worker = createOrchestrationWorker({
     resolveSpecialist: workGraphPlanningResolver,
     resolveTaskContext: workGraphTaskContextResolver,
   },
+  onAgentEventError: (event, err) => {
+    log.warn(
+      { subject: event.name, workPackageId: event.payload?.workPackageId, err: err.message },
+      'failed to process an agent.run.* event — acked anyway (see OrchestrationWorker.start() doc comment); if this recurs for the same Work Package, check it manually',
+    );
+  },
 });
 
 const health = await startHealthServer({

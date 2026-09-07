@@ -48,6 +48,16 @@ export class WorkGraphProjector {
   }
 
   async onRetried(workPackageId: string): Promise<void> {
+    // A retry is projected as two legal hops, not one: the node's own state
+    // machine has no direct InProgress -> Ready edge (NODE_TRANSITIONS in
+    // work-graph.ts), only InProgress -> Failed -> Ready -- confirmed live,
+    // where a real retry (this session's own worker.ts fix that redispatches
+    // on retry) threw "Illegal Work Graph node transition: InProgress ->
+    // Ready" every time, and — because handleAgentEvent's own event
+    // subscription never caught that throw either — caused NATS to
+    // redeliver the same evt.runtime.agent.run.failed event repeatedly
+    // until it silently landed in the DLQ, never actually retrying at all.
+    await this.project(workPackageId, 'Failed');
     await this.project(workPackageId, 'Ready');
   }
 

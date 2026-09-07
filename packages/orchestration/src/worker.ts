@@ -65,6 +65,13 @@ export type OrchestrationWorkerOptions = {
   workGraphProjector?: WorkGraphProjector;
   /** Optional: handles `workgraph.plan` commands (see WorkGraphPlanningOptions). Omitted deployments/tests just get INVALID_COMMAND for that command name, same as before this existed. */
   workGraphPlanning?: WorkGraphPlanningOptions;
+  /**
+   * Optional: called when processing one `evt.runtime.agent.run.*` event
+   * throws — the event is still acked regardless (see start()'s doc
+   * comment on why), so without this hook the failure is silent. Wire it to
+   * a real logger in production; omit only for tests that don't care.
+   */
+  onAgentEventError?: (event: EventEnvelope, err: Error) => void;
 };
 
 export class OrchestrationWorker {
@@ -73,6 +80,7 @@ export class OrchestrationWorker {
   private readonly durablePrefix: string;
   private readonly workGraphProjector?: WorkGraphProjector;
   private readonly workGraphPlanning?: WorkGraphPlanningOptions;
+  private readonly onAgentEventError?: (event: EventEnvelope, err: Error) => void;
   private subscriptions: SubscriptionHandle[] = [];
 
   constructor(options: OrchestrationWorkerOptions) {
@@ -81,6 +89,7 @@ export class OrchestrationWorker {
     this.durablePrefix = options.durablePrefix ?? 'orchestration';
     this.workGraphProjector = options.workGraphProjector;
     this.workGraphPlanning = options.workGraphPlanning;
+    this.onAgentEventError = options.onAgentEventError;
   }
 
   async start(): Promise<void> {
@@ -103,7 +112,22 @@ export class OrchestrationWorker {
         filterSubject: `${SUBJECTS.EVT_RUNTIME}.agent.run.>`,
       },
       async (event, ctx) => {
-        await this.handleAgentEvent(event);
+        try {
+          await this.handleAgentEvent(event);
+        } catch (err) {
+          // Deliberately does not rethrow: at-least-once delivery means a
+          // duplicate or out-of-order agent.run.* event is a normal
+          // occurrence, not a fault -- rethrowing left the event unacked,
+          // so JetStream redelivered the identical event on its own
+          // uncoordinated schedule (the same failure mode already fixed for
+          // AgentWorker's dispatch handler), which for a genuinely illegal
+          // state transition (confirmed live: onRetried projecting a node
+          // straight from InProgress to Ready, an edge that doesn't exist)
+          // meant redelivering something that would fail identically every
+          // time until JetStream gave up and moved it to the DLQ, having
+          // never made progress at all.
+          this.onAgentEventError?.(event, err instanceof Error ? err : new Error(String(err)));
+        }
         ctx.ack();
       },
     );

@@ -1,12 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { createCommandEnvelope, createEventEnvelope } from '@umer/message-fabric';
-import type { CommandHandler, EventHandler } from '@umer/message-fabric';
+import type { CommandHandler, EventEnvelope, EventHandler } from '@umer/message-fabric';
 import { OrchestrationWorker } from './worker.js';
 import { Orchestrator } from './orchestrator.js';
 import { InMemoryWorkPackageStore } from './store.js';
+import { InMemoryWorkGraphStore, PersistentWorkGraph } from './work-graph-store.js';
+import { WorkGraphProjector } from './work-graph-projector.js';
 import { ORCHESTRATION_COMMANDS } from './constants.js';
 import { OrchestrationError } from './errors.js';
-import { createMockClock, createTestWorkPackage } from './test-utils.js';
+import { createMockClock, createTestWorkGraphNode, createTestWorkPackage } from './test-utils.js';
 import type { EventPublisher } from './events.js';
 import type { WorkPackageDispatcher } from './dispatcher.js';
 
@@ -22,7 +24,15 @@ type Harness = {
   eventHandler: EventHandler;
 };
 
-async function createWorkerHarness(): Promise<Harness> {
+async function createWorkerHarness(
+  options: { withWorkGraphProjector?: boolean; onAgentEventError?: (event: EventEnvelope, err: Error) => void } = {},
+): Promise<
+  Harness & {
+    graphStore?: InMemoryWorkGraphStore;
+    nodeStatus?: (nodeId: string) => Promise<string | undefined>;
+    attachWorkPackageToNode?: (nodeId: string, workPackageId: string) => Promise<void>;
+  }
+> {
   const store = new InMemoryWorkPackageStore();
   const events: EventPublisher = { publish: vi.fn(async () => undefined) };
   const dispatcher: WorkPackageDispatcher = { dispatch: vi.fn(async () => undefined) };
@@ -47,13 +57,43 @@ async function createWorkerHarness(): Promise<Harness> {
     }),
   };
 
+  let graphStore: InMemoryWorkGraphStore | undefined;
+  let nodeStatus: ((nodeId: string) => Promise<string | undefined>) | undefined;
+  let attachWorkPackageToNode: ((nodeId: string, workPackageId: string) => Promise<void>) | undefined;
+  let workGraphProjector: WorkGraphProjector | undefined;
+  if (options.withWorkGraphProjector) {
+    graphStore = new InMemoryWorkGraphStore();
+    const persistentGraph = new PersistentWorkGraph(graphStore);
+    workGraphProjector = new WorkGraphProjector(persistentGraph, graphStore);
+    nodeStatus = async (nodeId: string) => {
+      const reloaded = await persistentGraph.load('proj-1');
+      return reloaded.listNodes('proj-1').find((n) => n.nodeId === nodeId)?.status;
+    };
+    attachWorkPackageToNode = async (nodeId: string, workPackageId: string) => {
+      const graph = await persistentGraph.load('proj-1');
+      await persistentGraph.attachWorkPackage(graph, 'proj-1', nodeId, workPackageId);
+    };
+  }
+
   const worker = new OrchestrationWorker({
     orchestrator,
     fabric: fabric as never,
+    workGraphProjector,
+    onAgentEventError: options.onAgentEventError,
   });
   await worker.start();
 
-  return { worker, orchestrator, dispatcher, fabric, commandHandler, eventHandler };
+  return {
+    worker,
+    orchestrator,
+    dispatcher,
+    fabric,
+    commandHandler,
+    eventHandler,
+    graphStore,
+    nodeStatus,
+    attachWorkPackageToNode,
+  };
 }
 
 const ackCtx = {
@@ -306,6 +346,66 @@ describe('OrchestrationWorker', () => {
     expect(wp?.status).toBe('Dispatched');
     expect(wp?.attempt).toBe(2);
     expect(dispatcher.dispatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a Work Package that originated from a real Work Graph node without throwing, and lands the node back at Ready', async () => {
+    // Regression test: the auto-retry test above never attaches a real
+    // WorkGraphProjector, so it never exercised onRetried() at all -- found
+    // live, where a real retry-with-redispatch against a real graph node
+    // threw "Illegal Work Graph node transition: InProgress -> Ready" every
+    // single time (see work-graph-projector.test.ts for the isolated
+    // version of this bug).
+    const onAgentEventError = vi.fn();
+    const { commandHandler, eventHandler, orchestrator, dispatcher, graphStore, nodeStatus, attachWorkPackageToNode } =
+      await createWorkerHarness({ withWorkGraphProjector: true, onAgentEventError });
+
+    await graphStore!.saveNode(createTestWorkGraphNode({ nodeId: 'ux', type: 'UX', title: 'UX', status: 'Planned' }));
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.QUEUE,
+        producer: 'control-api',
+        correlationId: 'corr-graph-retry',
+        payload: { workPackage: createTestWorkPackage({ workPackageId: 'wp-graph-1' }) },
+      }),
+      ackCtx,
+    );
+    await attachWorkPackageToNode!('ux', 'wp-graph-1');
+    await commandHandler(
+      createCommandEnvelope({
+        name: ORCHESTRATION_COMMANDS.DISPATCH,
+        producer: 'control-api',
+        correlationId: 'corr-graph-retry',
+        payload: { workPackageId: 'wp-graph-1' },
+      }),
+      ackCtx,
+    );
+    await eventHandler(
+      createEventEnvelope({
+        name: 'agent.run.started',
+        producer: 'agent-worker',
+        correlationId: 'corr-graph-retry',
+        payload: { workPackageId: 'wp-graph-1' },
+      }),
+      ackCtx,
+    );
+    expect(await nodeStatus!('ux')).toBe('InProgress');
+
+    await expect(
+      eventHandler(
+        createEventEnvelope({
+          name: 'agent.run.failed',
+          producer: 'agent-worker',
+          correlationId: 'corr-graph-retry',
+          payload: { workPackageId: 'wp-graph-1', errorMessage: 'boom' },
+        }),
+        ackCtx,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(onAgentEventError).not.toHaveBeenCalled();
+    expect((await orchestrator.get('wp-graph-1'))?.status).toBe('Dispatched');
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(2);
+    expect(await nodeStatus!('ux')).toBe('Ready');
   });
 
   it('leaves a Work Package terminally Failed (never Queued/redispatched) once max attempts are exhausted', async () => {
