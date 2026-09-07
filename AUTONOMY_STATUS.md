@@ -35,6 +35,16 @@ Canonical delivery decomposition:
 
 The planner fails closed when no executable Specialist exists. It does not invent Specialist IDs, Task IDs, evidence, or progress.
 
+### Requirements (M1 — verified end-to-end)
+
+A real request now becomes a durable, truthful Requirement and Work Graph without manual DB seeding:
+
+- `RequirementContract` (`packages/contracts/src/requirements`) captures requestId/projectId/opportunityId/customerId, problem, desired outcome, constraints, acceptance criteria, assumptions, open questions, source, and a final decision.
+- `RequirementStore` (`apps/control-api/src/requirement-store.ts`) has both an in-memory and a real MySQL-backed implementation (migration `015_requirements`, registered in `packages/db/src/index.ts`'s `ALL_MYSQL_MIGRATIONS`). `decide()` is final — a Rejected requirement cannot later become Accepted; it throws `RequirementAlreadyDecidedError` (verified by tests and returned as HTTP 409).
+- The existing intake path (`submitIntake` / `executeQaIntake` in `apps/control-api/src/state.ts`) persists a canonical Requirement for every real intake, preserving `requestId`/`opportunityId`/`customerId` when the caller supplies them (extended the existing `IntakeInstruction` contract rather than creating a parallel one) and picking the most specific real source lineage (Opportunity > Customer > Request).
+- `connectRequirementWorkGraphBridge` (`apps/control-api/src/requirement-workgraph-bridge.ts`, wired from `main.ts`) creates the canonical `Requirements` Work Graph node — with the real requirement id preserved in node metadata — the first time a project gets a Requirement, and is a no-op (attaches, does not duplicate) on every later Requirement for that same project.
+- `GET /v1/requirements`, `GET /v1/requirements/:id`, `POST /v1/requirements/:id/decide` expose this as a real CEO-visible read model + decision surface (no write path that fabricates a requirement outside of a real intake).
+
 ### Commercial intelligence
 
 The opportunity-intelligence package provides real market/business discovery, research, evidence, opportunity construction, prospect storage, contact/reachability intelligence, scoring, MySQL persistence, Google Places/website evidence adapters, scheduling, and outreach generation.
@@ -51,16 +61,16 @@ The system must never fabricate agents, projects, tasks, Work Packages, opportun
 
 ## Known missing capabilities
 
-1. The complete Product/Architecture/UX/Engineering/QA/Security/Release/Operations workforce is not yet wired as a fully executable Specialist network.
+1. The complete Product/Architecture/UX/Engineering/QA/Security/Release/Operations workforce is not yet wired as a fully executable Specialist network. Product (M2) is next.
 2. Engineering does not yet perform a complete safe repository change-set workflow through the generic runtime.
-3. Requirements intake is not yet the canonical trigger for the complete product/delivery graph.
-4. Product and Architecture do not yet have fully dispatchable Specialists connected to the official intake flow.
+3. ~~Requirements intake is not yet the canonical trigger for the complete product/delivery graph.~~ **Resolved (M1):** every real intake now persists a canonical Requirement, and the first Requirement on a project creates the real Work Graph decomposition — see "Requirements (M1)" above.
+4. Product and Architecture do not yet have fully dispatchable Specialists connected to the official intake flow. This is M2/M3.
 5. Commercial intelligence does not yet form a complete automated sales pipeline through outreach execution, response handling, proposal, close, project creation, and revenue attribution.
 6. Customer support/success, finance/revenue operations, learning/feedback, and closed-loop market iteration are incomplete.
 7. Production durability policy still needs to distinguish development fallback from production truth; MySQL-unavailable fallback must not silently imply durable company state.
-8. M0 CI verification is still pending after fixing the workspace build ordering issue. The root typecheck now explicitly builds `@umer/config` before `@umer/contracts`, resolving the observed `@umer/db → @umer/config` declaration-output failure path.
+8. **M0 verified locally (2026-09-08):** `turbo run lint`, `turbo run typecheck`, `turbo run build` (98/98 tasks), the full `vitest run` suite (860 passed / 4 skipped, 0 failed), and `helm lint` + `helm template` against `infra/k8s/charts/umer-ai-os` (Helm v3.16.3, matching CI's pin) all pass on this working tree. This session had no `gh`/GitHub API access to the (private) repo, so the actual GitHub Actions run for the commits below was not directly observed — only reproduced locally step-for-step against the same CI commands. The root cause of the prior build-order failures was that `pnpm -r run typecheck`/`test` never guaranteed a topological build of workspace dependencies (only 4 packages were manually built first, ad hoc, growing by one every time a new stale-`dist` error surfaced) even though a correctly configured `turbo.json` (`typecheck`/`lint`/`test`/`build` all `dependsOn: ["^build"]`) already existed and was simply unused; `package.json`'s `build`/`lint`/`typecheck` scripts now call `turbo run <task>` and `test` runs `turbo run build && vitest run`, so this class of bug cannot recur silently.
 9. Older audit/intake flows remain separate from the generic runtime and must not be presented as real autonomous Agent Runtime execution.
-10. The Command Center needs richer owner/project/task/evidence/next-action linkage so the CEO can understand company state without inspecting technical runtime pages.
+10. The Command Center needs richer owner/project/task/evidence/next-action linkage so the CEO can understand company state without inspecting technical runtime pages. It does not yet surface Requirements.
 
 ---
 
@@ -72,14 +82,14 @@ The system must never fabricate agents, projects, tasks, Work Packages, opportun
 
 **Goal:** make `main` typecheck, lint, test, and build cleanly.
 
-- Fix the `@umer/db → @umer/config` workspace typecheck/build dependency-order/output issue. **Implemented: root typecheck now builds `@umer/config` before dependent workspace checks. CI verification pending.**
-- Run/fix root typecheck.
-- Run/fix lint.
-- Run/fix unit/integration tests.
-- Run/fix build.
+- Fix the `@umer/db → @umer/config` workspace typecheck/build dependency-order/output issue. **Done, at the root cause:** `package.json`'s `build`/`lint`/`typecheck` now run `turbo run <task>` (which respects `turbo.json`'s existing `dependsOn: ["^build"]` and always builds a workspace dependency before checking anything that imports it) instead of a hand-maintained, ever-growing list of packages to pre-build.
+- Run/fix root typecheck. **Done — `turbo run typecheck`: 0 errors.** Fixed real bugs surfaced once dependents typechecked against fresh `dist`: `MySqlRequirementStore` was constructed with a wrapper object instead of the executor itself; `applySecurityToProject` was called with an `audit` key instead of `report`; `eng-gate.test.ts` asserted a property absent from part of a result union.
+- Run/fix lint. **Done — `turbo run lint`: 0 errors.** Fixed a real `no-explicit-any` violation in `packages/db/src/index.ts`'s migration error handler, ~40 more across `apps/web/src/lib/*.ts` (untyped raw SQL row results — replaced with real per-query row types, not blanket suppressions), and 6 `consistent-type-imports` violations in `apps/web/src/app/api/*/route.ts`.
+- Run/fix unit/integration tests. **Done — `vitest run`: 860 passed, 4 skipped, 0 failed.** Fixed two real pre-existing failures (confirmed present on `main` before this session's changes, via `git stash`): (1) `control.approval.requested` audit events never actually reached the audit trail because `createControlPlaneService` was never given an `events` publisher; (2) a Work Package accepted through a human gate never flipped its intake record's status off `'planned'`, so the record could look forever-pending despite real accepted evidence existing.
+- Run/fix build. **Done — `turbo run build`: 98/98 tasks succeed**, including the Next.js production build of `apps/web`.
 - Keep CI green after every later milestone.
 
-**Exit criterion:** CI green for typecheck + lint + test + build + Helm validation.
+**Exit criterion:** CI green for typecheck + lint + test + build + Helm validation. **Verified locally** (see "Known missing capabilities" item 8 above for exact commands and the GitHub Actions access caveat).
 
 ## M1 — Canonical Requirements Intake
 
@@ -91,7 +101,7 @@ Requirements must capture request source, requester/customer/opportunity/project
 
 Connect existing intake/control-plane/project/task systems. Do not create a parallel intake model.
 
-**Exit criterion:** one real request can enter the system and create a durable, truthful project requirement and Work Graph without manual database manipulation.
+**Exit criterion:** one real request can enter the system and create a durable, truthful project requirement and Work Graph without manual database manipulation. **Met** — see "Requirements (M1 — verified end-to-end)" above. Verified by: `apps/control-api/src/intake-requirement.test.ts` (intake → Requirement, provenance, lineage precedence), `apps/control-api/src/requirement-store.test.ts` (both store backends; decision finality), `apps/control-api/src/requirement-workgraph-bridge.test.ts` (Requirement → Work Graph node, no duplication, per-project isolation), `apps/control-api/src/requirements-route.test.ts` (HTTP read model + decide + 409-on-redecide + 404s), `packages/contracts/src/requirements/index.test.ts` (contract validation). What is still missing: no HTTP route surfaces the Work Graph's own view of a Requirements node back onto the Requirement record, and the Command Center UI does not yet render Requirements at all (tracked as gap 10 above).
 
 ## M2 — Product Specialist
 
