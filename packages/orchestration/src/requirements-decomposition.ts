@@ -14,6 +14,8 @@ export type RequirementDecompositionInput = {
   projectId: string;
   /** Prefixed onto each generated node/edge id so two decompositions never collide within the same project's graph. */
   slug?: string;
+  /** Canonical Requirement id to preserve lineage on the Requirements node. */
+  requirementId?: string;
 };
 
 export type RequirementDecomposition = {
@@ -59,13 +61,20 @@ export function decomposeRequirementIntoWorkGraph(
       schemaVersion: SCHEMA_VERSION,
       createdAt: now,
       updatedAt: now,
-      metadata: { labels: {}, annotations: {} },
+      metadata: {
+        labels: {},
+        annotations: spec.type === 'Requirements' && input.requirementId
+          ? { requirementId: input.requirementId }
+          : {},
+      },
       kind: 'work_graph_node',
       nodeId: nodeId(spec.type),
       projectId: input.projectId,
       type: spec.type,
       status: 'Planned',
-      title: spec.title,
+      title: spec.type === 'Requirements' && input.requirementId
+        ? `Requirements: ${input.requirementId}`
+        : spec.title,
     }),
   );
 
