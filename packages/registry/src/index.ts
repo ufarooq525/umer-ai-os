@@ -205,3 +205,10 @@ export type {
 } from './ux-audit.js';
 export { applyUxToProject } from './ux-apply.js';
 export type { UxApplyResult, UxApplyFileChange } from './ux-apply.js';
+
+export {
+  SpecialistRegistry,
+  SpecialistRegistryError,
+  createSpecialistRegistry,
+} from './specialist-registry.js';
+export type { SpecialistMatchQuery } from './specialist-registry.js';

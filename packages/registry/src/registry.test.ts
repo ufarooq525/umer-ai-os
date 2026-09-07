@@ -13,10 +13,10 @@ const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 
 const catalogPath = join(repoRoot, 'projects', 'catalog.json');
 
 describe('project registry', () => {
-  it('loads all eight Laragon projects', async () => {
+  it('loads all nine Laragon projects', async () => {
     const registry = await createProjectRegistry({ catalogPath });
     const projects = registry.list();
-    expect(projects).toHaveLength(8);
+    expect(projects).toHaveLength(9);
   });
 
   it('marks missing Laragon folders as not on disk', async () => {

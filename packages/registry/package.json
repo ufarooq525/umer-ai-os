@@ -20,6 +20,7 @@
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
   },
   "dependencies": {
+    "@umer/contracts": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {
