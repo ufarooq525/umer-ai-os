@@ -26,7 +26,10 @@ describe('createProcessRunAuditTool', () => {
   });
 
   afterEach(async () => {
-    await rm(root, { recursive: true, force: true });
+    // maxRetries/retryDelay: on Windows, a just-killed subprocess can hold its
+    // cwd handle open for a few milliseconds after the kill signal fires,
+    // making an immediate recursive rmdir fail with EBUSY.
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('fails closed when no targetPath is configured', async () => {
