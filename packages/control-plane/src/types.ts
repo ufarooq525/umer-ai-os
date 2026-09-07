@@ -28,6 +28,10 @@ export type RequestGateReviewInput = {
   stageTo: string;
   requiredApprovers?: string[];
   humanRequired?: boolean;
+  /** Bus/event id that triggered this gate request, preserved on the emitted events for audit lineage. */
+  triggerEventId?: string;
+  /** Bus event source that triggered this gate request (e.g. `{ kind: 'watchdog', ... }`), preserved on the emitted events for audit lineage. */
+  triggerSource?: unknown;
 };
 
 export type ResolveGateInput = {

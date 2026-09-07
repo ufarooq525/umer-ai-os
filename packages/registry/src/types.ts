@@ -63,6 +63,10 @@ export type IntakeInstruction = {
   targetFiles?: string[];
   targetModule?: string;
   proposedChanges?: EngChangeSetEntry[];
+  /** Provenance of the originating request, preserved onto the canonical Requirement this intake creates. */
+  requestId?: string;
+  opportunityId?: string;
+  customerId?: string;
 };
 
 export type IntakePlan = {

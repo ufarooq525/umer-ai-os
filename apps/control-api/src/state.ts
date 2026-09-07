@@ -56,8 +56,16 @@ export function registerQaBusShim(state: ControlApiState): void { if (state.qaBu
 
 async function persistRequirementFromIntake(state: ControlApiState, instruction: IntakeInstruction): Promise<void> {
   if (!state.requirementStore) return;
+  const source = instruction.opportunityId
+    ? { kind: 'Opportunity' as const, id: instruction.opportunityId, label: `control-api ${instruction.type} intake` }
+    : instruction.customerId
+      ? { kind: 'Customer' as const, id: instruction.customerId, label: `control-api ${instruction.type} intake` }
+      : { kind: 'Request' as const, id: instruction.requestId, label: `control-api ${instruction.type} intake` };
   await state.requirementStore.create({
+    requestId: instruction.requestId,
     projectId: instruction.projectId,
+    opportunityId: instruction.opportunityId,
+    customerId: instruction.customerId,
     title: instruction.goal.slice(0, 500),
     problem: instruction.goal,
     desiredOutcome: instruction.doneWhen ?? instruction.goal,
@@ -65,12 +73,12 @@ async function persistRequirementFromIntake(state: ControlApiState, instruction:
     acceptanceCriteria: [instruction.doneWhen ?? `Complete the requested ${instruction.type} work and provide reviewable evidence.`],
     assumptions: [],
     openQuestions: [],
-    source: { kind: 'Request', label: `control-api ${instruction.type} intake` },
+    source,
   });
 }
 
 export async function publishQaViaBus(state: ControlApiState, input: { projectId: string; goal: string; doneWhen?: string; constraints?: string[]; source: BusEventSource; correlationId?: string }): Promise<IntakeRecord> { const result = await state.bus.publishNew({ type: 'specialist.qa.requested', projectId: input.projectId, source: input.source, correlationId: input.correlationId, payload: { goal: input.goal, doneWhen: input.doneWhen, constraints: input.constraints } satisfies QaRequestedPayload }); if (result.handlerCount < 1) throw new Error('No subscriber for specialist.qa.requested — QA bus shim not registered'); const first = result.results[0] as { intakeRecord?: IntakeRecord } | undefined; if (!first?.intakeRecord) throw new Error('QA bus shim returned no intake record'); return first.intakeRecord; }
-export async function executeQaIntake(state: ControlApiState, event: BusEvent<'specialist.qa.requested'>): Promise<IntakeRecord> { const instruction = { projectId: event.projectId, type: 'qa', goal: event.payload.goal, doneWhen: event.payload.doneWhen, constraints: event.payload.constraints } as IntakeInstruction; await persistRequirementFromIntake(state, instruction); const plan = await planIntakeForControl(state.projectRegistry, instruction); const intakeId = `intake-${Date.now()}`; const record: IntakeRecord = { intakeId, plan, createdAt: new Date().toISOString(), status: 'planned', trigger: { eventId: event.eventId, correlationId: event.correlationId, source: event.source } }; state.intakes.unshift(record); const workPackageId = `wp-${intakeId}`; state.workPackages.unshift({ workPackageId, execId: 'EXEC-9200', status: 'AwaitingReview', specialistId: 'qa.verify', stage: 'QA Verify', projectId: plan.projectId }); await state.controlPlane.requestGateReview({ gateId: `gate-qa-${plan.projectId}`, execId: 'EXEC-9200', workPackageId, stageFrom: 'QA Verify', stageTo: 'Dispatch', requiredApprovers: ['human.approver'], humanRequired: true }, event.correlationId); return record; }
+export async function executeQaIntake(state: ControlApiState, event: BusEvent<'specialist.qa.requested'>): Promise<IntakeRecord> { const instruction = { projectId: event.projectId, type: 'qa', goal: event.payload.goal, doneWhen: event.payload.doneWhen, constraints: event.payload.constraints } as IntakeInstruction; await persistRequirementFromIntake(state, instruction); const plan = await planIntakeForControl(state.projectRegistry, instruction); const intakeId = `intake-${Date.now()}`; const record: IntakeRecord = { intakeId, plan, createdAt: new Date().toISOString(), status: 'planned', trigger: { eventId: event.eventId, correlationId: event.correlationId, source: event.source } }; state.intakes.unshift(record); const workPackageId = `wp-${intakeId}`; state.workPackages.unshift({ workPackageId, execId: 'EXEC-9200', status: 'AwaitingReview', specialistId: 'qa.verify', stage: 'QA Verify', projectId: plan.projectId }); await state.controlPlane.requestGateReview({ gateId: `gate-qa-${plan.projectId}`, execId: 'EXEC-9200', workPackageId, stageFrom: 'QA Verify', stageTo: 'Dispatch', requiredApprovers: ['human.approver'], humanRequired: true, triggerEventId: event.eventId, triggerSource: event.source }, event.correlationId); return record; }
 
 export async function submitIntake(state: ControlApiState, instruction: IntakeInstruction): Promise<IntakeRecord> {
   await persistRequirementFromIntake(state, instruction);
@@ -83,7 +91,23 @@ export async function submitIntake(state: ControlApiState, instruction: IntakeIn
   state.workPackages.unshift({ workPackageId: wp, execId: cfg.execId, status: 'AwaitingReview', specialistId: cfg.specialistId, stage: cfg.stage, projectId: plan.projectId }); await state.controlPlane.requestGateReview({ gateId: `${cfg.gatePrefix}${plan.projectId}`, execId: cfg.execId, workPackageId: wp, stageFrom: cfg.stage, stageTo: 'Dispatch', requiredApprovers: ['human.approver'], humanRequired }, `corr-${intakeId}`); return record;
 }
 
-async function applyGate(state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string; approver?: string }) { const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId); if (!intake) return undefined; const project = state.projectRegistry.requireActive(intake.plan.projectId); if (input.gateId.startsWith('gate-perf-') && intake.plan.perfAudit) return applyPerfToProject({ project, report: intake.plan.perfAudit, rationale: input.rationale }); if (input.gateId.startsWith('gate-ux-') && intake.plan.uxAudit) return applyUxToProject({ project, report: intake.plan.uxAudit, rationale: input.rationale }); if (input.gateId.startsWith('gate-security-') && intake.plan.securityAudit) return applySecurityToProject({ project, audit: intake.plan.securityAudit, rationale: input.rationale }); if (input.gateId.startsWith('gate-seo-') && intake.plan.seoAudit) return applySeoToProject({ project, audit: intake.plan.seoAudit, rationale: input.rationale }); if (input.gateId.startsWith('gate-qa-') && intake.plan.qaAudit) return applyQaToProject({ project, audit: intake.plan.qaAudit, rationale: input.rationale }); if (input.gateId.startsWith('gate-eng-') && intake.plan.engDelivery) return applyEngToProject({ project, report: intake.plan.engDelivery, approval: { kind: 'human-gate', gateId: input.gateId, approver: input.approver ?? 'human.approver', rationale: input.rationale } }); return undefined; }
+async function applyGate(state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string; approver?: string }) {
+  const intake = state.intakes.find((item) => `wp-${item.intakeId}` === input.workPackageId);
+  if (!intake) return undefined;
+  const project = state.projectRegistry.requireActive(intake.plan.projectId);
+  const accept = (result: SeoApplyResult | QaApplyResult | EngApplyResult | SecurityApplyResult | PerfApplyResult | UxApplyResult) => {
+    intake.status = 'approved';
+    intake.applyResult = result;
+    return result;
+  };
+  if (input.gateId.startsWith('gate-perf-') && intake.plan.perfAudit) return accept(await applyPerfToProject({ project, report: intake.plan.perfAudit, rationale: input.rationale }));
+  if (input.gateId.startsWith('gate-ux-') && intake.plan.uxAudit) return accept(await applyUxToProject({ project, report: intake.plan.uxAudit, rationale: input.rationale }));
+  if (input.gateId.startsWith('gate-security-') && intake.plan.securityAudit) return accept(await applySecurityToProject({ project, report: intake.plan.securityAudit, rationale: input.rationale }));
+  if (input.gateId.startsWith('gate-seo-') && intake.plan.seoAudit) return accept(await applySeoToProject({ project, audit: intake.plan.seoAudit, rationale: input.rationale }));
+  if (input.gateId.startsWith('gate-qa-') && intake.plan.qaAudit) return accept(await applyQaToProject({ project, audit: intake.plan.qaAudit, rationale: input.rationale }));
+  if (input.gateId.startsWith('gate-eng-') && intake.plan.engDelivery) return accept(await applyEngToProject({ project, report: intake.plan.engDelivery, approval: { kind: 'human-gate', gateId: input.gateId, approver: input.approver ?? 'human.approver', rationale: input.rationale } }));
+  return undefined;
+}
 export const applyPerfOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-perf-') ? applyGate(state, input) : Promise.resolve(undefined);
 export const applyUxOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-ux-') ? applyGate(state, input) : Promise.resolve(undefined);
 export const applySecurityOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-security-') ? applyGate(state, input) : Promise.resolve(undefined);

@@ -28,6 +28,8 @@ import {
   type CommandTarget,
   type ProjectStatus,
   type TaskStatus,
+  type RequirementStatus,
+  type RequirementContract,
 } from '@umer/contracts';
 import {
   createLogger,
@@ -40,6 +42,7 @@ import { InMemoryArtifactStore } from '@umer/artifacts';
 import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
 import { InMemoryProjectStore } from './project-store.js';
 import { InMemoryTaskStore } from './task-store.js';
+import { RequirementAlreadyDecidedError } from './requirement-store.js';
 import { InMemoryAgentControlStore } from './agent-control-store.js';
 import {
   type ControlApiState,
@@ -164,6 +167,25 @@ export async function createControlApiState(): Promise<ControlApiState> {
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
+    // Gives every gate-review lifecycle event (control.gate.wait,
+    // control.approval.requested, ...) a durable, queryable audit trail entry
+    // so a triggering bus event's provenance survives past in-memory gate state.
+    events: {
+      publish: async (name, correlationId, payload) => {
+        await auditService.append(
+          {
+            action: name,
+            actor: 'system.control-plane',
+            resourceType: 'gate',
+            resourceId: String(payload.gateId ?? payload.waitId ?? 'unknown'),
+            outcome: 'success',
+            correlationId,
+            detail: payload,
+          },
+          correlationId,
+        );
+      },
+    },
   });
   registerQaBusShim(state);
   return state;
@@ -242,6 +264,87 @@ export function createControlApiServer(state: ControlApiState) {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+      return;
+    }
+
+    // Canonical Requirements: read model + CEO decision over records the
+    // intake pipeline already persisted via persistRequirementFromIntake.
+    // No write path here beyond decide() — requirements are only ever
+    // created as a side effect of a real intake, never fabricated via this API.
+    if (path === '/v1/requirements' && req.method === 'GET') {
+      if (!state.requirementStore) {
+        sendJson(res, 200, { requirements: [] });
+        return;
+      }
+      const projectId = url.searchParams.get('projectId') ?? undefined;
+      const requestId = url.searchParams.get('requestId') ?? undefined;
+      const status = url.searchParams.get('status') ?? undefined;
+      const requirements = await state.requirementStore.list({
+        projectId,
+        requestId,
+        status: status as RequirementStatus | undefined,
+      });
+      sendJson(res, 200, { requirements });
+      return;
+    }
+
+    const requirementGetMatch = path.match(/^\/v1\/requirements\/([^/]+)$/);
+    if (requirementGetMatch && req.method === 'GET') {
+      const requirementId = decodeURIComponent(requirementGetMatch[1]!);
+      const requirement = await state.requirementStore?.get(requirementId);
+      if (!requirement) {
+        sendJson(res, 404, { error: `requirement ${requirementId} not found` });
+        return;
+      }
+      sendJson(res, 200, requirement);
+      return;
+    }
+
+    const requirementDecideMatch = path.match(/^\/v1\/requirements\/([^/]+)\/decide$/);
+    if (requirementDecideMatch && req.method === 'POST') {
+      const requirementId = decodeURIComponent(requirementDecideMatch[1]!);
+      const body = await readJsonBody<{ decision?: 'Approved' | 'Rejected'; decidedBy?: string; reason?: string }>(req);
+      if (body.decision !== 'Approved' && body.decision !== 'Rejected') {
+        sendJson(res, 400, { error: 'decision must be "Approved" or "Rejected"' });
+        return;
+      }
+      if (!body.decidedBy) {
+        sendJson(res, 400, { error: 'decidedBy is required' });
+        return;
+      }
+      const existing = await state.requirementStore?.get(requirementId);
+      if (!existing) {
+        sendJson(res, 404, { error: `requirement ${requirementId} not found` });
+        return;
+      }
+      let requirement: RequirementContract | undefined;
+      try {
+        requirement = await state.requirementStore!.decide(requirementId, {
+          decision: body.decision,
+          decidedBy: body.decidedBy,
+          reason: body.reason,
+          decidedAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        if (err instanceof RequirementAlreadyDecidedError) {
+          sendJson(res, 409, { error: err.message });
+          return;
+        }
+        throw err;
+      }
+      await state.auditService.append(
+        {
+          action: body.decision === 'Approved' ? 'requirement.accepted' : 'requirement.rejected',
+          actor: body.decidedBy,
+          resourceType: 'requirement',
+          resourceId: requirementId,
+          outcome: 'success',
+          correlationId: `corr-requirement-decide-${requirementId}-${Date.now()}`,
+          detail: { reason: body.reason ?? null },
+        },
+        `corr-requirement-decide-${requirementId}-${Date.now()}`,
+      );
+      sendJson(res, 200, requirement);
       return;
     }
 

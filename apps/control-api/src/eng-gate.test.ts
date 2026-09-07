@@ -301,12 +301,12 @@ describe('submitIntake eng gate (state-level, isolated)', () => {
       'corr-eng-state',
     );
 
-    const applyResult = await applyEngOnGatePass(fixture.state, {
+    const applyResult = (await applyEngOnGatePass(fixture.state, {
       workPackageId: resolved.record.workPackageId,
       gateId: resolved.record.gateId,
       rationale: 'state-level eng Pass',
       approver: 'human.approver',
-    });
+    })) as { changedFiles?: string[] } | undefined;
 
     expect(applyResult?.changedFiles).toContain(SRC_REL);
     expect(await readFile(join(fixture.clientDir, SRC_REL), 'utf8')).toBe(SRC_AFTER);

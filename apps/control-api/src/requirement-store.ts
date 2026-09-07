@@ -17,6 +17,13 @@ export type CreateRequirementInput = {
   source: RequirementContract['source'];
 };
 
+export class RequirementAlreadyDecidedError extends Error {
+  constructor(requirementId: string, status: RequirementStatus) {
+    super(`Requirement ${requirementId} was already decided (status: ${status}); decisions are final and cannot be overwritten.`);
+    this.name = 'RequirementAlreadyDecidedError';
+  }
+}
+
 export type RequirementStore = {
   create(input: CreateRequirementInput): Promise<RequirementContract>;
   get(requirementId: string): Promise<RequirementContract | undefined>;
@@ -75,6 +82,7 @@ export class InMemoryRequirementStore implements RequirementStore {
   async decide(requirementId: string, decision: RequirementContract['decision']): Promise<RequirementContract | undefined> {
     const existing = this.records.get(requirementId);
     if (!existing || !decision) return existing;
+    if (existing.decision) throw new RequirementAlreadyDecidedError(requirementId, existing.status);
     const updated = { ...existing, decision, status: decision.decision === 'Approved' ? 'Accepted' : 'Rejected', updatedAt: new Date().toISOString() } as RequirementContract;
     this.records.set(requirementId, updated);
     return updated;
@@ -112,6 +120,7 @@ export class MySqlRequirementStore implements RequirementStore {
   async decide(requirementId: string, decision: RequirementContract['decision']): Promise<RequirementContract | undefined> {
     const existing = await this.get(requirementId);
     if (!existing || !decision) return existing;
+    if (existing.decision) throw new RequirementAlreadyDecidedError(requirementId, existing.status);
     const status = decision.decision === 'Approved' ? 'Accepted' : 'Rejected';
     const updatedAt = new Date().toISOString();
     await this.db.execute('UPDATE requirements SET status = ?, decision_json = ?, updated_at = ? WHERE requirement_id = ?', [status, JSON.stringify(decision), updatedAt, requirementId]);

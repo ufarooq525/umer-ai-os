@@ -66,15 +66,21 @@ export class ControlPlaneService {
       humanRequired: input.humanRequired ?? true,
       requestedAt: this.clock.nowIso(),
     };
+    const lineage = {
+      ...(input.triggerEventId ? { triggerEventId: input.triggerEventId } : {}),
+      ...(input.triggerSource !== undefined ? { source: input.triggerSource } : {}),
+    };
     await this.store.save(record);
     await this.events.publish('control.gate.wait', correlationId, {
       waitId: record.waitId,
       gateId: record.gateId,
       workPackageId: record.workPackageId,
+      ...lineage,
     });
     await this.events.publish('control.approval.requested', correlationId, {
       waitId: record.waitId,
       gateId: record.gateId,
+      ...lineage,
     });
     return record;
   }
