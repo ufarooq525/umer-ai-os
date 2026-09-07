@@ -5,6 +5,7 @@ import { getAgents, getOpportunity, getTasks, getWorkGraph, getWorkProject } fro
 import { EntityNarrative, type NarrativeField } from '@/components/os/EntityNarrative';
 import { StatusBadge } from '@/components/os/StatusBadge';
 import { WorkGraphBoard } from '@/components/os/WorkGraphBoard';
+import { RunAuditPanel } from '@/components/os/RunAuditPanel';
 import { projectTone, taskTone } from '@/components/os/status';
 
 export const dynamic = 'force-dynamic';
@@ -86,6 +87,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       </header>
 
       <EntityNarrative fields={fields} />
+
+      <RunAuditPanel projectId={project.projectId} />
 
       <Card title="Work Graph">
         <WorkGraphBoard nodes={workGraph.nodes} edges={workGraph.edges} />

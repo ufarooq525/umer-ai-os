@@ -14,9 +14,11 @@ import { createEventBus } from '@umer/event-bus';
 import { createCommandEnvelope, SUBJECTS } from '@umer/message-fabric';
 import {
   applyRequirementDecomposition,
+  applyStandaloneAuditNode,
   InMemoryWorkGraphStore,
   ORCHESTRATION_COMMANDS,
   PersistentWorkGraph,
+  type StandaloneAuditNodeType,
 } from '@umer/orchestration';
 import {
   SCHEMA_VERSION,
@@ -317,6 +319,59 @@ export function createControlApiServer(state: ControlApiState) {
       } catch (err) {
         // Most likely a duplicate decomposition (same slug already applied to this project) —
         // WorkGraph's own validation (duplicate node/edge ids) is the source of truth here.
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    // Seeds a single, edge-free UX/QA/Security node onto a project's graph —
+    // the only 3 node types with a real dispatchable Specialist today (see
+    // apps/orchestration-worker/src/main.ts's NODE_TYPE_SPECIALISTS) — so an
+    // operator can request a one-off audit without running the full
+    // Requirements -> Product -> Architecture decomposition first (which has
+    // no dispatchable Specialist of its own and so never reaches UX/QA/
+    // Security on its own). The node comes out Ready immediately; the
+    // existing POST /v1/work-graph/:projectId/plan route is what actually
+    // turns it into a dispatched Work Package.
+    const workGraphAuditMatch = path.match(/^\/v1\/work-graph\/([^/]+)\/audit$/);
+    if (workGraphAuditMatch && req.method === 'POST') {
+      const projectId = decodeURIComponent(workGraphAuditMatch[1]!);
+      const body = await readJsonBody<{ type?: string; title?: string; requestedBy?: string }>(req);
+      const AUDIT_NODE_TYPES: ReadonlySet<string> = new Set(['UX', 'QA', 'Security']);
+      if (!body.type || !AUDIT_NODE_TYPES.has(body.type)) {
+        sendJson(res, 400, { error: 'type must be one of "UX", "QA", or "Security"' });
+        return;
+      }
+      if (!body.requestedBy) {
+        sendJson(res, 400, { error: 'requestedBy is required' });
+        return;
+      }
+      const project = await state.projectStore?.get(projectId);
+      if (!project) {
+        sendJson(res, 404, { error: `project ${projectId} not found` });
+        return;
+      }
+      try {
+        const { graph, node } = await applyStandaloneAuditNode(state.persistentWorkGraph!, {
+          projectId,
+          type: body.type as StandaloneAuditNodeType,
+          title: body.title,
+        });
+        const correlationId = `corr-audit-${projectId}-${Date.now()}`;
+        await state.auditService.append(
+          {
+            action: 'work_graph.audit_node_seeded',
+            actor: body.requestedBy,
+            resourceType: 'project',
+            resourceId: projectId,
+            outcome: 'success',
+            correlationId,
+            detail: { nodeId: node.nodeId, type: node.type, title: node.title },
+          },
+          correlationId,
+        );
+        sendJson(res, 201, { projectId, node, nodes: graph.listNodes(projectId) });
+      } catch (err) {
         sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
       }
       return;

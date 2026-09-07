@@ -65,3 +65,9 @@ export {
   type RequirementDecompositionInput,
   type RequirementDecomposition,
 } from './requirements-decomposition.js';
+export {
+  buildStandaloneAuditNode,
+  applyStandaloneAuditNode,
+  type StandaloneAuditNodeType,
+  type StandaloneAuditNodeInput,
+} from './standalone-audit-node.js';

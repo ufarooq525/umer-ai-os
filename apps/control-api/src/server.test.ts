@@ -51,7 +51,7 @@ describe('control-api', () => {
   it('lists registered Laragon projects', async () => {
     const { status, json } = await request(server, 'GET', '/v1/projects');
     expect(status).toBe(200);
-    expect((json.projects as unknown[]).length).toBe(8);
+    expect((json.projects as unknown[]).length).toBe(9);
   });
 
   it('accepts PM intake for a registered project', async () => {

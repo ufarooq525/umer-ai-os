@@ -1012,3 +1012,68 @@ still real and still unaddressed:
    defensive on its own side (e.g. a tighter `filesystem_read` cap, or
    summarizing rather than including full file contents) rather than
    relying entirely on the operator raising LM Studio's own context size.
+
+## This milestone (2026-09-07, sixteenth pass): self-service audit trigger — no more hand-written seeding scripts
+
+Item 1 above understated the real gap: it's not just that Requirements →
+Product → Architecture has no dispatchable Specialist — it's that every
+`UX`/`QA`/`Security` audit run this entire arc has produced was seeded onto
+the Work Graph by a throwaway script I wrote and deleted each time. There was
+no way for anyone — including the owner, using only the dashboard — to
+request an audit on a registered project. That's now fixed:
+
+- **`@umer/orchestration`**: new `standalone-audit-node.ts` —
+  `buildStandaloneAuditNode`/`applyStandaloneAuditNode` build and persist a
+  single, edge-free `UX`/`QA`/`Security` node onto an existing project's Work
+  Graph. Deliberately restricted to those 3 types (the only ones with a real
+  registered Specialist — see `apps/orchestration-worker/src/main.ts`'s
+  `NODE_TYPE_SPECIALISTS`); `Implementation` is excluded since it presumes
+  real prior Architecture/UX output. A node with no predecessor edges comes
+  out `Ready` immediately (`WorkGraph`'s own readiness computation treats
+  "no predecessors" as vacuously satisfied) — real, immediately-plannable
+  work, not a placeholder. 5 new tests.
+- **`apps/control-api`**: `POST /v1/work-graph/:projectId/audit` (`type`,
+  `requestedBy` in the body) — validates the type against the 3 allowed
+  values, 404s on an unknown `projectId` rather than seeding an orphaned
+  node, persists via the same `state.persistentWorkGraph` every other
+  work-graph route already uses, and appends a `work_graph.audit_node_seeded`
+  audit entry. Nothing new to wire — the existing
+  `POST /v1/work-graph/:projectId/plan` route (unchanged) is what actually
+  turns the seeded node into a dispatched Work Package, exactly as it already
+  does for nodes reached via the normal decomposition pipeline. 5 new tests.
+- **`apps/web`**: `requestAudit()` client wrapper in `lib/control-api.ts`,
+  and a new `RunAuditPanel` client component (three buttons: Run UX/QA/
+  Security Audit) on the project detail page, above the Work Graph board.
+  Honest about scope in its own copy — seeding is one click; dispatching
+  still needs the existing Plan step, not folded into this button.
+
+Confirmed live end-to-end: rebuilt and restarted `control-api` (it runs from
+`dist/`, not `tsx watch` — a source edit alone does not take effect; also hit
+the same benign first-attempt `EADDRINUSE` noted in the fourteenth pass, from
+the outgoing process not having released the port yet, resolved by killing it
+explicitly before relaunching), then `POST`ed a real `UX` audit onto the real
+`school-app` Work Management project (`proj-14841954-...`) — came back
+`status: "Ready"`, alongside that project's real prior audit history from the
+fifteenth pass. Did not also plan/dispatch it in this pass — that's a
+one-line follow-up via the existing `/plan` route whenever the owner wants to
+actually run it. All 33 packages typecheck clean; orchestration (106 tests)
+and control-api (140 tests) full suites pass.
+
+One stale, unrelated test fixed in passing: `server.test.ts`'s registered-
+project count assertion still said 8 from before the fifteenth pass's
+`umer-portfolio-research` catalog addition — corrected to 9.
+
+## Next highest-value milestone
+
+Item 1 from the fifteenth pass is now addressed for the 3 node types that
+matter in practice (`UX`/`QA`/`Security`) — an operator no longer needs me in
+the loop to request an audit. Two things remain open:
+
+1. The `RunAuditPanel` seeds a node but doesn't also plan/dispatch it — an
+   owner still has to separately trigger `POST /v1/work-graph/:projectId/plan`
+   (no UI button for that either; see the fifteenth pass's research notes).
+   Worth deciding whether "Run Audit" should just do both steps in one click,
+   or whether keeping them separate (see → dispatch) is the more honest UX
+   given planning is a heavier, queue-consuming action.
+2. `security.review`'s context-window ceiling on larger codebases (fifteenth
+   pass) is still unaddressed on the code side.

@@ -382,6 +382,25 @@ export async function getWorkGraph(
   return fetchJson(`/v1/work-graph/${encodeURIComponent(projectId)}`);
 }
 
+/**
+ * Seeds a standalone UX/QA/Security audit node onto a project's Work Graph —
+ * the only 3 node types with a real dispatchable Specialist today (see
+ * apps/orchestration-worker/src/main.ts's NODE_TYPE_SPECIALISTS) — bypassing
+ * the Requirements -> Product -> Architecture chain, which has no
+ * dispatchable Specialist of its own. The node comes out Ready immediately;
+ * a follow-up POST /v1/work-graph/:projectId/plan is what actually turns it
+ * into a dispatched Work Package.
+ */
+export async function requestAudit(
+  projectId: string,
+  input: { type: 'UX' | 'QA' | 'Security'; requestedBy: string; title?: string },
+): Promise<{ projectId: string; node: WorkGraphNode; nodes: WorkGraphNode[] }> {
+  return fetchJson(`/v1/work-graph/${encodeURIComponent(projectId)}/audit`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export async function getRecentAudit(): Promise<AuditRecord[]> {
   const body = await fetchJson<{ records: AuditRecord[] }>('/v1/audit/recent');
   return body.records;
