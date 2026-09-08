@@ -35,6 +35,17 @@ describe('decomposeRequirementIntoWorkGraph', () => {
     );
   });
 
+  it('carries the real requirementId onto both the Requirements and Product nodes, and no others', () => {
+    const { nodes } = decomposeRequirementIntoWorkGraph({ projectId: 'proj-1', requirementId: 'req-1' });
+    const byType = new Map(nodes.map((n) => [n.type, n]));
+    expect(byType.get('Requirements')?.metadata.annotations?.requirementId).toBe('req-1');
+    expect(byType.get('Product')?.metadata.annotations?.requirementId).toBe('req-1');
+    expect(byType.get('Requirements')?.title).toBe('Requirements: req-1');
+    expect(byType.get('Product')?.title).toBe('Product Definition');
+    expect(byType.get('Architecture')?.metadata.annotations?.requirementId).toBeUndefined();
+    expect(byType.get('UX')?.metadata.annotations?.requirementId).toBeUndefined();
+  });
+
   it('namespaces ids by slug so two decompositions in the same project graph do not collide', () => {
     const a = decomposeRequirementIntoWorkGraph({ projectId: 'proj-1', slug: 'feature-a' });
     const b = decomposeRequirementIntoWorkGraph({ projectId: 'proj-1', slug: 'feature-b' });

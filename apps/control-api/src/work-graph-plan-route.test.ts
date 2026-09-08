@@ -4,6 +4,8 @@ import type { CommandEnvelope } from '@umer/contracts';
 import { SUBJECTS } from '@umer/message-fabric';
 import { ORCHESTRATION_COMMANDS } from '@umer/orchestration';
 import { createControlApiServer, createControlApiState } from './server.js';
+import { InMemoryRequirementStore } from './requirement-store.js';
+import { connectRequirementWorkGraphBridge } from './requirement-workgraph-bridge.js';
 import type { ControlApiState } from './state.js';
 
 async function request(
@@ -82,6 +84,48 @@ describe('POST /v1/work-graph/:projectId/plan', () => {
       projectId: 'proj-1',
       taskIdsByNodeId: { 'proj-1-requirements': [taskId] },
     });
+  });
+
+  it('grounds the Requirements node Task in the real persisted Requirement content', async () => {
+    state.requirementStore = new InMemoryRequirementStore();
+    connectRequirementWorkGraphBridge(state);
+    const requirement = await state.requirementStore.create({
+      projectId: 'proj-grounded',
+      title: 'Add checkout retries',
+      problem: 'Checkout fails silently on transient gateway errors.',
+      desiredOutcome: 'Checkout succeeds after a transient gateway failure without manual retry.',
+      constraints: ['Must not change the public checkout API'],
+      acceptanceCriteria: ['Checkout retries once on a transient gateway error.'],
+      source: { kind: 'Request', label: 'test' },
+    });
+
+    const { status, json } = await request(server, 'POST', '/v1/work-graph/proj-grounded/plan', {
+      approver: 'human.ceo',
+    });
+    expect(status).toBe(202);
+
+    const taskIdsByNodeId = json.taskIdsByNodeId as Record<string, string[]>;
+    const [nodeId] = Object.keys(taskIdsByNodeId);
+    const taskId = taskIdsByNodeId[nodeId!]![0]!;
+    const task = await state.taskStore!.get(taskId);
+
+    expect(task?.description).toContain(requirement.problem);
+    expect(task?.description).toContain(requirement.desiredOutcome);
+    expect(task?.description).toContain('Must not change the public checkout API');
+    expect(task?.acceptanceCriteria).toEqual(requirement.acceptanceCriteria);
+  });
+
+  it('falls back to the generic Task description for a Requirements node with no linked Requirement', async () => {
+    await request(server, 'POST', '/v1/work-graph/proj-ungrounded/decompose', {});
+
+    const { json } = await request(server, 'POST', '/v1/work-graph/proj-ungrounded/plan', {
+      approver: 'human.ceo',
+    });
+
+    const taskIdsByNodeId = json.taskIdsByNodeId as Record<string, string[]>;
+    const taskId = taskIdsByNodeId['proj-ungrounded-requirements']![0]!;
+    const task = await state.taskStore!.get(taskId);
+    expect(task?.description).toBe('Deliver "Requirements" for project proj-ungrounded, per its Work Graph decomposition.');
   });
 
   it('responds 503 when the message fabric is not connected', async () => {

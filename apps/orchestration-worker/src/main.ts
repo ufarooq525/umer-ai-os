@@ -27,9 +27,10 @@ const env = loadEnv();
 // Real, currently-dispatchable Specialist metadata for the planning path
 // (ReadyWorkPackagePlanner needs a real specVersion/specHash, not a made-up
 // one) — read from the SAME spec files apps/agent-worker loads from, so both
-// processes agree on what's actually current. Only 'Implementation', 'UX',
-// 'QA', and 'Security' map to a real Specialist today: eng.app-delivery,
-// ux.design, qa.verify, and security.review are the only ones
+// processes agree on what's actually current. 'Implementation', 'UX', 'QA',
+// 'Security', 'Requirements', and 'Product' map to a real Specialist today:
+// eng.app-delivery, ux.design, qa.verify, security.review,
+// requirements.formalize, and product.definition are the ones
 // apps/agent-worker actually registers for dispatch (see its main.ts) —
 // every other node type correctly has no mapping, so ReadyWorkPackagePlanner
 // skips it (reported, not fabricated) rather than building a Work Package
@@ -40,7 +41,9 @@ const env = loadEnv();
 // process_run_audit tools for anything, so resolveTaskContext (below, in
 // the workgraph.plan handler) only supplies a task context for a UX/QA/
 // Security node when the plan command actually carried one — never a
-// placeholder path.
+// placeholder path. requirements.formalize and product.definition work
+// entirely from the real persisted Requirement's own text (see
+// control-api's plan route), not a codebase, so neither needs one.
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
 const engAppDelivery = await loadSpecFromFile(
   join(repoRoot, 'specialists', 'engineering', 'application-delivery.md'),
@@ -48,11 +51,19 @@ const engAppDelivery = await loadSpecFromFile(
 const uxDesign = await loadSpecFromFile(join(repoRoot, 'specialists', 'design', 'ux-design.md'));
 const qaVerify = await loadSpecFromFile(join(repoRoot, 'specialists', 'qa', 'qa-verify.md'));
 const securityReview = await loadSpecFromFile(join(repoRoot, 'specialists', 'security', 'security-review.md'));
+const requirementsFormalize = await loadSpecFromFile(
+  join(repoRoot, 'specialists', 'program', 'requirements-formalize.md'),
+);
+const productDefinition = await loadSpecFromFile(
+  join(repoRoot, 'specialists', 'program', 'product-definition.md'),
+);
 const NODE_TYPE_SPECIALISTS = {
   Implementation: engAppDelivery,
   UX: uxDesign,
   QA: qaVerify,
   Security: securityReview,
+  Requirements: requirementsFormalize,
+  Product: productDefinition,
 } as const;
 const TARGET_PATH_REQUIRED_NODE_TYPES = new Set<keyof typeof NODE_TYPE_SPECIALISTS>(['UX', 'QA', 'Security']);
 

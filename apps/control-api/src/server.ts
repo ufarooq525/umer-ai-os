@@ -480,6 +480,43 @@ export function createControlApiServer(state: ControlApiState) {
       return;
     }
 
+    // Real, persisted-Requirement-grounded instruction for the two node
+    // types (Requirements, Product) whose Specialist works from the
+    // Requirement's own text rather than a codebase — see
+    // requirements.formalize/product.definition in orchestration-worker's
+    // NODE_TYPE_SPECIALISTS. Returns undefined (falls back to the generic
+    // boilerplate below) when there's no requirementId annotation, no
+    // requirementStore connected, or the Requirement itself can't be found —
+    // never fabricates Requirement content that doesn't exist.
+    async function buildRequirementGroundedTask(
+      nodeType: string,
+      requirementId: string | undefined,
+    ): Promise<{ description: string; acceptanceCriteria: string[] } | undefined> {
+      if (!requirementId || !state.requirementStore) return undefined;
+      if (nodeType !== 'Requirements' && nodeType !== 'Product') return undefined;
+      const requirement = await state.requirementStore.get(requirementId);
+      if (!requirement) return undefined;
+
+      const lines = [
+        `Problem: ${requirement.problem}`,
+        `Desired outcome: ${requirement.desiredOutcome}`,
+        requirement.constraints.length > 0 ? `Constraints: ${requirement.constraints.join('; ')}` : undefined,
+        `Acceptance criteria: ${requirement.acceptanceCriteria.join('; ')}`,
+        requirement.assumptions.length > 0 ? `Assumptions: ${requirement.assumptions.join('; ')}` : undefined,
+        requirement.openQuestions.length > 0 ? `Open questions: ${requirement.openQuestions.join('; ')}` : undefined,
+      ].filter((line): line is string => Boolean(line));
+
+      const task =
+        nodeType === 'Requirements'
+          ? `Formalize this Requirement into a Requirements Brief.`
+          : `Define product scope, user stories, risks, and prioritization for this Requirement.`;
+
+      return {
+        description: `${task}\n\n${lines.join('\n')}`,
+        acceptanceCriteria: requirement.acceptanceCriteria,
+      };
+    }
+
     // Turns Ready nodes into real, dispatched Work Packages via
     // @umer/orchestration's ReadyWorkPackagePlanner — running in
     // orchestration-worker's process, which owns the real Orchestrator, so
@@ -528,7 +565,14 @@ export function createControlApiServer(state: ControlApiState) {
       const taskDetailsByNodeId: Record<string, Array<{ taskId: string; title: string; description: string }>> = {};
       for (const node of ready) {
         const title = node.title;
-        const description = `Deliver "${node.title}" for project ${projectId}, per its Work Graph decomposition.`;
+        const requirementIdAnnotation = node.metadata.annotations?.requirementId;
+        const grounded = await buildRequirementGroundedTask(
+          node.type,
+          typeof requirementIdAnnotation === 'string' ? requirementIdAnnotation : undefined,
+        );
+        const description =
+          grounded?.description ?? `Deliver "${node.title}" for project ${projectId}, per its Work Graph decomposition.`;
+        const acceptanceCriteria = grounded?.acceptanceCriteria ?? [`${node.title} artifact accepted by human review`];
         const taskEnvelope = {
           commandId: `cmd-${randomUUID()}`,
           schemaVersion: SCHEMA_VERSION,
@@ -541,7 +585,7 @@ export function createControlApiServer(state: ControlApiState) {
             projectId,
             title,
             description,
-            acceptanceCriteria: [`${node.title} artifact accepted by human review`],
+            acceptanceCriteria,
           },
           actor: { principalId: body.approver, kind: 'human' as const },
         } as unknown as CeoCommandEnvelope;

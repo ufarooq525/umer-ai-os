@@ -63,7 +63,12 @@ export function decomposeRequirementIntoWorkGraph(
       updatedAt: now,
       metadata: {
         labels: {},
-        annotations: spec.type === 'Requirements' && input.requirementId
+        // Product also carries the Requirement's lineage (not just
+        // Requirements) so product.definition's Work Package instruction can
+        // be built from the same real, persisted Requirement content —
+        // see requirements.formalize/product.definition in
+        // apps/orchestration-worker's NODE_TYPE_SPECIALISTS.
+        annotations: (spec.type === 'Requirements' || spec.type === 'Product') && input.requirementId
           ? { requirementId: input.requirementId }
           : {},
       },

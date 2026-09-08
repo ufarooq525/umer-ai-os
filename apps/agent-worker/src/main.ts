@@ -58,6 +58,8 @@ const specPaths = [
   join(specialistsDir, 'design', 'ux-design.md'),
   join(specialistsDir, 'qa', 'qa-verify.md'),
   join(specialistsDir, 'security', 'security-review.md'),
+  join(specialistsDir, 'program', 'requirements-formalize.md'),
+  join(specialistsDir, 'program', 'product-definition.md'),
 ];
 
 const loadedSpecs = await Promise.all(specPaths.map((path) => loadSpecFromFile(path)));

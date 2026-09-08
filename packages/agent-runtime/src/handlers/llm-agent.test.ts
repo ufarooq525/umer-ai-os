@@ -175,6 +175,28 @@ describe('runLlmAgent', () => {
     expect(qaResult.artifact.artifactType).toBe('TestPlanResults');
   });
 
+  it('maps a Requirements department mandate to a RequirementsBrief and a Product department mandate to a ProductBrief', async () => {
+    const requirementsMandate = await loadMandateFromRepo('program', 'requirements-formalize.md');
+    const requirementsWorkPackage = buildWorkPackage(requirementsMandate);
+    const requirementsResult = await runLlmAgent(
+      requirementsWorkPackage,
+      requirementsMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-requirements',
+    );
+    expect(requirementsResult.artifact.artifactType).toBe('RequirementsBrief');
+
+    const productMandate = await loadMandateFromRepo('program', 'product-definition.md');
+    const productWorkPackage = buildWorkPackage(productMandate);
+    const productResult = await runLlmAgent(
+      productWorkPackage,
+      productMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-product',
+    );
+    expect(productResult.artifact.artifactType).toBe('ProductBrief');
+  });
+
   it('grounds the user message with filesystem_list/read/write hints when a real targetPath is present and those tools are allowlisted', async () => {
     const uxMandate = await loadMandateFromRepo('design', 'ux-design.md');
     const workPackage = buildWorkPackage(uxMandate, { targetPath: '/real/registered/project' });
