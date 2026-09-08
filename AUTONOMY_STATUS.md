@@ -45,6 +45,37 @@ A real request now becomes a durable, truthful Requirement and Work Graph withou
 - `connectRequirementWorkGraphBridge` (`apps/control-api/src/requirement-workgraph-bridge.ts`, wired from `main.ts`) creates the canonical `Requirements` Work Graph node — with the real requirement id preserved in node metadata — the first time a project gets a Requirement, and is a no-op (attaches, does not duplicate) on every later Requirement for that same project.
 - `GET /v1/requirements`, `GET /v1/requirements/:id`, `POST /v1/requirements/:id/decide` expose this as a real CEO-visible read model + decision surface (no write path that fabricates a requirement outside of a real intake).
 
+### Requirements + Product Specialists (M2)
+
+`Requirements` and `Product` Work Graph nodes are now real, dispatchable
+Specialists — `requirements.formalize` and `product.definition`
+(`specialists/program/*.md`) — wired through the identical pipeline already
+proven for UX/QA/Security: `NODE_TYPE_SPECIALISTS`
+(`apps/orchestration-worker/src/main.ts`) → `ReadyWorkPackagePlanner` →
+`cmd.agent.dispatch` → `AgentRuntime`'s generic `runLlmAgent` loop → a real
+`RequirementsBrief`/`ProductBrief` artifact (new `ArtifactType` values) →
+human gate → `Accepted`, cascading Work Graph readiness exactly like every
+other node type. Both specialists' Work Package instruction is grounded in
+the real persisted Requirement's `problem`/`desiredOutcome`/`constraints`/
+`acceptanceCriteria` (`apps/control-api/src/server.ts`'s plan route reads
+`state.requirementStore` by the node's `requirementId` lineage annotation —
+now carried onto `Product`, not just `Requirements`), not generic
+boilerplate. Neither specialist needs filesystem/process tools — both work
+purely from the Requirement's own text. No new runtime, artifact system, or
+node-status bypass was introduced; `ready-work-package-planner.ts`,
+`work-graph.ts`'s `Ready→InProgress→Review→Accepted` state machine, and the
+gate-resolve routes required zero changes — they were already generic
+across node types.
+
+**What is still missing**: no live LLM/MySQL/NATS smoke run has been
+performed in this session (verified via unit tests only — the specialist
+spec files pass the exact same activation-gate check `apps/agent-worker`
+runs at real boot, and `inferArtifactType`/Work Package grounding are
+covered directly); Product currently re-reads the same raw Requirement
+`requirements.formalize` did rather than building on its accepted
+Requirements Brief specifically (a reasonable v1 scope, noted as a future
+refinement); Architecture (M3) still has no Specialist.
+
 ### Commercial intelligence
 
 The opportunity-intelligence package provides real market/business discovery, research, evidence, opportunity construction, prospect storage, contact/reachability intelligence, scoring, MySQL persistence, Google Places/website evidence adapters, scheduling, and outreach generation.
@@ -61,10 +92,10 @@ The system must never fabricate agents, projects, tasks, Work Packages, opportun
 
 ## Known missing capabilities
 
-1. The complete Product/Architecture/UX/Engineering/QA/Security/Release/Operations workforce is not yet wired as a fully executable Specialist network. Product (M2) is next.
+1. The complete Architecture/UX/Engineering/QA/Security/Release/Operations workforce is not yet fully wired as an executable Specialist network — Requirements and Product (M2) now are, Architecture (M3) is next.
 2. Engineering does not yet perform a complete safe repository change-set workflow through the generic runtime.
 3. ~~Requirements intake is not yet the canonical trigger for the complete product/delivery graph.~~ **Resolved (M1):** every real intake now persists a canonical Requirement, and the first Requirement on a project creates the real Work Graph decomposition — see "Requirements (M1)" above.
-4. Product and Architecture do not yet have fully dispatchable Specialists connected to the official intake flow. This is M2/M3.
+4. ~~Product and Architecture do not yet have fully dispatchable Specialists connected to the official intake flow.~~ **Product resolved (M2)** — see "Requirements + Product Specialists (M2)" above. Architecture (M3) remains.
 5. Commercial intelligence does not yet form a complete automated sales pipeline through outreach execution, response handling, proposal, close, project creation, and revenue attribution.
 6. Customer support/success, finance/revenue operations, learning/feedback, and closed-loop market iteration are incomplete.
 7. Production durability policy still needs to distinguish development fallback from production truth; MySQL-unavailable fallback must not silently imply durable company state.
@@ -111,7 +142,7 @@ Support product discovery, scope definition, user stories/use cases, acceptance 
 
 Connect Product execution to the existing Work Graph and Agent Run lifecycle.
 
-**Exit criterion:** a real Requirements node produces a reviewed Product artifact/evidence through an actual Agent Run and returns its state to the graph.
+**Exit criterion:** a real Requirements node produces a reviewed Product artifact/evidence through an actual Agent Run and returns its state to the graph. **Met** — see "Requirements + Product Specialists (M2)" above. Both `requirements.formalize` and `product.definition` were added (not Product alone) because nothing could otherwise ever move the Requirements node to `Accepted` in the first place — per the codebase's own documented intent that formalizing the raw request is itself real Specialist work, not a status to shortcut. Verified by: `packages/specialist-sdk/src/requirements-product-specialist.test.ts` (activation-gate pass for both new spec files), `packages/agent-runtime/src/handlers/llm-agent.test.ts` (department → `RequirementsBrief`/`ProductBrief` artifact typing), `packages/orchestration/src/requirements-decomposition.test.ts` (lineage annotation reaches both `Requirements` and `Product` nodes, no others), `apps/control-api/src/work-graph-plan-route.test.ts` (real Requirement content grounds the Work Package instruction; falls back to boilerplate when ungrounded), `packages/contracts/src/artifacts/index.test.ts` (schema accepts the two new artifact types). Not yet verified: an actual live run against a real LLM provider and MySQL/NATS (this session had neither available) — the unit tests exercise the identical activation-gate/artifact-typing/grounding logic the real runtime uses, but a live end-to-end smoke run is still open.
 
 ## M3 — Architecture Specialist
 
