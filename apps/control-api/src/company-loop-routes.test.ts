@@ -5,6 +5,7 @@ import {
   type CompanyLoopCycle,
   type CompanyOverview,
 } from '@umer/contracts';
+import { DeploymentEngine } from '@umer/registry';
 import { createControlApiServer, createControlApiState } from './server.js';
 import type { ControlApiState } from './state.js';
 
@@ -30,7 +31,12 @@ describe('Company Loop & CEO Overview HTTP Routes', () => {
   let server: Server;
 
   beforeAll(async () => {
-    state = await createControlApiState();
+    state = await createControlApiState({
+      deploymentEngine: new DeploymentEngine({
+        probeRunner: async () => ({ status: 'pass', responseTimeMs: 10 }),
+        rollbackRunner: async () => ({ status: 'success' }),
+      }),
+    });
     server = createControlApiServer(state);
     await new Promise<void>((resolve) => server.listen(0, resolve));
   });

@@ -58,6 +58,7 @@ import {
 import {
   AutonomousCompanyLoop,
   type RunCycleInput,
+  type OpportunityPersistence,
   CommercialPipelineEngine,
   CustomerSuccessEngine,
   InMemoryOpportunityPersistence,
@@ -115,7 +116,11 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   return raw ? (JSON.parse(raw) as T) : ({} as T);
 }
 
-export async function createControlApiState(): Promise<ControlApiState> {
+export type ControlApiStateOptions = {
+  deploymentEngine?: DeploymentEngine;
+};
+
+export async function createControlApiState(options?: ControlApiStateOptions): Promise<ControlApiState> {
   const { producer, fallbackReason } = resolveCodeProducer();
   if (fallbackReason) {
     // Surface a misconfigured producer instead of silently writing nothing forever.
@@ -152,7 +157,7 @@ export async function createControlApiState(): Promise<ControlApiState> {
     opportunityReader: new InMemoryOpportunityPersistence(),
     artifactStore: new InMemoryArtifactStore(),
     workGraphStore: new InMemoryWorkGraphStore(),
-    deploymentEngine: new DeploymentEngine(),
+    deploymentEngine: options?.deploymentEngine ?? new DeploymentEngine(),
     trustRuntime,
   };
   state.persistentWorkGraph = new PersistentWorkGraph(state.workGraphStore!);
@@ -212,16 +217,38 @@ export async function createControlApiState(): Promise<ControlApiState> {
     },
   });
   state.companyLoop = new AutonomousCompanyLoop({
-    commercialPipeline: state.commercialPipeline,
-    customerSuccess: state.customerSuccess,
-    opportunityPersistence: state.opportunityReader,
-    projects: state.projectStore
-      ? {
-          create: (input, correlationId) => state.projectStore!.create(input, correlationId),
-          get: (id) => state.projectStore!.get(id),
-          list: () => state.projectStore!.list(),
-        }
-      : undefined,
+    commercialPipeline: new Proxy({} as CommercialPipelineEngine, {
+      get(_target, prop) {
+        const pipeline = state.commercialPipeline;
+        if (!pipeline) return undefined;
+        const val = (pipeline as any)[prop];
+        return typeof val === 'function' ? val.bind(pipeline) : val;
+      },
+    }),
+    customerSuccess: new Proxy({} as CustomerSuccessEngine, {
+      get(_target, prop) {
+        const cs = state.customerSuccess;
+        if (!cs) return undefined;
+        const val = (cs as any)[prop];
+        return typeof val === 'function' ? val.bind(cs) : val;
+      },
+    }),
+    opportunityPersistence: new Proxy({} as OpportunityPersistence, {
+      get(_target, prop) {
+        const store = state.opportunityReader;
+        if (!store) return undefined;
+        const val = (store as any)[prop];
+        return typeof val === 'function' ? val.bind(store) : val;
+      },
+    }),
+    projects: {
+      create: (input, correlationId) => {
+        if (!state.projectStore) throw new Error('Project store unavailable');
+        return state.projectStore.create(input, correlationId);
+      },
+      get: (id) => state.projectStore ? state.projectStore.get(id) : Promise.resolve(undefined),
+      list: () => state.projectStore ? state.projectStore.list() : Promise.resolve([]),
+    },
     requirements: {
       create: async (input) => {
         if (!state.requirementStore) return undefined;
@@ -233,29 +260,33 @@ export async function createControlApiState(): Promise<ControlApiState> {
       get: (id) => state.requirementStore ? state.requirementStore.get(id) : Promise.resolve(undefined),
       list: () => state.requirementStore ? state.requirementStore.list() : Promise.resolve([]),
     },
-    deployments: state.deploymentEngine
-      ? {
-          prepareRelease: (input) => state.deploymentEngine!.prepareRelease({
-            ...input,
-            environment: input.environment ?? 'production',
-            rollbackPlan: input.rollbackPlan ?? { strategy: 'helm', targetVersion: '0.9.0', steps: [], verificationCriteria: [] },
-          }),
-          executeDeployment: async (id, correlationId) => {
-            await state.deploymentEngine!.approveDeployment(id, 'human.approver');
-            return state.deploymentEngine!.executeDeployment({ deploymentId: id, executedBy: correlationId });
-          },
-          listDeployments: () => {
-            const byId = (state.deploymentEngine as unknown as { deploymentsById?: Map<string, unknown> }).deploymentsById;
-            return byId ? Array.from(byId.values()) : [];
-          },
-          getProductionStatus: async () => {
-            const projects = await state.projectStore?.list();
-            const first = projects?.[0]?.projectId ?? 'system-core';
-            const status = state.deploymentEngine!.getProductionStatus(first);
-            return status ?? { status: 'healthy' };
-          },
-        }
-      : undefined,
+    deployments: {
+      prepareRelease: (input) => {
+        if (!state.deploymentEngine) throw new Error('Deployment engine unavailable');
+        return state.deploymentEngine.prepareRelease({
+          ...input,
+          environment: input.environment ?? 'production',
+          rollbackPlan: input.rollbackPlan ?? { strategy: 'helm', targetVersion: '0.9.0', steps: [], verificationCriteria: [] },
+        });
+      },
+      executeDeployment: async (id, correlationId) => {
+        if (!state.deploymentEngine) throw new Error('Deployment engine unavailable');
+        await state.deploymentEngine.approveDeployment(id, 'human.approver');
+        return state.deploymentEngine.executeDeployment({ deploymentId: id, executedBy: correlationId });
+      },
+      listDeployments: () => {
+        if (!state.deploymentEngine) return [];
+        const byId = (state.deploymentEngine as unknown as { deploymentsById?: Map<string, unknown> })?.deploymentsById;
+        return byId ? Array.from(byId.values()) : [];
+      },
+      getProductionStatus: async () => {
+        if (!state.deploymentEngine) return { status: 'offline' };
+        const projects = await state.projectStore?.list();
+        const first = projects?.[0]?.projectId ?? 'system-core';
+        const status = state.deploymentEngine.getProductionStatus(first);
+        return status ?? { status: 'healthy' };
+      },
+    },
     gates: {
       listPending: async () => {
         return state.workPackages

@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
 import { CompanyOverviewSchema, CompanyLoopCycleSchema } from '@umer/contracts';
+import { DeploymentEngine } from '../../packages/registry/src/deployment-engine.js';
 import { createControlApiServer, createControlApiState } from '../../apps/control-api/src/server.js';
 import { InMemoryRequirementStore } from '../../apps/control-api/src/requirement-store.js';
 import type { ControlApiState } from '../../apps/control-api/src/state.js';
@@ -27,7 +28,12 @@ describe('M10 E2E — Autonomous Company Loop & CEO Command Center', () => {
   let server: Server;
 
   beforeAll(async () => {
-    state = await createControlApiState();
+    state = await createControlApiState({
+      deploymentEngine: new DeploymentEngine({
+        probeRunner: async () => ({ status: 'pass', responseTimeMs: 10 }),
+        rollbackRunner: async () => ({ status: 'success' }),
+      }),
+    });
     state.requirementStore = new InMemoryRequirementStore();
     server = createControlApiServer(state);
     await new Promise<void>((resolve) => server.listen(0, resolve));
