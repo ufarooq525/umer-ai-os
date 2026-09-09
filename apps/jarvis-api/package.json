@@ -10,10 +10,12 @@
     "dev": "tsx src/main.ts"
   },
   "dependencies": {
+    "@umer/auth": "workspace:*",
     "@umer/config": "workspace:*",
     "@umer/jarvis-core": "workspace:*",
     "@umer/jarvis-tools": "workspace:*",
-    "@umer/model-routing": "workspace:*"
+    "@umer/model-routing": "workspace:*",
+    "@umer/trust": "workspace:*"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
