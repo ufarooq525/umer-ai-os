@@ -29,6 +29,11 @@ async function requestJson(
   return body;
 }
 
+function boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= min && n <= max ? n : fallback;
+}
+
 export function createJarvisControlTools(options: JarvisControlToolsOptions = {}): JarvisTool[] {
   const baseUrl = options.controlApiBaseUrl ?? process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -51,19 +56,21 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
     execute: async (input) => {
       const body = objectInput(input);
-      const n = Number(body.opportunityLimit ?? 10);
-      const limit = Number.isInteger(n) && n >= 1 && n <= 20 ? n : 10;
+      const limit = boundedInteger(body.opportunityLimit, 10, 1, 20);
       const [dashboard, agents, opportunities] = await Promise.all([
         requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
         requestJson(baseUrl, '/v1/agents', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, `/v1/opportunities?limit=${limit}`, { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/opportunities', { method: 'GET' }, fetchImpl),
       ]);
+      const opportunityList = opportunities && typeof opportunities === 'object' && !Array.isArray(opportunities)
+        ? { ...(opportunities as Record<string, unknown>), opportunities: Array.isArray((opportunities as Record<string, unknown>).opportunities) ? ((opportunities as Record<string, unknown>).opportunities as unknown[]).slice(0, limit) : [] }
+        : opportunities;
       return {
         generatedAt: new Date().toISOString(),
         source: 'control-api-read-models',
         dashboard,
         agents,
-        opportunities,
+        opportunities: opportunityList,
       };
     },
   };
@@ -75,19 +82,80 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     execute: async () => requestJson(baseUrl, '/v1/agents', { method: 'GET' }, fetchImpl),
   };
 
+  const listAgentRuns: JarvisTool = {
+    name: 'list_agent_runs',
+    description: 'Inspect real agent-run observability records. Use when the CEO asks what agents have completed, what is running, what failed, or when a run is blocked. This is read-only and never invents runs.',
+    parameters: {
+      type: 'object',
+      properties: { status: { type: 'string', enum: ['running', 'completed', 'failed'] } },
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const status = body.status === 'running' || body.status === 'completed' || body.status === 'failed' ? body.status : undefined;
+      return requestJson(baseUrl, status ? `/v1/agent-runs?status=${encodeURIComponent(status)}` : '/v1/agent-runs', { method: 'GET' }, fetchImpl);
+    },
+  };
+
+  const getAgentRun: JarvisTool = {
+    name: 'get_agent_run',
+    description: 'Inspect one authoritative agent run by work-package ID, including its current observability snapshot. Use after a failure, blocker, or when the CEO asks why a specific run is in its current state.',
+    parameters: {
+      type: 'object',
+      properties: { workPackageId: { type: 'string' } },
+      required: ['workPackageId'],
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      if (typeof body.workPackageId !== 'string' || !body.workPackageId.trim()) throw new Error('workPackageId is required');
+      return requestJson(baseUrl, `/v1/agent-runs/${encodeURIComponent(body.workPackageId.trim())}`, { method: 'GET' }, fetchImpl);
+    },
+  };
+
+  const listWorkPackages: JarvisTool = {
+    name: 'list_work_packages',
+    description: 'Read real work packages and their specialist, stage, project, status, artifact and error fields. Use to explain exactly what work is in flight or awaiting review.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    execute: async () => requestJson(baseUrl, '/v1/work-packages', { method: 'GET' }, fetchImpl),
+  };
+
+  const listTasks: JarvisTool = {
+    name: 'list_tasks',
+    description: 'Read real work-management tasks. Use to map agents to specific project work, inspect blockers/status, or understand the execution plan. Optional filters: project or agent.',
+    parameters: {
+      type: 'object',
+      properties: { projectId: { type: 'string' }, agentId: { type: 'string' }, status: { type: 'string' } },
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const params = new URLSearchParams();
+      if (typeof body.projectId === 'string' && body.projectId.trim()) params.set('project', body.projectId.trim());
+      if (typeof body.agentId === 'string' && body.agentId.trim()) params.set('agent', body.agentId.trim());
+      if (typeof body.status === 'string' && body.status.trim()) params.set('status', body.status.trim());
+      const suffix = params.toString() ? `?${params.toString()}` : '';
+      return requestJson(baseUrl, `/v1/tasks${suffix}`, { method: 'GET' }, fetchImpl);
+    },
+  };
+
   const listOpportunities: JarvisTool = {
     name: 'list_opportunities',
     description: 'Read current business opportunities from the Umer AI OS opportunity read model. Use when the CEO asks about opportunities or revenue pipeline.',
     parameters: {
       type: 'object',
-      properties: { limit: { type: 'integer', minimum: 1, maximum: 50 } },
+      properties: { limit: { type: 'integer', minimum: 1, maximum: 50 }, status: { type: 'string' } },
       additionalProperties: false,
     },
     execute: async (input) => {
-      const { limit = 20 } = objectInput(input);
-      const n = Number(limit);
-      const suffix = Number.isInteger(n) && n >= 1 && n <= 50 ? `?limit=${n}` : '?limit=20';
-      return requestJson(baseUrl, `/v1/opportunities${suffix}`, { method: 'GET' }, fetchImpl);
+      const body = objectInput(input);
+      const limit = boundedInteger(body.limit, 20, 1, 50);
+      const params = new URLSearchParams({ });
+      if (typeof body.status === 'string' && body.status.trim()) params.set('status', body.status.trim());
+      const result = await requestJson(baseUrl, `/v1/opportunities${params.toString() ? `?${params.toString()}` : ''}`, { method: 'GET' }, fetchImpl);
+      if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
+      const record = result as Record<string, unknown>;
+      return { ...record, opportunities: Array.isArray(record.opportunities) ? record.opportunities.slice(0, limit) : [] };
     },
   };
 
@@ -154,5 +222,5 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, ceoBriefing, listAgents, listOpportunities, retrieveMemory, delegateWork];
+  return [systemSnapshot, ceoBriefing, listAgents, listAgentRuns, getAgentRun, listWorkPackages, listTasks, listOpportunities, retrieveMemory, delegateWork];
 }
