@@ -25,3 +25,7 @@ export * from './execution/index.js';
 export * from './opportunities/index.js';
 export * from './commands/index.js';
 export * from './work-graph/index.js';
+export * from './operations/index.js';
+export * from './commercial/index.js';
+export * from './customer-success/index.js';
+export * from './company-loop/index.js';

@@ -333,6 +333,9 @@ importers:
       '@umer/observability':
         specifier: workspace:*
         version: link:../observability
+      '@umer/registry':
+        specifier: workspace:*
+        version: link:../registry
       '@umer/resilience':
         specifier: workspace:*
         version: link:../resilience

@@ -36,14 +36,14 @@ const env = loadEnv();
 // skips it (reported, not fabricated) rather than building a Work Package
 // no running worker could execute.
 //
-// ux.design, qa.verify, and security.review are additionally gated on a
+// eng.app-delivery, qa.verify, and security.review are additionally gated on a
 // real `targetPath`: all three need one to use their filesystem_read /
-// process_run_audit tools for anything, so resolveTaskContext (below, in
-// the workgraph.plan handler) only supplies a task context for a UX/QA/
+// process_run_audit tools or execute repository delivery, so resolveTaskContext (below, in
+// the workgraph.plan handler) only supplies a task context for an Implementation/QA/
 // Security node when the plan command actually carried one — never a
-// placeholder path. requirements.formalize and product.definition work
-// entirely from the real persisted Requirement's own text (see
-// control-api's plan route), not a codebase, so neither needs one.
+// placeholder path. requirements.formalize, product.definition, and architecture.design
+// work purely from the real persisted Requirement's own text (see
+// control-api's plan route); ux.design works from text and attaches targetPath if provided.
 const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..');
 const engAppDelivery = await loadSpecFromFile(
   join(repoRoot, 'specialists', 'engineering', 'application-delivery.md'),
@@ -57,6 +57,15 @@ const requirementsFormalize = await loadSpecFromFile(
 const productDefinition = await loadSpecFromFile(
   join(repoRoot, 'specialists', 'program', 'product-definition.md'),
 );
+const architectureDesign = await loadSpecFromFile(
+  join(repoRoot, 'specialists', 'architecture', 'solution-design.md'),
+);
+const releaseManagement = await loadSpecFromFile(
+  join(repoRoot, 'specialists', 'release', 'release-management.md'),
+);
+const siteReliability = await loadSpecFromFile(
+  join(repoRoot, 'specialists', 'operations', 'site-reliability.md'),
+);
 const NODE_TYPE_SPECIALISTS = {
   Implementation: engAppDelivery,
   UX: uxDesign,
@@ -64,8 +73,17 @@ const NODE_TYPE_SPECIALISTS = {
   Security: securityReview,
   Requirements: requirementsFormalize,
   Product: productDefinition,
+  Architecture: architectureDesign,
+  Release: releaseManagement,
+  Operations: siteReliability,
 } as const;
-const TARGET_PATH_REQUIRED_NODE_TYPES = new Set<keyof typeof NODE_TYPE_SPECIALISTS>(['UX', 'QA', 'Security']);
+const TARGET_PATH_REQUIRED_NODE_TYPES = new Set<keyof typeof NODE_TYPE_SPECIALISTS>([
+  'Implementation',
+  'QA',
+  'Security',
+  'Release',
+  'Operations',
+]);
 
 const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] = (node) => {
   const spec = (NODE_TYPE_SPECIALISTS as Record<string, typeof engAppDelivery | undefined>)[node.type];
@@ -80,13 +98,14 @@ const workGraphPlanningResolver: WorkGraphPlanningOptions['resolveSpecialist'] =
 
 /**
  * Real policy for what counts as "enough context to plan" per node type —
- * this is where "UX, QA, and Security need a real targetPath, Implementation
- * doesn't" is decided; @umer/orchestration itself stays generic (see
+ * this is where "Implementation, QA, and Security need a real targetPath"
+ * is decided; @umer/orchestration itself stays generic (see
  * WorkGraphPlanningOptions's doc comment). Never invents a targetPath: if
  * the plan command didn't carry one (because the triggering project has no
  * registryProjectId, or it didn't resolve to a real on-disk codebase — see
- * control-api's plan route), a UX/QA/Security node is skipped with a
- * reason, not dispatched to run ungrounded.
+ * control-api's plan route), an Implementation/QA/Security node is skipped with a
+ * reason, not dispatched to run ungrounded. For other nodes (like UX),
+ * targetPath is attached if provided so filesystem tools are available.
  */
 const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext'] = (node, raw) => {
   if (!raw.taskIds || raw.taskIds.length === 0) return undefined;
@@ -94,7 +113,11 @@ const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext
   if (TARGET_PATH_REQUIRED_NODE_TYPES.has(node.type as keyof typeof NODE_TYPE_SPECIALISTS)) {
     return raw.targetPath ? { taskIds: raw.taskIds, targetPath: raw.targetPath, ...taskDetails } : undefined;
   }
-  return { taskIds: raw.taskIds, ...taskDetails };
+  return {
+    taskIds: raw.taskIds,
+    ...(raw.targetPath ? { targetPath: raw.targetPath } : {}),
+    ...taskDetails,
+  };
 };
 
 const fabric = await createMessageFabric({ producer: serviceName });

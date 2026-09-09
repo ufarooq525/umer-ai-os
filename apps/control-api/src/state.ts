@@ -5,7 +5,7 @@ import type { CeoCommandService, ControlPlaneService } from '@umer/control-plane
 import type { AuditService } from '@umer/audit';
 import type { TrustRuntime } from '@umer/trust';
 import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '@umer/observability';
-import type { OpportunityPersistence } from '@umer/opportunity-intelligence';
+import type { AutonomousCompanyLoop, CommercialPipelineEngine, CustomerSuccessEngine, OpportunityPersistence } from '@umer/opportunity-intelligence';
 import type { ArtifactStore } from '@umer/artifacts';
 import type { MessageFabricClient } from '@umer/message-fabric';
 import type { PersistentWorkGraph, WorkGraphStore } from '@umer/orchestration';
@@ -14,7 +14,7 @@ import type { ProjectStore } from './project-store.js';
 import type { TaskStore } from './task-store.js';
 import type { RequirementStore } from './requirement-store.js';
 import type { AgentControlStore } from './agent-control-store.js';
-import { applyEngToProject, applyQaToProject, applySeoToProject, applySecurityToProject, applyPerfToProject, applyUxToProject, createProjectRegistry, decideEngGate, decideSecurityGateByCategory, decidePerfGateByCategory, hasElevatedSecurityFindings, hasElevatedPerfFindings, planIntakeForControl, type EngApplyResult, type IntakeInstruction, type IntakePlan, type CodeProducer, type ProjectRegistry, type ResolvedProject, type QaApplyResult, type SeoApplyResult, type SecurityApplyResult, type PerfApplyResult, type UxApplyResult } from '@umer/registry';
+import { applyEngToProject, applyQaToProject, applySeoToProject, applySecurityToProject, applyPerfToProject, applyUxToProject, createProjectRegistry, decideEngGate, decideSecurityGateByCategory, decidePerfGateByCategory, hasElevatedSecurityFindings, hasElevatedPerfFindings, planIntakeForControl, type EngApplyResult, type IntakeInstruction, type IntakePlan, type CodeProducer, type ProjectRegistry, type ResolvedProject, type QaApplyResult, type SeoApplyResult, type SecurityApplyResult, type PerfApplyResult, type UxApplyResult, type DeploymentEngine } from '@umer/registry';
 
 export type WorkPackageSummary = { workPackageId: string; execId: string; status: string; specialistId: string; stage: string; artifactId?: string; projectId?: string; errorMessage?: string; updatedAt?: string };
 export type WorkGraphPlanResult = { created: string[]; skipped: Array<{ nodeId: string; nodeType: string; reason: string }>; occurredAt: string };
@@ -37,6 +37,9 @@ export type ControlApiState = {
   requirementStore?: RequirementStore;
   agentControlStore?: AgentControlStore;
   opportunityReader?: OpportunityPersistence;
+  commercialPipeline?: CommercialPipelineEngine;
+  customerSuccess?: CustomerSuccessEngine;
+  companyLoop?: AutonomousCompanyLoop;
   trustRuntime?: TrustRuntime;
   commandService?: CeoCommandService;
   artifactStore?: ArtifactStore;
@@ -44,6 +47,7 @@ export type ControlApiState = {
   workGraphStore?: WorkGraphStore;
   persistentWorkGraph?: PersistentWorkGraph;
   workGraphPlanResults?: Map<string, WorkGraphPlanResult>;
+  deploymentEngine?: DeploymentEngine;
 };
 
 export function resolveCatalogPath(): string { const fromEnv = process.env.UMER_PROJECTS_CATALOG; if (fromEnv && fromEnv.length > 0) return fromEnv; const repoRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', '..'); return join(repoRoot, 'projects', 'catalog.json'); }

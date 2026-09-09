@@ -12,6 +12,7 @@ import {
   type SpecialistRunResult,
 } from './handlers/engineering.js';
 import { runLlmAgent, type LlmAgentDependencies } from './handlers/llm-agent.js';
+import type { CodeProducer } from '@umer/registry';
 
 export type AgentRunResult = {
   workPackageId: string;
@@ -36,6 +37,8 @@ export type AgentRuntimeOptions = {
   events?: AgentEventPublisher;
   /** Model Routing + Extension wiring for the generic LLM agent loop. */
   llm?: LlmAgentDependencies;
+  /** Code producer for engineering delivery packages. */
+  codeProducer?: CodeProducer;
 };
 
 export class AgentRuntime {
@@ -46,6 +49,7 @@ export class AgentRuntime {
   private readonly auditService?: AuditService;
   private readonly events: AgentEventPublisher;
   private readonly llm?: LlmAgentDependencies;
+  private readonly codeProducer?: CodeProducer;
 
   constructor(options: AgentRuntimeOptions) {
     this.resolveMandate = options.resolveMandate;
@@ -55,6 +59,7 @@ export class AgentRuntime {
     this.auditService = options.auditService;
     this.events = options.events ?? createNoopAgentEventPublisher();
     this.llm = options.llm;
+    this.codeProducer = options.codeProducer;
   }
 
   async execute(
@@ -185,7 +190,10 @@ export class AgentRuntime {
     signal?: AbortSignal,
   ): Promise<SpecialistRunResult> {
     if (DETERMINISTIC_SPECIALISTS.has(mandate.contract.specialistId)) {
-      return runEngineeringApplicationDelivery(workPackage, mandate, { retrievalBundle });
+      return runEngineeringApplicationDelivery(workPackage, mandate, {
+        retrievalBundle,
+        codeProducer: this.codeProducer,
+      });
     }
 
     if (!this.llm) {

@@ -112,6 +112,16 @@ function buildGroundingHint(workPackage: WorkPackageContract, allowlist: readonl
         '.umer/<specialist>/ subtree.',
     );
   }
+  if (allowlist.includes('process_run_audit')) {
+    hints.push(
+      'Use process_run_audit (tool: "npm" or "composer") to run security dependency advisories against the real codebase.',
+    );
+  }
+  if (allowlist.includes('process_recommend')) {
+    hints.push(
+      'Use process_recommend to evaluate and classify test suite commands against the allowlist.',
+    );
+  }
   if (hints.length === 0) {
     return undefined;
   }
@@ -155,16 +165,17 @@ function buildUserMessage(workPackage: WorkPackageContract, allowlist: readonly 
 }
 
 function inferArtifactType(mandate: SpecialistMandate): ArtifactType {
+  if (mandate.contract.department === 'Commercial') return 'CommercialProposal';
+  if (mandate.contract.department === 'CustomerSuccess') return 'CustomerSuccessReport';
   if (mandate.contract.mandateDomain === 'Business') return 'ResearchFinding';
   if (mandate.contract.department === 'Design') return 'DesignArtifact';
   if (mandate.contract.department === 'QA') return 'TestPlanResults';
+  if (mandate.contract.department === 'Security') return 'SecurityReport';
   if (mandate.contract.department === 'Requirements') return 'RequirementsBrief';
   if (mandate.contract.department === 'Product') return 'ProductBrief';
-  // 'Security' has no dedicated ArtifactType in ArtifactTypeSchema (Brief,
-  // ResearchFinding, ADR, DesignArtifact, Code, TestPlanResults, SEOAudit,
-  // MarketingAsset, ReleasePackage, Decision) — none of these fit a security
-  // audit report any better than the generic Brief fallback, so it stays
-  // there rather than forcing an ill-fitting label onto it.
+  if (mandate.contract.department === 'Architecture') return 'ArchitectureDesign';
+  if (mandate.contract.department === 'Release') return 'ReleasePackage';
+  if (mandate.contract.department === 'Operations') return 'OperationalReport';
   return 'Brief';
 }
 

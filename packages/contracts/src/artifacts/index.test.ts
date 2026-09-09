@@ -21,12 +21,21 @@ const base = {
 };
 
 describe('ArtifactTypeSchema', () => {
-  it('accepts RequirementsBrief and ProductBrief', () => {
+  it('accepts RequirementsBrief, ProductBrief, ArchitectureDesign, and SecurityReport', () => {
     expect(parseContract(ArtifactContractSchema, { ...base, artifactType: 'RequirementsBrief' }).artifactType).toBe(
       'RequirementsBrief',
     );
     expect(parseContract(ArtifactContractSchema, { ...base, artifactType: 'ProductBrief' }).artifactType).toBe(
       'ProductBrief',
+    );
+    expect(parseContract(ArtifactContractSchema, { ...base, artifactType: 'ArchitectureDesign' }).artifactType).toBe(
+      'ArchitectureDesign',
+    );
+    expect(parseContract(ArtifactContractSchema, { ...base, artifactType: 'SecurityReport' }).artifactType).toBe(
+      'SecurityReport',
+    );
+    expect(parseContract(ArtifactContractSchema, { ...base, artifactType: 'OperationalReport' }).artifactType).toBe(
+      'OperationalReport',
     );
   });
 

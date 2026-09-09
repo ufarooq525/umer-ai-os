@@ -212,3 +212,8 @@ export {
   createSpecialistRegistry,
 } from './specialist-registry.js';
 export type { SpecialistMatchQuery } from './specialist-registry.js';
+export {
+  DeploymentEngine,
+  type DeploymentEngineOptions,
+  type HealthProbeCheck,
+} from './deployment-engine.js';

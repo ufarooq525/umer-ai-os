@@ -30,6 +30,7 @@
     "@umer/audit": "workspace:*",
     "@umer/model-routing": "workspace:*",
     "@umer/extension": "workspace:*",
+    "@umer/registry": "workspace:*",
     "@umer/resilience": "workspace:*",
     "@umer/observability": "workspace:*"
   },

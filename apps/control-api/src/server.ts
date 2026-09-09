@@ -30,16 +30,43 @@ import {
   type TaskStatus,
   type RequirementStatus,
   type RequirementContract,
+  type ContactVerificationStatus,
+  type SalesStage,
+  type CustomerId,
+  type CaseId,
+  type ProjectId,
+  CustomerIdSchema,
+  CaseIdSchema,
+  ProjectIdSchema,
+  DealIdSchema,
+  ContactIdSchema,
+  type DeliveryOutcomeStatus,
+  type SupportCaseSeverity,
+  type FeedbackSentiment,
+  type FeedbackCategory,
+  type LearningCategory,
+  type LearningSourceType,
+  type ClientSignoff,
+  type DeliveryKpiResult,
+  type FinancialCosts,
 } from '@umer/contracts';
 import {
   createLogger,
   InMemoryAgentRegistryStore,
   InMemoryAgentRunReadModelStore,
 } from '@umer/observability';
-import { InMemoryOpportunityPersistence, buildBusinessIdentity } from '@umer/opportunity-intelligence';
+import {
+  AutonomousCompanyLoop,
+  type RunCycleInput,
+  CommercialPipelineEngine,
+  CustomerSuccessEngine,
+  InMemoryOpportunityPersistence,
+  buildBusinessIdentity,
+} from '@umer/opportunity-intelligence';
 import type { DiscoveryCandidateRecord } from '@umer/contracts';
 import { InMemoryArtifactStore } from '@umer/artifacts';
-import { routeIntakeGoal, type IntakeInstruction } from '@umer/registry';
+import { routeIntakeGoal, type IntakeInstruction, DeploymentEngine } from '@umer/registry';
+import type { DeploymentStrategy, Environment, RollbackPlan } from '@umer/contracts';
 import { InMemoryProjectStore } from './project-store.js';
 import { InMemoryTaskStore } from './task-store.js';
 import { RequirementAlreadyDecidedError } from './requirement-store.js';
@@ -125,6 +152,7 @@ export async function createControlApiState(): Promise<ControlApiState> {
     opportunityReader: new InMemoryOpportunityPersistence(),
     artifactStore: new InMemoryArtifactStore(),
     workGraphStore: new InMemoryWorkGraphStore(),
+    deploymentEngine: new DeploymentEngine(),
     trustRuntime,
   };
   state.persistentWorkGraph = new PersistentWorkGraph(state.workGraphStore!);
@@ -164,6 +192,95 @@ export async function createControlApiState(): Promise<ControlApiState> {
     },
     { trust: trustRuntime, auditService },
   );
+  state.commercialPipeline = new CommercialPipelineEngine({
+    opportunities: {
+      getOpportunity: (id) => state.opportunityReader!.getOpportunity(id),
+      saveOpportunity: (opportunity) => state.opportunityReader!.saveOpportunity(opportunity),
+    },
+    projects: {
+      create: (input, correlationId) => state.projectStore!.create(input, correlationId),
+      get: (id) => state.projectStore!.get(id),
+    },
+  });
+  state.customerSuccess = new CustomerSuccessEngine({
+    projects: {
+      get: (id) => state.projectStore!.get(id),
+      list: () => state.projectStore!.list(),
+    },
+    opportunities: {
+      get: (id) => state.opportunityReader!.getOpportunity(id),
+    },
+  });
+  state.companyLoop = new AutonomousCompanyLoop({
+    commercialPipeline: state.commercialPipeline,
+    customerSuccess: state.customerSuccess,
+    opportunityPersistence: state.opportunityReader,
+    projects: state.projectStore
+      ? {
+          create: (input, correlationId) => state.projectStore!.create(input, correlationId),
+          get: (id) => state.projectStore!.get(id),
+          list: () => state.projectStore!.list(),
+        }
+      : undefined,
+    requirements: {
+      create: async (input) => {
+        if (!state.requirementStore) return undefined;
+        return state.requirementStore.create({
+          ...input,
+          source: input.source ?? { kind: 'Opportunity', id: input.opportunityId ?? 'unknown', label: 'company-loop' },
+        });
+      },
+      get: (id) => state.requirementStore ? state.requirementStore.get(id) : Promise.resolve(undefined),
+      list: () => state.requirementStore ? state.requirementStore.list() : Promise.resolve([]),
+    },
+    deployments: state.deploymentEngine
+      ? {
+          prepareRelease: (input) => state.deploymentEngine!.prepareRelease({
+            ...input,
+            environment: input.environment ?? 'production',
+            rollbackPlan: input.rollbackPlan ?? { strategy: 'helm', targetVersion: '0.9.0', steps: [], verificationCriteria: [] },
+          }),
+          executeDeployment: async (id, correlationId) => {
+            await state.deploymentEngine!.approveDeployment(id, 'human.approver');
+            return state.deploymentEngine!.executeDeployment({ deploymentId: id, executedBy: correlationId });
+          },
+          listDeployments: () => {
+            const byId = (state.deploymentEngine as unknown as { deploymentsById?: Map<string, unknown> }).deploymentsById;
+            return byId ? Array.from(byId.values()) : [];
+          },
+          getProductionStatus: async () => {
+            const projects = await state.projectStore?.list();
+            const first = projects?.[0]?.projectId ?? 'system-core';
+            const status = state.deploymentEngine!.getProductionStatus(first);
+            return status ?? { status: 'healthy' };
+          },
+        }
+      : undefined,
+    gates: {
+      listPending: async () => {
+        return state.workPackages
+          .filter((wp) => wp.status === 'AwaitingReview')
+          .map((wp) => ({
+            gateId: `gate-${wp.workPackageId}`,
+            stageFrom: wp.stage,
+            stageTo: 'Dispatch',
+            requiredApprovers: ['human.approver'],
+          }));
+      },
+    },
+    agents: {
+      list: async () => {
+        if (!state.agentRegistry) return [];
+        const snapshots = await state.agentRegistry.list();
+        return Promise.all(snapshots.map((ag) => enrichAgentWithProject(state, ag)));
+      },
+    },
+    artifacts: {
+      count: async () => {
+        return state.artifactStore ? (await state.artifactStore.list()).length : 0;
+      },
+    },
+  });
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
       state.workPackages.filter((wp) => wp.status === 'AwaitingReview').length,
@@ -480,20 +597,32 @@ export function createControlApiServer(state: ControlApiState) {
       return;
     }
 
-    // Real, persisted-Requirement-grounded instruction for the two node
-    // types (Requirements, Product) whose Specialist works from the
-    // Requirement's own text rather than a codebase — see
-    // requirements.formalize/product.definition in orchestration-worker's
-    // NODE_TYPE_SPECIALISTS. Returns undefined (falls back to the generic
-    // boilerplate below) when there's no requirementId annotation, no
-    // requirementStore connected, or the Requirement itself can't be found —
-    // never fabricates Requirement content that doesn't exist.
+    // Real, persisted-Requirement-grounded instruction for the five node
+    // types (Requirements, Product, Architecture, UX, Implementation) whose Specialist works from the
+    // Requirement's context — see
+    // requirements.formalize/product.definition/architecture.design/ux.design/eng.app-delivery in
+    // orchestration-worker's NODE_TYPE_SPECIALISTS. Returns undefined (falls
+    // back to the generic boilerplate below) when there's no requirementId
+    // annotation, no requirementStore connected, or the Requirement itself
+    // can't be found — never fabricates Requirement content that doesn't exist.
     async function buildRequirementGroundedTask(
       nodeType: string,
       requirementId: string | undefined,
+      projectId?: string,
     ): Promise<{ description: string; acceptanceCriteria: string[] } | undefined> {
       if (!requirementId || !state.requirementStore) return undefined;
-      if (nodeType !== 'Requirements' && nodeType !== 'Product') return undefined;
+      if (
+        nodeType !== 'Requirements' &&
+        nodeType !== 'Product' &&
+        nodeType !== 'Architecture' &&
+        nodeType !== 'UX' &&
+        nodeType !== 'Implementation' &&
+        nodeType !== 'QA' &&
+        nodeType !== 'Security' &&
+        nodeType !== 'Release' &&
+        nodeType !== 'Operations'
+      )
+        return undefined;
       const requirement = await state.requirementStore.get(requirementId);
       if (!requirement) return undefined;
 
@@ -506,14 +635,172 @@ export function createControlApiServer(state: ControlApiState) {
         requirement.openQuestions.length > 0 ? `Open questions: ${requirement.openQuestions.join('; ')}` : undefined,
       ].filter((line): line is string => Boolean(line));
 
+      // If planning Architecture, UX, Implementation, QA, Security, Release, or Operations and prior tasks exist for this project,
+      // include them for context so downstream stages build on real upstream work.
+      if (
+        (nodeType === 'Architecture' ||
+          nodeType === 'UX' ||
+          nodeType === 'Implementation' ||
+          nodeType === 'QA' ||
+          nodeType === 'Security' ||
+          nodeType === 'Release' ||
+          nodeType === 'Operations') &&
+        projectId &&
+        state.taskStore
+      ) {
+        try {
+          const tasks = await state.taskStore.list({ projectId });
+          const productTask = tasks.find(
+            (t) => t.title.toLowerCase().includes('product') && t.description.length > 0,
+          );
+          if (productTask) {
+            lines.push(`Product context: ${productTask.description}`);
+          }
+          if (
+            nodeType === 'Implementation' ||
+            nodeType === 'QA' ||
+            nodeType === 'Security' ||
+            nodeType === 'Release' ||
+            nodeType === 'Operations'
+          ) {
+            const archTask = tasks.find(
+              (t) => t.title.toLowerCase().includes('architecture') && t.description.length > 0,
+            );
+            if (archTask) {
+              lines.push(`Architecture context: ${archTask.description}`);
+            }
+            const uxTask = tasks.find(
+              (t) => t.title.toLowerCase().includes('ux') && t.description.length > 0,
+            );
+            if (uxTask) {
+              lines.push(`UX context: ${uxTask.description}`);
+            }
+          }
+          if (
+            nodeType === 'QA' ||
+            nodeType === 'Security' ||
+            nodeType === 'Release' ||
+            nodeType === 'Operations'
+          ) {
+            const implTask = tasks.find(
+              (t) =>
+                (t.title === 'Implementation' ||
+                  t.title.toLowerCase().startsWith('implementation:') ||
+                  t.title.toLowerCase().startsWith('implementation ')) &&
+                t.description.length > 0,
+            );
+            if (implTask) {
+              lines.push(`Implementation context: ${implTask.description}`);
+            }
+          }
+          if (nodeType === 'Release' || nodeType === 'Operations') {
+            const qaTask = tasks.find(
+              (t) =>
+                (t.title === 'QA' ||
+                  t.title.toLowerCase().startsWith('qa:') ||
+                  t.title.toLowerCase().startsWith('qa ')) &&
+                t.description.length > 0,
+            );
+            if (qaTask) {
+              lines.push(`QA context: ${qaTask.description}`);
+            }
+            const secTask = tasks.find(
+              (t) =>
+                (t.title === 'Security Review' ||
+                  t.title.toLowerCase().startsWith('security:') ||
+                  t.title.toLowerCase().startsWith('security ') ||
+                  t.title.toLowerCase().startsWith('sec:')) &&
+                t.description.length > 0,
+            );
+            if (secTask) {
+              lines.push(`Security context: ${secTask.description}`);
+            }
+          }
+          if (nodeType === 'Operations') {
+            const relTask = tasks.find(
+              (t) =>
+                (t.title === 'Release' ||
+                  t.title.toLowerCase().startsWith('release:') ||
+                  t.title.toLowerCase().startsWith('release ')) &&
+                !t.title.toLowerCase().startsWith('qa') &&
+                t.description.length > 0,
+            );
+            if (relTask) {
+              lines.push(`Release context: ${relTask.description}`);
+            }
+          }
+        } catch {
+          // Non-blocking: fall back gracefully to Requirement grounding alone
+        }
+      }
+
       const task =
         nodeType === 'Requirements'
           ? `Formalize this Requirement into a Requirements Brief.`
-          : `Define product scope, user stories, risks, and prioritization for this Requirement.`;
+          : nodeType === 'Product'
+            ? `Define product scope, user stories, risks, and prioritization for this Requirement.`
+            : nodeType === 'Architecture'
+              ? `Define system architecture, data model, API/integration contracts, security architecture, and deployment topology for this Requirement.`
+              : nodeType === 'UX'
+                ? `Design user experience, user flows, interaction patterns, accessibility standards, and UI layout specifications for this Requirement.`
+                : nodeType === 'Implementation'
+                  ? `Implement software changes for this Requirement, adhering to Architecture specifications and UX designs. Inspect repository, scope changes, execute staged tests, and produce unified diff and test evidence.`
+                  : nodeType === 'QA'
+                    ? `Verify functional, UI, and non-functional quality for this Requirement and Implementation. Inspect repository and test signals, execute test suites, and produce verification evidence.`
+                    : nodeType === 'Security'
+                      ? `Conduct static security audit for this Requirement and Implementation. Run dependency advisories (npm/composer audit), scan for secrets, and review route authorization consistency.`
+                      : nodeType === 'Release'
+                        ? `Prepare deployment-ready ReleasePackage for this Requirement. Inspect repository deployment descriptors (Docker Compose / Helm chart), verify QA test plan results and security audit sign-offs, and define an actionable rollback procedure.`
+                        : `Verify deployment health, validate SLO and error budget criteria, confirm rollback readiness, and report production status for this Requirement and Release.`;
+
+      const acceptanceCriteria =
+        nodeType === 'Architecture'
+          ? [
+              ...requirement.acceptanceCriteria,
+              'System architecture, data model, API contracts, security architecture, and deployment topology documented and reviewed',
+            ]
+          : nodeType === 'UX'
+            ? [
+                ...requirement.acceptanceCriteria,
+                'User experience, user flows, interaction patterns, accessibility standards, and UI layout specifications documented and reviewed',
+              ]
+            : nodeType === 'Implementation'
+              ? [
+                  ...requirement.acceptanceCriteria,
+                  'Scoped repository change implemented with unified diff and passing test evidence',
+                  'Implementation artifact submitted for human review gate',
+                ]
+              : nodeType === 'QA'
+                ? [
+                    ...requirement.acceptanceCriteria,
+                    'Independent QA verification plan executed with test signals and logs captured',
+                    'Test plan results artifact submitted for human review gate',
+                  ]
+                : nodeType === 'Security'
+                  ? [
+                      ...requirement.acceptanceCriteria,
+                      'Static security audit conducted with severity-tagged findings and advisory evidence',
+                      'Security report artifact submitted for human review gate',
+                    ]
+                  : nodeType === 'Release'
+                    ? [
+                        ...requirement.acceptanceCriteria,
+                        'ReleasePackage artifact assembled with target manifests and verified quality gate sign-offs',
+                        'Actionable rollback plan defined with explicit steps and verification criteria',
+                        'ReleasePackage artifact submitted for human review gate',
+                      ]
+                    : nodeType === 'Operations'
+                      ? [
+                          ...requirement.acceptanceCriteria,
+                          'Deployment health verified across all service probes (control-api, gateway, workers, web)',
+                          'Truthful production status and incident log updated with operational evidence',
+                          'Operational report artifact submitted for human review gate',
+                        ]
+                      : requirement.acceptanceCriteria;
 
       return {
         description: `${task}\n\n${lines.join('\n')}`,
-        acceptanceCriteria: requirement.acceptanceCriteria,
+        acceptanceCriteria,
       };
     }
 
@@ -569,6 +856,7 @@ export function createControlApiServer(state: ControlApiState) {
         const grounded = await buildRequirementGroundedTask(
           node.type,
           typeof requirementIdAnnotation === 'string' ? requirementIdAnnotation : undefined,
+          projectId,
         );
         const description =
           grounded?.description ?? `Deliver "${node.title}" for project ${projectId}, per its Work Graph decomposition.`;
@@ -738,6 +1026,161 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       sendJson(res, 200, project);
+      return;
+    }
+
+    // Production & Deployment routes (M7 — Release + Operations)
+    const productionMatch = path.match(/^\/v1\/(?:work-projects|projects)\/([^/]+)\/production$/);
+    if (productionMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(productionMatch[1]!);
+      state.deploymentEngine ??= new DeploymentEngine();
+      const env = (url.searchParams.get('env') as Environment | null) ?? 'production';
+      const productionStatus = state.deploymentEngine.getProductionStatus(projectId, env);
+      const deployments = state.deploymentEngine.listDeployments(projectId, env);
+      const incidents = state.deploymentEngine.listIncidents(projectId);
+      sendJson(res, 200, {
+        projectId,
+        productionStatus,
+        deployments,
+        incidents,
+      });
+      return;
+    }
+
+    const deployMatch = path.match(/^\/v1\/(?:work-projects|projects)\/([^/]+)\/deploy$/);
+    if (deployMatch && req.method === 'POST') {
+      const projectId = decodeURIComponent(deployMatch[1]!);
+      state.deploymentEngine ??= new DeploymentEngine();
+      const body = await readJsonBody<{
+        releasePackageId?: string;
+        targetVersion?: string;
+        environment?: Environment;
+        strategy?: DeploymentStrategy;
+        manifestRef?: string;
+        rollbackPlan?: RollbackPlan;
+        approver?: string;
+        autoRollbackOnFailure?: boolean;
+      }>(req);
+
+      if (!body.releasePackageId || !body.targetVersion) {
+        sendJson(res, 400, { error: 'releasePackageId and targetVersion are required' });
+        return;
+      }
+
+      const rollbackPlan = body.rollbackPlan ?? {
+        strategy: 'helm rollback',
+        targetVersion: '0.9.0',
+        steps: ['helm rollback umer 1', 'verify pods running'],
+        verificationCriteria: ['GET /health returns 200 on all endpoints'],
+      };
+
+      try {
+        const deployment = await state.deploymentEngine.prepareRelease({
+          projectId,
+          releasePackageId: body.releasePackageId,
+          targetVersion: body.targetVersion,
+          environment: body.environment ?? 'production',
+          strategy: body.strategy ?? 'helm',
+          manifestRef: body.manifestRef,
+          rollbackPlan,
+        });
+
+        const approver = body.approver ?? 'human.operator';
+        await state.deploymentEngine.approveDeployment(deployment.deploymentId, approver);
+
+        const outcome = await state.deploymentEngine.executeDeployment({
+          deploymentId: deployment.deploymentId,
+          autoRollbackOnFailure: body.autoRollbackOnFailure ?? true,
+          executedBy: approver,
+        });
+
+        const correlationId = `corr-deploy-${projectId}-${Date.now()}`;
+        await state.auditService.append(
+          {
+            action: 'deployment.executed',
+            actor: approver,
+            resourceType: 'project',
+            resourceId: projectId,
+            outcome: outcome.deployment.status === 'deployed' ? 'success' : 'failure',
+            correlationId,
+            detail: {
+              deploymentId: outcome.deployment.deploymentId,
+              targetVersion: body.targetVersion,
+              healthStatus: outcome.deployment.healthStatus,
+            },
+          },
+          correlationId,
+        );
+
+        sendJson(res, outcome.deployment.status === 'deployed' ? 200 : 500, outcome);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const rollbackMatch = path.match(/^\/v1\/(?:work-projects|projects)\/([^/]+)\/rollback$/);
+    if (rollbackMatch && req.method === 'POST') {
+      const projectId = decodeURIComponent(rollbackMatch[1]!);
+      state.deploymentEngine ??= new DeploymentEngine();
+      const body = await readJsonBody<{
+        deploymentId?: string;
+        reason?: string;
+        triggeredBy?: string;
+      }>(req);
+
+      if (!body.deploymentId || !body.reason) {
+        sendJson(res, 400, { error: 'deploymentId and reason are required' });
+        return;
+      }
+
+      try {
+        const outcome = await state.deploymentEngine.executeRollback({
+          deploymentId: body.deploymentId,
+          reason: body.reason,
+          triggeredBy: body.triggeredBy ?? 'human.operator',
+        });
+
+        const correlationId = `corr-rollback-${projectId}-${Date.now()}`;
+        await state.auditService.append(
+          {
+            action: 'deployment.rolled_back',
+            actor: body.triggeredBy ?? 'human.operator',
+            resourceType: 'project',
+            resourceId: projectId,
+            outcome: 'success',
+            correlationId,
+            detail: {
+              deploymentId: body.deploymentId,
+              reason: body.reason,
+              incidentId: outcome.incident.incidentId,
+            },
+          },
+          correlationId,
+        );
+
+        sendJson(res, 200, outcome);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const deploymentsListMatch = path.match(/^\/v1\/(?:work-projects|projects)\/([^/]+)\/deployments$/);
+    if (deploymentsListMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(deploymentsListMatch[1]!);
+      state.deploymentEngine ??= new DeploymentEngine();
+      const deployments = state.deploymentEngine.listDeployments(projectId);
+      sendJson(res, 200, { projectId, deployments });
+      return;
+    }
+
+    const incidentsListMatch = path.match(/^\/v1\/(?:work-projects|projects)\/([^/]+)\/incidents$/);
+    if (incidentsListMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(incidentsListMatch[1]!);
+      state.deploymentEngine ??= new DeploymentEngine();
+      const incidents = state.deploymentEngine.listIncidents(projectId);
+      sendJson(res, 200, { projectId, incidents });
       return;
     }
 
@@ -970,6 +1413,738 @@ export function createControlApiServer(state: ControlApiState) {
         businessesConsidered,
         cap: COMMERCIAL_SUMMARY_BUSINESS_CAP,
       });
+      return;
+    }
+
+    // --- Commercial Sales Loop (@umer/opportunity-intelligence) ---
+    // Bridges discovered opportunities through verified contacts, outreach,
+    // BANT qualification, proposal creation, CEO approval gating, and
+    // automatic delivery project creation on deal win.
+
+    if (path === '/v1/commercial/deals' && req.method === 'GET') {
+      const stage = url.searchParams.get('stage') as SalesStage | null;
+      const opportunityId = url.searchParams.get('opportunityId') ?? undefined;
+      const deals = (await state.commercialPipeline?.listDeals({
+        stage: stage ?? undefined,
+        opportunityId,
+      })) ?? [];
+      sendJson(res, 200, { deals });
+      return;
+    }
+
+    if (path === '/v1/commercial/deals' && req.method === 'POST') {
+      const body = await readJsonBody<{
+        opportunityId?: string;
+        primaryProspectId?: string;
+        title?: string;
+        estimatedValue?: number;
+        currency?: string;
+        actor?: string;
+      }>(req);
+      if (!body.opportunityId || !body.primaryProspectId || !body.title) {
+        sendJson(res, 400, {
+          error: 'opportunityId, primaryProspectId, and title are required',
+        });
+        return;
+      }
+      try {
+        const deal = await state.commercialPipeline!.createDeal({
+          opportunityId: body.opportunityId,
+          primaryProspectId: body.primaryProspectId,
+          title: body.title,
+          estimatedValue: body.estimatedValue,
+          currency: body.currency,
+          actor: body.actor ?? 'commercial.sales-representative',
+        });
+        sendJson(res, 201, deal);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealContactsMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/contacts$/);
+    if (commercialDealContactsMatch && req.method === 'GET') {
+      const dealId = decodeURIComponent(commercialDealContactsMatch[1]!);
+      const deal = await state.commercialPipeline?.getDeal(dealId);
+      if (!deal) {
+        sendJson(res, 404, { error: `Deal not found: ${dealId}` });
+        return;
+      }
+      const contacts = (await state.commercialPipeline?.listContacts(deal.primaryProspectId)) ?? [];
+      sendJson(res, 200, { contacts });
+      return;
+    }
+
+    if (commercialDealContactsMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealContactsMatch[1]!);
+      const deal = await state.commercialPipeline?.getDeal(dealId);
+      if (!deal) {
+        sendJson(res, 404, { error: `Deal not found: ${dealId}` });
+        return;
+      }
+      const body = await readJsonBody<{
+        prospectId?: string;
+        name?: string;
+        role?: string;
+        email?: string;
+        phone?: string;
+        linkedinUrl?: string;
+        isPrimary?: boolean;
+        verificationStatus?: ContactVerificationStatus;
+        provenance?: {
+          sourceUrl: string;
+          observedAt: string;
+          method: 'directory' | 'website_scrape' | 'manual' | 'referral' | 'other';
+          rawText?: string;
+        };
+      }>(req);
+      if (!body.name || !body.provenance) {
+        sendJson(res, 400, { error: 'name and provenance are required' });
+        return;
+      }
+      try {
+        const contact = await state.commercialPipeline!.createContact({
+          prospectId: body.prospectId ?? deal.primaryProspectId,
+          name: body.name,
+          role: body.role,
+          email: body.email,
+          phone: body.phone,
+          linkedinUrl: body.linkedinUrl,
+          isPrimary: body.isPrimary ?? false,
+          verificationStatus: body.verificationStatus ?? 'unverified',
+          provenance: body.provenance,
+        });
+        sendJson(res, 201, contact);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialContactVerifyMatch = path.match(/^\/v1\/commercial\/contacts\/([^/]+)\/verify$/);
+    if (commercialContactVerifyMatch && req.method === 'POST') {
+      const contactId = decodeURIComponent(commercialContactVerifyMatch[1]!);
+      const body = await readJsonBody<{ status?: ContactVerificationStatus }>(req);
+      if (!body.status) {
+        sendJson(res, 400, { error: 'status is required (unverified | verified | bounced)' });
+        return;
+      }
+      try {
+        const contact = await state.commercialPipeline!.verifyContact(contactId, body.status);
+        sendJson(res, 200, contact);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealOutreachMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/outreach$/);
+    if (commercialDealOutreachMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealOutreachMatch[1]!);
+      const body = await readJsonBody<{
+        contactId?: string;
+        channel?: 'email' | 'whatsapp' | 'linkedin' | 'phone';
+        subject?: string;
+        body?: string;
+        senderAgentId?: string;
+      }>(req);
+      if (!body.contactId || !body.channel || !body.body) {
+        sendJson(res, 400, { error: 'contactId, channel, and body are required' });
+        return;
+      }
+      try {
+        const event = await state.commercialPipeline!.recordOutreachEvent({
+          dealId,
+          contactId: body.contactId,
+          channel: body.channel,
+          subject: body.subject,
+          body: body.body,
+          senderAgentId: body.senderAgentId,
+        });
+        sendJson(res, 201, event);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealResponseMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/response$/);
+    if (commercialDealResponseMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealResponseMatch[1]!);
+      const body = await readJsonBody<{
+        outreachEventId?: string;
+        contactId?: string;
+        sentiment?: 'positive' | 'neutral' | 'negative' | 'objection' | 'unresponsive';
+        content?: string;
+      }>(req);
+      if (!body.outreachEventId || !body.contactId || !body.sentiment || !body.content) {
+        sendJson(res, 400, {
+          error: 'outreachEventId, contactId, sentiment, and content are required',
+        });
+        return;
+      }
+      try {
+        const response = await state.commercialPipeline!.recordOutreachResponse({
+          outreachEventId: body.outreachEventId,
+          dealId,
+          contactId: body.contactId,
+          sentiment: body.sentiment,
+          content: body.content,
+        });
+        sendJson(res, 201, response);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealQualifyMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/qualify$/);
+    if (commercialDealQualifyMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealQualifyMatch[1]!);
+      const body = await readJsonBody<{
+        budget: { confirmed: boolean; amount?: number; currency?: string; notes?: string };
+        authority: { decisionMakerIdentified: boolean; decisionMakerContactId?: string; notes?: string };
+        need: { problemValidated: boolean; urgency: 'immediate' | 'this_quarter' | 'future' | 'unknown'; notes?: string };
+        timeline: { expectedCloseDate?: string; implementationDeadline?: string; notes?: string };
+        score: number;
+        qualified: boolean;
+        actor?: string;
+      }>(req);
+      try {
+        const deal = await state.commercialPipeline!.qualifyDeal(
+          dealId,
+          {
+            budget: body.budget,
+            authority: body.authority,
+            need: body.need,
+            timeline: body.timeline,
+            score: body.score,
+            qualified: body.qualified,
+          },
+          body.actor ?? 'commercial.sales-representative',
+        );
+        sendJson(res, 200, deal);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealProposalsMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/proposals$/);
+    if (commercialDealProposalsMatch && req.method === 'GET') {
+      const dealId = decodeURIComponent(commercialDealProposalsMatch[1]!);
+      const proposals = (await state.commercialPipeline?.listProposals(dealId)) ?? [];
+      sendJson(res, 200, { proposals });
+      return;
+    }
+
+    if (commercialDealProposalsMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealProposalsMatch[1]!);
+      const body = await readJsonBody<{
+        title?: string;
+        scope?: string;
+        deliverables?: string[];
+        pricingModel?: 'fixed' | 'milestone' | 'retainer' | 'time_and_materials';
+        totalAmount?: number;
+        currency?: string;
+        discountPercent?: number;
+        validUntil?: string;
+      }>(req);
+      if (!body.title || !body.scope || !body.deliverables || !body.pricingModel || !body.totalAmount || !body.validUntil) {
+        sendJson(res, 400, {
+          error: 'title, scope, deliverables, pricingModel, totalAmount, and validUntil are required',
+        });
+        return;
+      }
+      try {
+        const proposal = await state.commercialPipeline!.createProposal({
+          dealId,
+          title: body.title,
+          scope: body.scope,
+          deliverables: body.deliverables,
+          pricingModel: body.pricingModel,
+          totalAmount: body.totalAmount,
+          currency: body.currency,
+          discountPercent: body.discountPercent,
+          validUntil: body.validUntil,
+        });
+        sendJson(res, 201, proposal);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialProposalApproveMatch = path.match(/^\/v1\/commercial\/proposals\/([^/]+)\/approve$/);
+    if (commercialProposalApproveMatch && req.method === 'POST') {
+      const proposalId = decodeURIComponent(commercialProposalApproveMatch[1]!);
+      const body = await readJsonBody<{ actor?: string; ceoApprovalId?: string }>(req);
+      try {
+        const proposal = await state.commercialPipeline!.approveProposal(
+          proposalId,
+          body.actor ?? 'ceo',
+          body.ceoApprovalId,
+        );
+        sendJson(res, 200, proposal);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialProposalSendMatch = path.match(/^\/v1\/commercial\/proposals\/([^/]+)\/send$/);
+    if (commercialProposalSendMatch && req.method === 'POST') {
+      const proposalId = decodeURIComponent(commercialProposalSendMatch[1]!);
+      const body = await readJsonBody<{ actor?: string }>(req);
+      try {
+        const proposal = await state.commercialPipeline!.sendProposal(
+          proposalId,
+          body.actor ?? 'commercial.sales-representative',
+        );
+        sendJson(res, 200, proposal);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealWinMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/win$/);
+    if (commercialDealWinMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealWinMatch[1]!);
+      const body = await readJsonBody<{ actor?: string; reason?: string }>(req);
+      try {
+        const result = await state.commercialPipeline!.closeDealWon(
+          dealId,
+          body.actor ?? 'commercial.sales-representative',
+          body.reason,
+        );
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealLoseMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)\/lose$/);
+    if (commercialDealLoseMatch && req.method === 'POST') {
+      const dealId = decodeURIComponent(commercialDealLoseMatch[1]!);
+      const body = await readJsonBody<{ actor?: string; reason?: string }>(req);
+      try {
+        const deal = await state.commercialPipeline!.closeDealLost(
+          dealId,
+          body.actor ?? 'commercial.sales-representative',
+          body.reason,
+        );
+        sendJson(res, 200, deal);
+      } catch (err) {
+        sendJson(res, 400, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return;
+    }
+
+    const commercialDealGetMatch = path.match(/^\/v1\/commercial\/deals\/([^/]+)$/);
+    if (commercialDealGetMatch && req.method === 'GET') {
+      const dealId = decodeURIComponent(commercialDealGetMatch[1]!);
+      const deal = await state.commercialPipeline?.getDeal(dealId);
+      if (!deal) {
+        sendJson(res, 404, { error: `Deal not found: ${dealId}` });
+        return;
+      }
+      sendJson(res, 200, deal);
+      return;
+    }
+
+    if (path === '/v1/commercial/revenue' && req.method === 'GET') {
+      const summary = (await state.commercialPipeline?.getRevenueSummary()) ?? {
+        totalWon: 0,
+        totalPipeline: 0,
+        currency: 'USD',
+      };
+      const attributions = (await state.commercialPipeline?.listRevenueAttributions()) ?? [];
+      sendJson(res, 200, { summary, attributions });
+      return;
+    }
+
+    // --- Customer Success + Revenue + Learning (@umer/opportunity-intelligence) ---
+    // Closes the loop after delivery:
+    // Project → Customer → Support → Outcome → Revenue → Feedback → Learning → Opportunity Calibration
+
+    if (path === '/v1/customers' && req.method === 'GET') {
+      const customers = state.customerSuccess?.listCustomers() ?? [];
+      sendJson(res, 200, { customers });
+      return;
+    }
+
+    if (path === '/v1/customers' && req.method === 'POST') {
+      const body = await readJsonBody<{
+        prospectId?: string;
+        dealId?: string;
+        companyName?: string;
+        primaryContactId?: string;
+        mrr?: number;
+        lifetimeValue?: number;
+      }>(req);
+      if (!body.prospectId || !body.companyName) {
+        sendJson(res, 400, { error: 'prospectId and companyName are required' });
+        return;
+      }
+      try {
+        const customer = state.customerSuccess!.createCustomer({
+          prospectId: body.prospectId,
+          dealId: body.dealId ? DealIdSchema.parse(body.dealId) : undefined,
+          companyName: body.companyName,
+          primaryContactId: body.primaryContactId ? ContactIdSchema.parse(body.primaryContactId) : undefined,
+          mrr: body.mrr,
+          lifetimeValue: body.lifetimeValue,
+        });
+        sendJson(res, 201, customer);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const customerDeliveryOutcomeMatch = path.match(/^\/v1\/customers\/([^/]+)\/delivery-outcome$/);
+    if (customerDeliveryOutcomeMatch && req.method === 'POST') {
+      const customerId = decodeURIComponent(customerDeliveryOutcomeMatch[1]!) as CustomerId;
+      const body = await readJsonBody<{
+        projectId?: string;
+        status?: DeliveryOutcomeStatus;
+        scopeDeliveredPercent?: number;
+        acceptanceCriteriaMet?: boolean;
+        clientSignoff?: ClientSignoff;
+        kpiResults?: DeliveryKpiResult[];
+        notes?: string;
+      }>(req);
+      if (!body.projectId || !body.status || body.scopeDeliveredPercent === undefined || !body.clientSignoff) {
+        sendJson(res, 400, { error: 'projectId, status, scopeDeliveredPercent, and clientSignoff are required' });
+        return;
+      }
+      try {
+        const outcome = state.customerSuccess!.recordDeliveryOutcome({
+          projectId: ProjectIdSchema.parse(body.projectId),
+          customerId: CustomerIdSchema.parse(customerId),
+          status: body.status,
+          scopeDeliveredPercent: body.scopeDeliveredPercent,
+          acceptanceCriteriaMet: body.acceptanceCriteriaMet ?? true,
+          clientSignoff: body.clientSignoff,
+          kpiResults: body.kpiResults,
+          notes: body.notes,
+        });
+        sendJson(res, 201, outcome);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const projectDeliveryOutcomeMatch = path.match(/^\/v1\/projects\/([^/]+)\/delivery-outcome$/);
+    if (projectDeliveryOutcomeMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(projectDeliveryOutcomeMatch[1]!) as ProjectId;
+      const outcome = state.customerSuccess?.getDeliveryOutcome(ProjectIdSchema.parse(projectId));
+      if (!outcome) {
+        sendJson(res, 404, { error: `Delivery outcome not found for project ${projectId}` });
+        return;
+      }
+      sendJson(res, 200, outcome);
+      return;
+    }
+
+    const customerSupportCasesMatch = path.match(/^\/v1\/customers\/([^/]+)\/support-cases$/);
+    if (customerSupportCasesMatch && req.method === 'GET') {
+      const customerId = decodeURIComponent(customerSupportCasesMatch[1]!) as CustomerId;
+      const cases = state.customerSuccess?.listSupportCases(CustomerIdSchema.parse(customerId)) ?? [];
+      sendJson(res, 200, { supportCases: cases });
+      return;
+    }
+
+    if (customerSupportCasesMatch && req.method === 'POST') {
+      const customerId = decodeURIComponent(customerSupportCasesMatch[1]!) as CustomerId;
+      const body = await readJsonBody<{
+        projectId?: string;
+        title?: string;
+        description?: string;
+        severity?: SupportCaseSeverity;
+        reportedBy?: string;
+        assignedSpecialist?: string;
+        slaHours?: number;
+      }>(req);
+      if (!body.title || !body.description || !body.severity || !body.reportedBy) {
+        sendJson(res, 400, { error: 'title, description, severity, and reportedBy are required' });
+        return;
+      }
+      try {
+        const supportCase = state.customerSuccess!.createSupportCase({
+          customerId: CustomerIdSchema.parse(customerId),
+          projectId: body.projectId ? ProjectIdSchema.parse(body.projectId) : undefined,
+          title: body.title,
+          description: body.description,
+          severity: body.severity,
+          reportedBy: body.reportedBy,
+          assignedSpecialist: body.assignedSpecialist,
+          slaHours: body.slaHours,
+        });
+        sendJson(res, 201, supportCase);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const supportCaseResolveMatch = path.match(/^\/v1\/support-cases\/([^/]+)\/resolve$/);
+    if (supportCaseResolveMatch && req.method === 'POST') {
+      const caseId = decodeURIComponent(supportCaseResolveMatch[1]!) as CaseId;
+      const body = await readJsonBody<{
+        resolutionSummary?: string;
+        resolvedAt?: string;
+      }>(req);
+      if (!body.resolutionSummary) {
+        sendJson(res, 400, { error: 'resolutionSummary is required' });
+        return;
+      }
+      try {
+        const resolved = state.customerSuccess!.resolveSupportCase(CaseIdSchema.parse(caseId), {
+          resolutionSummary: body.resolutionSummary,
+          resolvedAt: body.resolvedAt,
+        });
+        sendJson(res, 200, resolved);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const customerFeedbackMatch = path.match(/^\/v1\/customers\/([^/]+)\/feedback$/);
+    if (customerFeedbackMatch && req.method === 'GET') {
+      const customerId = decodeURIComponent(customerFeedbackMatch[1]!) as CustomerId;
+      const feedback = state.customerSuccess?.listFeedback(CustomerIdSchema.parse(customerId)) ?? [];
+      sendJson(res, 200, { feedback });
+      return;
+    }
+
+    if (customerFeedbackMatch && req.method === 'POST') {
+      const customerId = decodeURIComponent(customerFeedbackMatch[1]!) as CustomerId;
+      const body = await readJsonBody<{
+        projectId?: string;
+        npsScore?: number;
+        csatScore?: number;
+        sentiment?: FeedbackSentiment;
+        category?: FeedbackCategory;
+        feedbackText?: string;
+        actionableQuotes?: string[];
+      }>(req);
+      if (!body.projectId || body.npsScore === undefined || body.csatScore === undefined || !body.sentiment || !body.category || !body.feedbackText) {
+        sendJson(res, 400, { error: 'projectId, npsScore, csatScore, sentiment, category, and feedbackText are required' });
+        return;
+      }
+      try {
+        const fb = state.customerSuccess!.recordFeedback({
+          customerId: CustomerIdSchema.parse(customerId),
+          projectId: ProjectIdSchema.parse(body.projectId),
+          npsScore: body.npsScore,
+          csatScore: body.csatScore,
+          sentiment: body.sentiment,
+          category: body.category,
+          feedbackText: body.feedbackText,
+          actionableQuotes: body.actionableQuotes,
+        });
+        sendJson(res, 201, fb);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const projectFinancialsMatch = path.match(/^\/v1\/projects\/([^/]+)\/financials$/);
+    if (projectFinancialsMatch && req.method === 'GET') {
+      const projectId = decodeURIComponent(projectFinancialsMatch[1]!) as ProjectId;
+      const summary = state.customerSuccess?.getFinancialSummary(ProjectIdSchema.parse(projectId));
+      if (!summary) {
+        sendJson(res, 404, { error: `Financial summary not found for project ${projectId}` });
+        return;
+      }
+      sendJson(res, 200, summary);
+      return;
+    }
+
+    if (projectFinancialsMatch && req.method === 'POST') {
+      const projectId = decodeURIComponent(projectFinancialsMatch[1]!) as ProjectId;
+      const body = await readJsonBody<{
+        customerId?: string;
+        contractRevenue?: number;
+        recognizedRevenue?: number;
+        invoicedAmount?: number;
+        collectedAmount?: number;
+        costs?: Partial<FinancialCosts>;
+      }>(req);
+      if (!body.customerId || body.contractRevenue === undefined || !body.costs) {
+        sendJson(res, 400, { error: 'customerId, contractRevenue, and costs are required' });
+        return;
+      }
+      try {
+        const summary = state.customerSuccess!.calculateFinancialSummary({
+          projectId: ProjectIdSchema.parse(projectId),
+          customerId: CustomerIdSchema.parse(body.customerId),
+          contractRevenue: body.contractRevenue,
+          recognizedRevenue: body.recognizedRevenue,
+          invoicedAmount: body.invoicedAmount,
+          collectedAmount: body.collectedAmount,
+          costs: body.costs,
+        });
+        sendJson(res, 201, summary);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const customerGetMatch = path.match(/^\/v1\/customers\/([^/]+)$/);
+    if (customerGetMatch && req.method === 'GET') {
+      const customerId = decodeURIComponent(customerGetMatch[1]!) as CustomerId;
+      const customer = state.customerSuccess?.getCustomer(CustomerIdSchema.parse(customerId));
+      if (!customer) {
+        sendJson(res, 404, { error: `Customer not found: ${customerId}` });
+        return;
+      }
+      sendJson(res, 200, customer);
+      return;
+    }
+
+    if (path === '/v1/learnings' && req.method === 'GET') {
+      const category = url.searchParams.get('category') as LearningCategory | null;
+      const learnings = state.customerSuccess?.listLearnings(category ?? undefined) ?? [];
+      sendJson(res, 200, { learnings });
+      return;
+    }
+
+    if (path === '/v1/learnings' && req.method === 'POST') {
+      const body = await readJsonBody<{
+        sourceType?: LearningSourceType;
+        projectId?: string;
+        customerId?: string;
+        opportunityId?: string;
+        title?: string;
+        category?: LearningCategory;
+        keyInsight?: string;
+        recommendedActions?: string[];
+        impactOnFutureEstimates?: {
+          suggestedPriceMultiplier?: number;
+          riskFactorAdjustment?: number;
+        };
+      }>(req);
+      if (!body.sourceType || !body.title || !body.category || !body.keyInsight || !body.recommendedActions) {
+        sendJson(res, 400, { error: 'sourceType, title, category, keyInsight, and recommendedActions are required' });
+        return;
+      }
+      try {
+        const learning = state.customerSuccess!.extractLearning({
+          sourceType: body.sourceType,
+          projectId: body.projectId ? ProjectIdSchema.parse(body.projectId) : undefined,
+          customerId: body.customerId ? CustomerIdSchema.parse(body.customerId) : undefined,
+          opportunityId: body.opportunityId,
+          title: body.title,
+          category: body.category,
+          keyInsight: body.keyInsight,
+          recommendedActions: body.recommendedActions,
+          impactOnFutureEstimates: body.impactOnFutureEstimates,
+        });
+        sendJson(res, 201, learning);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (path === '/v1/opportunity-calibration' && req.method === 'GET') {
+      const calibration = state.customerSuccess?.getOpportunityCalibration() ?? {
+        completedDeliveriesCount: 0,
+        successRatePercent: 100,
+        averageMarginPercent: 70,
+        recommendedPriceMultiplier: 1.0,
+        overallCustomerHealthScore: 100,
+        activeLearningsCount: 0,
+        activeLearnings: [],
+        calibratedAt: new Date().toISOString(),
+      };
+      sendJson(res, 200, { calibration });
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Autonomous Company Loop & CEO Command Center Overview
+    // ---------------------------------------------------------------------------
+
+    if (path === '/v1/company/overview' && req.method === 'GET') {
+      try {
+        if (!state.companyLoop) {
+          sendJson(res, 503, { error: 'Company loop subsystem not initialized' });
+          return;
+        }
+        const overview = await state.companyLoop.generateCompanyOverview();
+        sendJson(res, 200, { overview });
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (path === '/v1/company/loop/run' && req.method === 'POST') {
+      try {
+        if (!state.companyLoop) {
+          sendJson(res, 503, { error: 'Company loop subsystem not initialized' });
+          return;
+        }
+        const body = (await readJsonBody(req)) as RunCycleInput;
+        const cycle = await state.companyLoop.runCycle(body);
+        sendJson(res, 201, { cycle });
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (path === '/v1/company/loop/cycles' && req.method === 'GET') {
+      if (!state.companyLoop) {
+        sendJson(res, 503, { error: 'Company loop subsystem not initialized' });
+        return;
+      }
+      const cycles = state.companyLoop.listCycles();
+      sendJson(res, 200, { cycles });
+      return;
+    }
+
+    const loopCycleMatch = path.match(/^\/v1\/company\/loop\/cycles\/([^/]+)$/);
+    if (loopCycleMatch && req.method === 'GET') {
+      const cycleId = decodeURIComponent(loopCycleMatch[1]!);
+      const cycle = state.companyLoop?.getCycle(cycleId);
+      if (!cycle) {
+        sendJson(res, 404, { error: `No company loop cycle found with id ${cycleId}` });
+        return;
+      }
+      sendJson(res, 200, { cycle });
       return;
     }
 

@@ -20,6 +20,12 @@ export const ArtifactTypeSchema = z.enum([
   'Decision',
   'RequirementsBrief',
   'ProductBrief',
+  'ArchitectureDesign',
+  'SecurityReport',
+  'OperationalReport',
+  'CommercialProposal',
+  'CustomerSuccessReport',
+  'LearningReport',
 ]);
 
 export const ArtifactAcceptanceStatusSchema = z.enum([

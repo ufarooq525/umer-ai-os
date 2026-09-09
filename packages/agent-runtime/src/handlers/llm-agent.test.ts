@@ -195,6 +195,46 @@ describe('runLlmAgent', () => {
       'corr-product',
     );
     expect(productResult.artifact.artifactType).toBe('ProductBrief');
+
+    const archMandate = await loadMandateFromRepo('architecture', 'solution-design.md');
+    const archWorkPackage = buildWorkPackage(archMandate);
+    const archResult = await runLlmAgent(
+      archWorkPackage,
+      archMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-arch',
+    );
+    expect(archResult.artifact.artifactType).toBe('ArchitectureDesign');
+
+    const secMandate = await loadMandateFromRepo('security', 'security-review.md');
+    const secWorkPackage = buildWorkPackage(secMandate);
+    const secResult = await runLlmAgent(
+      secWorkPackage,
+      secMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-sec',
+    );
+    expect(secResult.artifact.artifactType).toBe('SecurityReport');
+
+    const releaseMandate = await loadMandateFromRepo('release', 'release-management.md');
+    const releaseWorkPackage = buildWorkPackage(releaseMandate);
+    const releaseResult = await runLlmAgent(
+      releaseWorkPackage,
+      releaseMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-rel',
+    );
+    expect(releaseResult.artifact.artifactType).toBe('ReleasePackage');
+
+    const opsMandate = await loadMandateFromRepo('operations', 'site-reliability.md');
+    const opsWorkPackage = buildWorkPackage(opsMandate);
+    const opsResult = await runLlmAgent(
+      opsWorkPackage,
+      opsMandate,
+      baseDeps(new ScriptedProvider([finalResponse('No tools needed; answering directly.')])),
+      'corr-ops',
+    );
+    expect(opsResult.artifact.artifactType).toBe('OperationalReport');
   });
 
   it('grounds the user message with filesystem_list/read/write hints when a real targetPath is present and those tools are allowlisted', async () => {
@@ -209,6 +249,32 @@ describe('runLlmAgent', () => {
     expect(userMessage?.content).toContain('filesystem_read');
     expect(userMessage?.content).toContain('filesystem_write');
     expect(userMessage?.content).toContain('do not ask a human for file paths');
+  });
+
+  it('grounds the user message with process_run_audit and process_recommend hints when allowlisted', async () => {
+    const secMandate = await loadMandateFromRepo('security', 'security-review.md');
+    const secWorkPackage = buildWorkPackage(secMandate, {
+      targetPath: '/real/registered/project',
+      toolAllowlist: ['process_run_audit'],
+    });
+    const provider1 = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
+
+    await runLlmAgent(secWorkPackage, secMandate, baseDeps(provider1), 'corr-sec-grounding');
+
+    const secMessage = provider1.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(secMessage?.content).toContain('process_run_audit');
+
+    const qaMandate = await loadMandateFromRepo('qa', 'qa-verify.md');
+    const qaWorkPackage = buildWorkPackage(qaMandate, {
+      targetPath: '/real/registered/project',
+      toolAllowlist: ['process_recommend'],
+    });
+    const provider2 = new ScriptedProvider([finalResponse('No tools needed; answering directly.')]);
+
+    await runLlmAgent(qaWorkPackage, qaMandate, baseDeps(provider2), 'corr-qa-grounding');
+
+    const qaMessage = provider2.calls[0]?.messages.find((m) => m.role === 'user');
+    expect(qaMessage?.content).toContain('process_recommend');
   });
 
   it('combines a real instruction (e.g. from a real Task) with the grounding hint, not one or the other', async () => {
