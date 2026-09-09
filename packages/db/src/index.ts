@@ -19,6 +19,10 @@ import { ARTIFACT_MIGRATIONS } from './artifact-migration.js';
 import { OBSERVABILITY_MIGRATIONS } from './observability-migration.js';
 import { REQUIREMENTS_MIGRATIONS } from './requirements-migration.js';
 import { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
+import { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
+
+export { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
+export { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
 
 export const ALL_MYSQL_MIGRATIONS = [
   ...OPPORTUNITY_MIGRATIONS,
@@ -38,6 +42,7 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...OBSERVABILITY_MIGRATIONS,
   ...REQUIREMENTS_MIGRATIONS,
   ...COMMERCIAL_PIPELINE_MIGRATIONS,
+  ...CUSTOMER_SUCCESS_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;

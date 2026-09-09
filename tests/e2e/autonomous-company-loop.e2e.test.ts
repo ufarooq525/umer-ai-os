@@ -162,29 +162,29 @@ describe('M10 E2E — Autonomous Company Loop & CEO Command Center', () => {
     expect(requirement?.source.kind).toBe('Opportunity');
 
     // Customer and Delivery in CustomerSuccessEngine
-    const customer = state.customerSuccess!.getCustomer(cycle.customerId!);
+    const customer = await state.customerSuccess!.getCustomer(cycle.customerId!);
     expect(customer).toBeDefined();
     expect(customer?.companyName).toBe('Apex Global Financial Corp');
     expect(customer?.status).toBe('active');
 
-    const outcome = state.customerSuccess!.getDeliveryOutcome(cycle.projectId!);
+    const outcome = await state.customerSuccess!.getDeliveryOutcome(cycle.projectId!);
     expect(outcome).toBeDefined();
     expect(outcome?.status).toBe('successful');
     expect(outcome?.clientSignoff.clientSatisfactionScore).toBe(5);
 
     // Financial Summary
-    const financialSummary = state.customerSuccess!.getFinancialSummary(cycle.projectId!);
+    const financialSummary = await state.customerSuccess!.getFinancialSummary(cycle.projectId!);
     expect(financialSummary).toBeDefined();
     expect(financialSummary?.contractRevenue).toBe(85000);
     expect(financialSummary?.profitabilityStatus).toBe('profitable');
 
     // Organizational Learnings
-    const learnings = state.customerSuccess!.listLearnings();
+    const learnings = await state.customerSuccess!.listLearnings();
     expect(learnings.length).toBeGreaterThan(0);
 
     // 4. Closed feedback loop verification:
     // Calibration derived from this delivery outcome updates recommended multipliers
-    const calibration = state.customerSuccess!.getOpportunityCalibration();
+    const calibration = await state.customerSuccess!.getOpportunityCalibration();
     expect(calibration.completedDeliveriesCount).toBe(1);
     expect(calibration.successRatePercent).toBe(100);
     expect(calibration.averageMarginPercent).toBeGreaterThan(0);

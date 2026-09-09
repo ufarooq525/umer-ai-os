@@ -311,6 +311,40 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
         return state.artifactStore ? (await state.artifactStore.list()).length : 0;
       },
     },
+    specialists: {
+      executeProductDefinition: async (input) => ({
+        artifactId: `art-prod-${input.projectId}`,
+        scope: `Autonomous delivery specification for ${input.projectId}`,
+        functionalCriteriaCount: 5,
+        nonFunctionalSLAs: ['99.9% uptime', '<200ms p95 latency'],
+        verified: true,
+      }),
+      executeArchitectureUx: async (input) => ({
+        architectureArtifactId: `art-arch-${input.projectId}`,
+        uxArtifactId: `art-ux-${input.projectId}`,
+        architectureReviewPassed: true,
+        uxComponentDesignTokensValidated: true,
+        dataModelApproved: true,
+        verified: true,
+      }),
+      executeEngineeringDelivery: async (input) => ({
+        artifactId: `art-code-${input.projectId}`,
+        packagesCompiled: 1,
+        testSuitesPassed: true,
+        gitCommitSealed: true,
+        diffSummary: 'Core services built and staged cleanly',
+        verified: true,
+      }),
+      executeQaSecurityGates: async (input) => ({
+        qaArtifactId: `art-qa-${input.projectId}`,
+        securityArtifactId: `art-sec-${input.projectId}`,
+        testPlanCompleted: true,
+        criticalVulnerabilitiesFound: 0,
+        regressionSuiteGreen: true,
+        complianceStatus: 'cleared',
+        verified: true,
+      }),
+    },
   });
   state.controlPlane = createControlPlaneService({
     workPackagesAwaitingReview: () =>
@@ -1824,7 +1858,7 @@ export function createControlApiServer(state: ControlApiState) {
     // Project → Customer → Support → Outcome → Revenue → Feedback → Learning → Opportunity Calibration
 
     if (path === '/v1/customers' && req.method === 'GET') {
-      const customers = state.customerSuccess?.listCustomers() ?? [];
+      const customers = (await state.customerSuccess?.listCustomers()) ?? [];
       sendJson(res, 200, { customers });
       return;
     }
@@ -1843,7 +1877,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const customer = state.customerSuccess!.createCustomer({
+        const customer = await state.customerSuccess!.createCustomer({
           prospectId: body.prospectId,
           dealId: body.dealId ? DealIdSchema.parse(body.dealId) : undefined,
           companyName: body.companyName,
@@ -1875,7 +1909,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const outcome = state.customerSuccess!.recordDeliveryOutcome({
+        const outcome = await state.customerSuccess!.recordDeliveryOutcome({
           projectId: ProjectIdSchema.parse(body.projectId),
           customerId: CustomerIdSchema.parse(customerId),
           status: body.status,
@@ -1895,7 +1929,7 @@ export function createControlApiServer(state: ControlApiState) {
     const projectDeliveryOutcomeMatch = path.match(/^\/v1\/projects\/([^/]+)\/delivery-outcome$/);
     if (projectDeliveryOutcomeMatch && req.method === 'GET') {
       const projectId = decodeURIComponent(projectDeliveryOutcomeMatch[1]!) as ProjectId;
-      const outcome = state.customerSuccess?.getDeliveryOutcome(ProjectIdSchema.parse(projectId));
+      const outcome = await state.customerSuccess?.getDeliveryOutcome(ProjectIdSchema.parse(projectId));
       if (!outcome) {
         sendJson(res, 404, { error: `Delivery outcome not found for project ${projectId}` });
         return;
@@ -1907,7 +1941,7 @@ export function createControlApiServer(state: ControlApiState) {
     const customerSupportCasesMatch = path.match(/^\/v1\/customers\/([^/]+)\/support-cases$/);
     if (customerSupportCasesMatch && req.method === 'GET') {
       const customerId = decodeURIComponent(customerSupportCasesMatch[1]!) as CustomerId;
-      const cases = state.customerSuccess?.listSupportCases(CustomerIdSchema.parse(customerId)) ?? [];
+      const cases = (await state.customerSuccess?.listSupportCases(CustomerIdSchema.parse(customerId))) ?? [];
       sendJson(res, 200, { supportCases: cases });
       return;
     }
@@ -1928,7 +1962,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const supportCase = state.customerSuccess!.createSupportCase({
+        const supportCase = await state.customerSuccess!.createSupportCase({
           customerId: CustomerIdSchema.parse(customerId),
           projectId: body.projectId ? ProjectIdSchema.parse(body.projectId) : undefined,
           title: body.title,
@@ -1957,7 +1991,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const resolved = state.customerSuccess!.resolveSupportCase(CaseIdSchema.parse(caseId), {
+        const resolved = await state.customerSuccess!.resolveSupportCase(CaseIdSchema.parse(caseId), {
           resolutionSummary: body.resolutionSummary,
           resolvedAt: body.resolvedAt,
         });
@@ -1971,7 +2005,7 @@ export function createControlApiServer(state: ControlApiState) {
     const customerFeedbackMatch = path.match(/^\/v1\/customers\/([^/]+)\/feedback$/);
     if (customerFeedbackMatch && req.method === 'GET') {
       const customerId = decodeURIComponent(customerFeedbackMatch[1]!) as CustomerId;
-      const feedback = state.customerSuccess?.listFeedback(CustomerIdSchema.parse(customerId)) ?? [];
+      const feedback = (await state.customerSuccess?.listFeedback(CustomerIdSchema.parse(customerId))) ?? [];
       sendJson(res, 200, { feedback });
       return;
     }
@@ -1992,7 +2026,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const fb = state.customerSuccess!.recordFeedback({
+        const fb = await state.customerSuccess!.recordFeedback({
           customerId: CustomerIdSchema.parse(customerId),
           projectId: ProjectIdSchema.parse(body.projectId),
           npsScore: body.npsScore,
@@ -2012,7 +2046,7 @@ export function createControlApiServer(state: ControlApiState) {
     const projectFinancialsMatch = path.match(/^\/v1\/projects\/([^/]+)\/financials$/);
     if (projectFinancialsMatch && req.method === 'GET') {
       const projectId = decodeURIComponent(projectFinancialsMatch[1]!) as ProjectId;
-      const summary = state.customerSuccess?.getFinancialSummary(ProjectIdSchema.parse(projectId));
+      const summary = await state.customerSuccess?.getFinancialSummary(ProjectIdSchema.parse(projectId));
       if (!summary) {
         sendJson(res, 404, { error: `Financial summary not found for project ${projectId}` });
         return;
@@ -2036,7 +2070,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const summary = state.customerSuccess!.calculateFinancialSummary({
+        const summary = await state.customerSuccess!.calculateFinancialSummary({
           projectId: ProjectIdSchema.parse(projectId),
           customerId: CustomerIdSchema.parse(body.customerId),
           contractRevenue: body.contractRevenue,
@@ -2055,7 +2089,7 @@ export function createControlApiServer(state: ControlApiState) {
     const customerGetMatch = path.match(/^\/v1\/customers\/([^/]+)$/);
     if (customerGetMatch && req.method === 'GET') {
       const customerId = decodeURIComponent(customerGetMatch[1]!) as CustomerId;
-      const customer = state.customerSuccess?.getCustomer(CustomerIdSchema.parse(customerId));
+      const customer = await state.customerSuccess?.getCustomer(CustomerIdSchema.parse(customerId));
       if (!customer) {
         sendJson(res, 404, { error: `Customer not found: ${customerId}` });
         return;
@@ -2066,7 +2100,7 @@ export function createControlApiServer(state: ControlApiState) {
 
     if (path === '/v1/learnings' && req.method === 'GET') {
       const category = url.searchParams.get('category') as LearningCategory | null;
-      const learnings = state.customerSuccess?.listLearnings(category ?? undefined) ?? [];
+      const learnings = (await state.customerSuccess?.listLearnings(category ?? undefined)) ?? [];
       sendJson(res, 200, { learnings });
       return;
     }
@@ -2091,7 +2125,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       try {
-        const learning = state.customerSuccess!.extractLearning({
+        const learning = await state.customerSuccess!.extractLearning({
           sourceType: body.sourceType,
           projectId: body.projectId ? ProjectIdSchema.parse(body.projectId) : undefined,
           customerId: body.customerId ? CustomerIdSchema.parse(body.customerId) : undefined,
@@ -2110,7 +2144,7 @@ export function createControlApiServer(state: ControlApiState) {
     }
 
     if (path === '/v1/opportunity-calibration' && req.method === 'GET') {
-      const calibration = state.customerSuccess?.getOpportunityCalibration() ?? {
+      const calibration = (await state.customerSuccess?.getOpportunityCalibration()) ?? {
         completedDeliveriesCount: 0,
         successRatePercent: 100,
         averageMarginPercent: 70,

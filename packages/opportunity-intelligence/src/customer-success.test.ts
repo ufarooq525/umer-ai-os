@@ -14,10 +14,10 @@ describe('CustomerSuccessEngine', () => {
   const dealId = DealIdSchema.parse('deal-alpha');
   const contactId = ContactIdSchema.parse('ct-alpha');
 
-  it('manages customer accounts lifecycle and health scores', () => {
+  it('manages customer accounts lifecycle and health scores', async () => {
     const engine = new CustomerSuccessEngine();
 
-    const customer = engine.createCustomer({
+    const customer = await engine.createCustomer({
       id: customerId,
       prospectId: 'prosp-100',
       dealId,
@@ -31,31 +31,31 @@ describe('CustomerSuccessEngine', () => {
     expect(customer.healthTier).toBe('healthy');
 
     // Penalize health
-    const updated = engine.updateCustomerHealth(customerId, -30, 'Delayed milestone');
+    const updated = await engine.updateCustomerHealth(customerId, -30, 'Delayed milestone');
     expect(updated.healthScore).toBe(70);
     expect(updated.healthTier).toBe('neutral');
 
     // Severe drop to critical
-    const critical = engine.updateCustomerHealth(customerId, -30, 'Executive escalation');
+    const critical = await engine.updateCustomerHealth(customerId, -30, 'Executive escalation');
     expect(critical.healthScore).toBe(40);
     expect(critical.healthTier).toBe('critical');
     expect(critical.status).toBe('at_risk');
 
     // Generates learning on critical drop
-    const learnings = engine.listLearnings('customer_risk');
+    const learnings = await engine.listLearnings('customer_risk');
     expect(learnings.length).toBeGreaterThan(0);
     expect(learnings[0].title).toContain('Customer Health Deterioration');
   });
 
-  it('records delivery outcomes, updates status to active, and extracts workflow learnings', () => {
+  it('records delivery outcomes, updates status to active, and extracts workflow learnings', async () => {
     const engine = new CustomerSuccessEngine();
-    engine.createCustomer({
+    await engine.createCustomer({
       id: customerId,
       prospectId: 'prosp-100',
       companyName: 'Acme Robotics',
     });
 
-    const outcome = engine.recordDeliveryOutcome({
+    const outcome = await engine.recordDeliveryOutcome({
       projectId,
       customerId,
       status: 'successful',
@@ -75,19 +75,19 @@ describe('CustomerSuccessEngine', () => {
     expect(outcome.scopeDeliveredPercent).toBe(100);
 
     // Customer status flipped to active
-    const customer = engine.getCustomer(customerId);
+    const customer = await engine.getCustomer(customerId);
     expect(customer?.status).toBe('active');
     expect(customer?.activeProjectIds).toContain(projectId);
 
     // Delivery learning synthesized
-    const workflowLearnings = engine.listLearnings('delivery_workflow');
+    const workflowLearnings = await engine.listLearnings('delivery_workflow');
     expect(workflowLearnings).toHaveLength(1);
     expect(workflowLearnings[0].keyInsight).toContain('Delivered 100% of scope');
   });
 
-  it('handles support case creation, SLA calculation, and SLA breach resolution', () => {
+  it('handles support case creation, SLA calculation, and SLA breach resolution', async () => {
     const engine = new CustomerSuccessEngine();
-    engine.createCustomer({
+    await engine.createCustomer({
       id: customerId,
       prospectId: 'prosp-100',
       companyName: 'Acme Robotics',
@@ -95,7 +95,7 @@ describe('CustomerSuccessEngine', () => {
 
     // High severity ticket (12h SLA)
     const caseId = CaseIdSchema.parse('case-high-1');
-    const supportCase = engine.createSupportCase({
+    const supportCase = await engine.createSupportCase({
       id: caseId,
       customerId,
       projectId,
@@ -109,10 +109,10 @@ describe('CustomerSuccessEngine', () => {
     expect(supportCase.status).toBe('open');
 
     // Customer health was temporarily docked -8
-    expect(engine.getCustomer(customerId)?.healthScore).toBe(92);
+    expect((await engine.getCustomer(customerId))?.healthScore).toBe(92);
 
     // Resolve after 20 hours (SLA breach: 20h > 12h)
-    const resolved = engine.resolveSupportCase(caseId, {
+    const resolved = await engine.resolveSupportCase(caseId, {
       resolutionSummary: 'Added connection pool tuning and pgbouncer proxy',
       resolvedAt: new Date(Date.parse(supportCase.createdAt) + 20 * 3600 * 1000).toISOString(),
     });
@@ -121,22 +121,22 @@ describe('CustomerSuccessEngine', () => {
     expect(resolved.slaBreached).toBe(true);
 
     // Breached case creates postmortem learning
-    const postmortems = engine.listLearnings('customer_risk');
+    const postmortems = await engine.listLearnings('customer_risk');
     const breachLearning = postmortems.find((l) => l.title.includes('Support Postmortem'));
     expect(breachLearning).toBeDefined();
     expect(breachLearning?.keyInsight).toContain('20.0h vs 12h SLA');
   });
 
-  it('records client feedback and adjusts health according to NPS and sentiment', () => {
+  it('records client feedback and adjusts health according to NPS and sentiment', async () => {
     const engine = new CustomerSuccessEngine();
-    engine.createCustomer({
+    await engine.createCustomer({
       id: customerId,
       prospectId: 'prosp-100',
       companyName: 'Acme Robotics',
     });
 
     // Negative feedback from a detractor
-    const fb = engine.recordFeedback({
+    const fb = await engine.recordFeedback({
       customerId,
       projectId,
       npsScore: 5,
@@ -147,11 +147,11 @@ describe('CustomerSuccessEngine', () => {
     });
 
     expect(fb.npsScore).toBe(5);
-    const customer = engine.getCustomer(customerId);
+    const customer = await engine.getCustomer(customerId);
     expect(customer?.healthScore).toBe(80); // 100 - 20
 
     // Positive feedback from a promoter
-    engine.recordFeedback({
+    await engine.recordFeedback({
       customerId,
       projectId,
       npsScore: 10,
@@ -162,18 +162,18 @@ describe('CustomerSuccessEngine', () => {
       actionableQuotes: ['Security report cleared our SOC2 audit without findings.'],
     });
 
-    expect(engine.getCustomer(customerId)?.healthScore).toBe(90); // 80 + 10
+    expect((await engine.getCustomer(customerId))?.healthScore).toBe(90); // 80 + 10
   });
 
-  it('calculates project financials, margins, profitability status, and pricing calibration', () => {
+  it('calculates project financials, margins, profitability status, and pricing calibration', async () => {
     const engine = new CustomerSuccessEngine();
-    engine.createCustomer({
+    await engine.createCustomer({
       id: customerId,
       prospectId: 'prosp-100',
       companyName: 'Acme Robotics',
     });
 
-    const summary = engine.calculateFinancialSummary({
+    const summary = await engine.calculateFinancialSummary({
       projectId,
       customerId,
       contractRevenue: 25000,
@@ -192,23 +192,23 @@ describe('CustomerSuccessEngine', () => {
     expect(summary.profitabilityStatus).toBe('highly_profitable');
 
     // Customer LTV updated
-    expect(engine.getCustomer(customerId)?.lifetimeValue).toBe(25000);
+    expect((await engine.getCustomer(customerId))?.lifetimeValue).toBe(25000);
 
     // Learning recorded
-    const pricingLearnings = engine.listLearnings('pricing_calibration');
+    const pricingLearnings = await engine.listLearnings('pricing_calibration');
     expect(pricingLearnings.length).toBeGreaterThan(0);
   });
 
-  it('derives opportunity calibration dataset feeding future sales decisions', () => {
+  it('derives opportunity calibration dataset feeding future sales decisions', async () => {
     const engine = new CustomerSuccessEngine();
     const cust1 = CustomerIdSchema.parse('cust-1');
     const cust2 = CustomerIdSchema.parse('cust-2');
 
-    engine.createCustomer({ id: cust1, prospectId: 'p-1', companyName: 'Company One' });
-    engine.createCustomer({ id: cust2, prospectId: 'p-2', companyName: 'Company Two' });
+    await engine.createCustomer({ id: cust1, prospectId: 'p-1', companyName: 'Company One' });
+    await engine.createCustomer({ id: cust2, prospectId: 'p-2', companyName: 'Company Two' });
 
     // 2 delivery outcomes: 1 successful, 1 partially successful
-    engine.recordDeliveryOutcome({
+    await engine.recordDeliveryOutcome({
       projectId: ProjectIdSchema.parse('proj-1'),
       customerId: cust1,
       status: 'successful',
@@ -216,7 +216,7 @@ describe('CustomerSuccessEngine', () => {
       acceptanceCriteriaMet: true,
       clientSignoff: { signedBy: 'VP Eng', signedAt: '2026-09-09T00:00:00.000Z', clientSatisfactionScore: 5 },
     });
-    engine.recordDeliveryOutcome({
+    await engine.recordDeliveryOutcome({
       projectId: ProjectIdSchema.parse('proj-2'),
       customerId: cust2,
       status: 'partially_successful',
@@ -226,20 +226,20 @@ describe('CustomerSuccessEngine', () => {
     });
 
     // Financials
-    engine.calculateFinancialSummary({
+    await engine.calculateFinancialSummary({
       projectId: ProjectIdSchema.parse('proj-1'),
       customerId: cust1,
       contractRevenue: 20000,
       costs: { laborCost: 3000, tokenCost: 500 }, // $3500 cost -> $16500 margin (82.5%)
     });
-    engine.calculateFinancialSummary({
+    await engine.calculateFinancialSummary({
       projectId: ProjectIdSchema.parse('proj-2'),
       customerId: cust2,
       contractRevenue: 10000,
       costs: { laborCost: 7500, tokenCost: 1000 }, // $8500 cost -> $1500 margin (15% underperforming)
     });
 
-    const calibration = engine.getOpportunityCalibration();
+    const calibration = await engine.getOpportunityCalibration();
 
     expect(calibration.completedDeliveriesCount).toBe(2);
     expect(calibration.successRatePercent).toBe(50); // 1 of 2 successful

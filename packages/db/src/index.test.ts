@@ -43,4 +43,17 @@ describe('@umer/db MySQL integration boundary', () => {
     expect(migration?.statements[6]).toContain('CREATE TABLE IF NOT EXISTS commercial_proposals');
     expect(migration?.statements[7]).toContain('CREATE TABLE IF NOT EXISTS commercial_revenue_attributions');
   });
+
+  it('registers the durable customer success migration in the canonical migration list', () => {
+    const migration = ALL_MYSQL_MIGRATIONS.find((item) => item.id === '017_customer_success');
+    expect(migration).toBeDefined();
+    expect(migration?.checksum).toHaveLength(64);
+    expect(migration?.statements).toHaveLength(6);
+    expect(migration?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS customer_accounts');
+    expect(migration?.statements[1]).toContain('CREATE TABLE IF NOT EXISTS customer_delivery_outcomes');
+    expect(migration?.statements[2]).toContain('CREATE TABLE IF NOT EXISTS customer_support_cases');
+    expect(migration?.statements[3]).toContain('CREATE TABLE IF NOT EXISTS customer_feedback');
+    expect(migration?.statements[4]).toContain('CREATE TABLE IF NOT EXISTS customer_financial_summaries');
+    expect(migration?.statements[5]).toContain('CREATE TABLE IF NOT EXISTS customer_learnings');
+  });
 });

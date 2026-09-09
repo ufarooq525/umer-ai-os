@@ -94,6 +94,40 @@ describe('AutonomousCompanyLoop', () => {
           return { status: 'healthy' };
         },
       },
+      specialists: {
+        executeProductDefinition: async (input) => ({
+          artifactId: `art-prod-${input.projectId}`,
+          scope: 'Enterprise fintech autonomous delivery specification',
+          functionalCriteriaCount: 5,
+          nonFunctionalSLAs: ['99.99% uptime', '<100ms p95 latency'],
+          verified: true,
+        }),
+        executeArchitectureUx: async (input) => ({
+          architectureArtifactId: `art-arch-${input.projectId}`,
+          uxArtifactId: `art-ux-${input.projectId}`,
+          architectureReviewPassed: true,
+          uxComponentDesignTokensValidated: true,
+          dataModelApproved: true,
+          verified: true,
+        }),
+        executeEngineeringDelivery: async (input) => ({
+          artifactId: `art-code-${input.projectId}`,
+          packagesCompiled: 3,
+          testSuitesPassed: true,
+          gitCommitSealed: true,
+          diffSummary: 'Banking services built and tested in isolated staging',
+          verified: true,
+        }),
+        executeQaSecurityGates: async (input) => ({
+          qaArtifactId: `art-qa-${input.projectId}`,
+          securityArtifactId: `art-sec-${input.projectId}`,
+          testPlanCompleted: true,
+          criticalVulnerabilitiesFound: 0,
+          regressionSuiteGreen: true,
+          complianceStatus: 'cleared',
+          verified: true,
+        }),
+      },
     });
 
     const cycle = await loop.runCycle({
@@ -406,6 +440,40 @@ describe('AutonomousCompanyLoop', () => {
       artifacts: {
         count: () => 18,
       },
+      specialists: {
+        executeProductDefinition: async (input) => ({
+          artifactId: `art-prod-${input.projectId}`,
+          scope: 'Global logistics routing specification',
+          functionalCriteriaCount: 4,
+          nonFunctionalSLAs: ['99.9% uptime'],
+          verified: true,
+        }),
+        executeArchitectureUx: async (input) => ({
+          architectureArtifactId: `art-arch-${input.projectId}`,
+          uxArtifactId: `art-ux-${input.projectId}`,
+          architectureReviewPassed: true,
+          uxComponentDesignTokensValidated: true,
+          dataModelApproved: true,
+          verified: true,
+        }),
+        executeEngineeringDelivery: async (input) => ({
+          artifactId: `art-code-${input.projectId}`,
+          packagesCompiled: 1,
+          testSuitesPassed: true,
+          gitCommitSealed: true,
+          diffSummary: 'Staged and tested cleanly',
+          verified: true,
+        }),
+        executeQaSecurityGates: async (input) => ({
+          qaArtifactId: `art-qa-${input.projectId}`,
+          securityArtifactId: `art-sec-${input.projectId}`,
+          testPlanCompleted: true,
+          criticalVulnerabilitiesFound: 0,
+          regressionSuiteGreen: true,
+          complianceStatus: 'cleared',
+          verified: true,
+        }),
+      },
     });
 
     // Run one full cycle first with genuine inputs
@@ -495,5 +563,225 @@ describe('AutonomousCompanyLoop', () => {
     expect(validated.revenueAndOutcomes.recognizedRevenue).toBeGreaterThan(0);
     expect(validated.revenueAndOutcomes.completedDeliveriesCount).toBe(1);
     expect(validated.revenueAndOutcomes.activeCustomersCount).toBe(1);
+  });
+
+  it('truthfully pauses when product specialist execution or verified ProductBrief is missing', async () => {
+    const oppStore = new InMemoryOpportunityPersistence();
+    await oppStore.saveOpportunity(sampleOpportunity);
+
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: oppStore,
+    });
+
+    const cycle = await loop.runCycle({
+      opportunityId: sampleOpportunity.id,
+      companyName: 'Nova FinTech',
+      contactName: 'David Kim',
+      contactEmail: 'david@novafintech.example',
+      contactProvenance: {
+        sourceUrl: 'https://novafintech.example/about',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: {
+        channel: 'email',
+        subject: 'Partnership',
+        body: 'Autonomous solution delivery',
+        senderAgentId: 'commercial.sales-representative',
+      },
+      outreachResponseDetails: {
+        sentiment: 'positive',
+        content: 'Send a proposal',
+      },
+      qualificationDetails: {
+        budgetConfirmed: true,
+        authorityConfirmed: true,
+        needValidated: true,
+        qualificationScore: 85,
+      },
+      ceoApprovalId: 'ceo-dec-auth-nova',
+      customerAcceptance: {
+        signedBy: 'David Kim',
+        agreementRef: 'AGREEMENT-NOVA-001',
+      },
+      // Intentionally omitting productDefinition and specialists port
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('product_definition');
+    const stage = cycle.stages.find((s) => s.stage === 'product_definition');
+    expect(stage?.status).toBe('pending');
+    expect(stage?.details?.blocked).toBe(true);
+    expect(stage?.details?.reason).toContain('Product Specialist execution runner or verified ProductBrief required');
+  });
+
+  it('truthfully pauses when architecture review or UX validation fails review criteria', async () => {
+    const oppStore = new InMemoryOpportunityPersistence();
+    await oppStore.saveOpportunity(sampleOpportunity);
+
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: oppStore,
+      specialists: {
+        executeProductDefinition: async (input) => ({
+          artifactId: `art-prod-${input.projectId}`,
+          scope: 'Sample scope',
+          functionalCriteriaCount: 3,
+          nonFunctionalSLAs: ['99.9% uptime'],
+          verified: true,
+        }),
+        executeArchitectureUx: async (input) => ({
+          architectureArtifactId: `art-arch-${input.projectId}`,
+          uxArtifactId: `art-ux-${input.projectId}`,
+          architectureReviewPassed: false, // Review rejected
+          uxComponentDesignTokensValidated: true,
+          dataModelApproved: true,
+          verified: true,
+        }),
+      },
+    });
+
+    const cycle = await loop.runCycle({
+      opportunityId: sampleOpportunity.id,
+      companyName: 'Nova FinTech',
+      contactName: 'David Kim',
+      contactEmail: 'david@novafintech.example',
+      contactProvenance: {
+        sourceUrl: 'https://novafintech.example/about',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: { channel: 'email', subject: 'P', body: 'B', senderAgentId: 's' },
+      outreachResponseDetails: { sentiment: 'positive', content: 'C' },
+      qualificationDetails: { budgetConfirmed: true, authorityConfirmed: true, needValidated: true, qualificationScore: 85 },
+      ceoApprovalId: 'ceo-dec-auth-nova',
+      customerAcceptance: { signedBy: 'David Kim', agreementRef: 'AGR-1' },
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('architecture_ux');
+    const stage = cycle.stages.find((s) => s.stage === 'architecture_ux');
+    expect(stage?.status).toBe('pending');
+    expect(stage?.details?.blocked).toBe(true);
+    expect(stage?.details?.reason).toContain('Architecture review or UX design validation failed review criteria');
+  });
+
+  it('truthfully halts when engineering staging tests fail', async () => {
+    const oppStore = new InMemoryOpportunityPersistence();
+    await oppStore.saveOpportunity(sampleOpportunity);
+
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: oppStore,
+      specialists: {
+        executeProductDefinition: async (input) => ({
+          artifactId: `art-prod-${input.projectId}`,
+          scope: 'Sample scope',
+          functionalCriteriaCount: 3,
+          nonFunctionalSLAs: ['99.9% uptime'],
+          verified: true,
+        }),
+        executeArchitectureUx: async (input) => ({
+          architectureArtifactId: `art-arch-${input.projectId}`,
+          uxArtifactId: `art-ux-${input.projectId}`,
+          architectureReviewPassed: true,
+          uxComponentDesignTokensValidated: true,
+          dataModelApproved: true,
+          verified: true,
+        }),
+        executeEngineeringDelivery: async (input) => ({
+          artifactId: `art-code-${input.projectId}`,
+          packagesCompiled: 1,
+          testSuitesPassed: false, // Staging tests failed!
+          gitCommitSealed: false,
+          verified: true,
+        }),
+      },
+    });
+
+    const cycle = await loop.runCycle({
+      opportunityId: sampleOpportunity.id,
+      companyName: 'Nova FinTech',
+      contactName: 'David Kim',
+      contactEmail: 'david@novafintech.example',
+      contactProvenance: {
+        sourceUrl: 'https://novafintech.example/about',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: { channel: 'email', subject: 'P', body: 'B', senderAgentId: 's' },
+      outreachResponseDetails: { sentiment: 'positive', content: 'C' },
+      qualificationDetails: { budgetConfirmed: true, authorityConfirmed: true, needValidated: true, qualificationScore: 85 },
+      ceoApprovalId: 'ceo-dec-auth-nova',
+      customerAcceptance: { signedBy: 'David Kim', agreementRef: 'AGR-1' },
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('engineering_delivery');
+    const stage = cycle.stages.find((s) => s.stage === 'engineering_delivery');
+    expect(stage?.status).toBe('pending');
+    expect(stage?.details?.blocked).toBe(true);
+    expect(stage?.details?.reason).toContain('Engineering staging test suite failed');
+  });
+
+  it('truthfully blocks release when QA or Security gates find critical vulnerabilities', async () => {
+    const oppStore = new InMemoryOpportunityPersistence();
+    await oppStore.saveOpportunity(sampleOpportunity);
+
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: oppStore,
+      specialists: {
+        executeProductDefinition: async (input) => ({
+          artifactId: `art-prod-${input.projectId}`,
+          scope: 'Sample scope',
+          functionalCriteriaCount: 3,
+          nonFunctionalSLAs: ['99.9% uptime'],
+          verified: true,
+        }),
+        executeArchitectureUx: async (input) => ({
+          architectureArtifactId: `art-arch-${input.projectId}`,
+          uxArtifactId: `art-ux-${input.projectId}`,
+          architectureReviewPassed: true,
+          uxComponentDesignTokensValidated: true,
+          dataModelApproved: true,
+          verified: true,
+        }),
+        executeEngineeringDelivery: async (input) => ({
+          artifactId: `art-code-${input.projectId}`,
+          packagesCompiled: 1,
+          testSuitesPassed: true,
+          gitCommitSealed: true,
+          verified: true,
+        }),
+        executeQaSecurityGates: async (input) => ({
+          qaArtifactId: `art-qa-${input.projectId}`,
+          securityArtifactId: `art-sec-${input.projectId}`,
+          testPlanCompleted: true,
+          criticalVulnerabilitiesFound: 2, // 2 Critical CVEs discovered!
+          regressionSuiteGreen: true,
+          complianceStatus: 'blocked',
+          verified: true,
+        }),
+      },
+    });
+
+    const cycle = await loop.runCycle({
+      opportunityId: sampleOpportunity.id,
+      companyName: 'Nova FinTech',
+      contactName: 'David Kim',
+      contactEmail: 'david@novafintech.example',
+      contactProvenance: {
+        sourceUrl: 'https://novafintech.example/about',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: { channel: 'email', subject: 'P', body: 'B', senderAgentId: 's' },
+      outreachResponseDetails: { sentiment: 'positive', content: 'C' },
+      qualificationDetails: { budgetConfirmed: true, authorityConfirmed: true, needValidated: true, qualificationScore: 85 },
+      ceoApprovalId: 'ceo-dec-auth-nova',
+      customerAcceptance: { signedBy: 'David Kim', agreementRef: 'AGR-1' },
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('qa_security_gates');
+    const stage = cycle.stages.find((s) => s.stage === 'qa_security_gates');
+    expect(stage?.status).toBe('pending');
+    expect(stage?.details?.blocked).toBe(true);
+    expect(stage?.details?.criticalVulnerabilitiesFound).toBe(2);
+    expect(stage?.details?.reason).toContain('Critical security vulnerabilities (2) or regression failure blocked release gates');
   });
 });

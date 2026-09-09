@@ -26,5 +26,8 @@ export { type CommercialStore, InMemoryCommercialStore } from './commercial-stor
 export { MySqlCommercialStore, type MySqlCommercialStoreOptions } from './commercial-store-mysql.js';
 export { createMySqlCommercialStore } from './mysql.js';
 export { CustomerSuccessEngine, type CustomerSuccessDeps, type CreateCustomerInput, type RecordDeliveryOutcomeInput, type CreateSupportCaseInput, type ResolveSupportCaseInput, type RecordCustomerFeedbackInput, type CalculateFinancialSummaryInput, type ExtractLearningInput } from './customer-success.js';
+export { type CustomerSuccessStore, InMemoryCustomerSuccessStore } from './customer-success-store.js';
+export { MySqlCustomerSuccessStore, type MySqlCustomerSuccessStoreOptions } from './customer-success-store-mysql.js';
+export { createMySqlCustomerSuccessStore } from './mysql.js';
 export { AutonomousCompanyLoop, type AutonomousCompanyLoopOptions, type RunCycleInput, type CompanyLoopProjectPort, type CompanyLoopRequirementsPort, type CompanyLoopWorkGraphPort, type CompanyLoopDeploymentsPort, type CompanyLoopGatesPort, type CompanyLoopAgentsPort, type CompanyLoopArtifactsPort } from './autonomous-company-loop.js';
 
