@@ -24,6 +24,19 @@ async function requestJson(baseUrl: string, path: string, init: RequestInit | un
   return body;
 }
 
+function isoTime(value: unknown): number {
+  if (typeof value !== 'string') return 0;
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? time : 0;
+}
+
+function withinWindow(record: unknown, since: number): boolean {
+  const r = objectInput(record);
+  const timestamp = r.occurredAt ?? r.createdAt ?? r.updatedAt ?? r.timestamp ?? r.startedAt ?? r.completedAt ?? r.failedAt;
+  const time = isoTime(timestamp);
+  return time === 0 || time >= since;
+}
+
 export function createJarvisControlTools(options: JarvisControlToolsOptions = {}): JarvisTool[] {
   const baseUrl = options.controlApiBaseUrl ?? process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -75,15 +88,15 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       for (const finding of findings) attention.push({ severity: 'high', source: 'watchdog', evidence: finding });
       for (const gate of gates) attention.push({ severity: 'high', source: 'pending_gate', evidence: gate, recommendedNextStep: 'Review the gate and explicitly Pass or Fail it.' });
       for (const run of runs) attention.push({ severity: 'high', source: 'failed_agent_run', evidence: run, recommendedNextStep: 'Inspect the failed run and its error evidence before retrying or delegating new work.' });
-      return {
-        generatedAt: new Date().toISOString(),
-        source: 'control-api-read-models',
-        attention,
-        counts: { watchdogFindings: findings.length, pendingGates: gates.length, failedRuns: runs.length },
-        recentAudit: records.slice(-20),
-        dashboard,
-      };
+      return { generatedAt: new Date().toISOString(), source: 'control-api-read-models', attention, counts: { watchdogFindings: findings.length, pendingGates: gates.length, failedRuns: runs.length }, recentAudit: records.slice(-20), dashboard };
     },
+  };
+
+  const attentionFeed: JarvisTool = {
+    name: 'attention_feed',
+    description: 'Read the current CEO attention feed from the dedicated control-plane attention evaluator. Use for urgent items and proactive status checks. This is read-only and never performs the recommended action.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    execute: async () => requestJson(baseUrl, '/v1/ceo/attention', { method: 'GET' }, fetchImpl),
   };
 
   const listAgents: JarvisTool = {
@@ -159,10 +172,55 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       const result = await requestJson(baseUrl, `/v1/audit/recent${params.toString() ? `?${params}` : ''}`, { method: 'GET' }, fetchImpl) as Record<string, unknown>;
       if (!params.toString()) return result;
       const records = Array.isArray(result.records) ? result.records : [];
-      return { records: records.filter((record) => {
-        const r = objectInput(record);
-        return (!body.correlationId || r.correlationId === body.correlationId) && (!body.actor || r.actor === body.actor) && (!body.action || r.action === body.action);
-      }) };
+      return { records: records.filter((record) => { const r = objectInput(record); return (!body.correlationId || r.correlationId === body.correlationId) && (!body.actor || r.actor === body.actor) && (!body.action || r.action === body.action); }) };
+    },
+  };
+
+  const companyTimeline: JarvisTool = {
+    name: 'company_timeline',
+    description: 'Reconstruct a recent company timeline from authoritative audit, run, task and opportunity read models. Use for "what happened while I was away?" and change-history questions. The timeline is evidence-based and does not invent missing events.',
+    parameters: { type: 'object', properties: { hours: { type: 'integer', minimum: 1, maximum: 168 }, limit: { type: 'integer', minimum: 1, maximum: 100 } }, additionalProperties: false },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const hoursValue = Number(body.hours ?? 24);
+      const limitValue = Number(body.limit ?? 50);
+      const hours = Number.isInteger(hoursValue) && hoursValue >= 1 && hoursValue <= 168 ? hoursValue : 24;
+      const limit = Number.isInteger(limitValue) && limitValue >= 1 && limitValue <= 100 ? limitValue : 50;
+      const since = Date.now() - hours * 60 * 60 * 1000;
+      const [audit, runs, tasks, opportunities] = await Promise.all([
+        requestJson(baseUrl, '/v1/audit/recent', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/agent-runs', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/tasks', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, `/v1/opportunities?limit=50`, { method: 'GET' }, fetchImpl),
+      ]);
+      const events: Array<Record<string, unknown>> = [];
+      const records = Array.isArray(objectInput(audit).records) ? objectInput(audit).records : [];
+      for (const record of records) if (withinWindow(record, since)) events.push({ kind: 'audit', timestamp: objectInput(record).occurredAt ?? objectInput(record).createdAt ?? objectInput(record).timestamp, data: record });
+      const runItems = Array.isArray(objectInput(runs).agentRuns) ? objectInput(runs).agentRuns : [];
+      for (const run of runItems) if (withinWindow(run, since)) events.push({ kind: 'agent_run', timestamp: objectInput(run).updatedAt ?? objectInput(run).completedAt ?? objectInput(run).startedAt, data: run });
+      const taskItems = Array.isArray(objectInput(tasks).tasks) ? objectInput(tasks).tasks : [];
+      for (const task of taskItems) if (withinWindow(task, since)) events.push({ kind: 'task', timestamp: objectInput(task).updatedAt ?? objectInput(task).createdAt, data: task });
+      const opportunityItems = Array.isArray(objectInput(opportunities).opportunities) ? objectInput(opportunities).opportunities : [];
+      for (const opportunity of opportunityItems) if (withinWindow(opportunity, since)) events.push({ kind: 'opportunity', timestamp: objectInput(opportunity).updatedAt ?? objectInput(opportunity).createdAt, data: opportunity });
+      events.sort((a, b) => isoTime(b.timestamp) - isoTime(a.timestamp));
+      return { generatedAt: new Date().toISOString(), since: new Date(since).toISOString(), hours, count: Math.min(events.length, limit), timeline: events.slice(0, limit), sources: ['audit', 'agent-runs', 'tasks', 'opportunities'] };
+    },
+  };
+
+  const awayBriefing: JarvisTool = {
+    name: 'away_briefing',
+    description: 'Prepare a CEO catch-up for a period while the user was away. Combines timeline evidence, current attention and workforce state. Use this instead of guessing what happened.',
+    parameters: { type: 'object', properties: { hours: { type: 'integer', minimum: 1, maximum: 168 } }, additionalProperties: false },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const value = Number(body.hours ?? 24);
+      const hours = Number.isInteger(value) && value >= 1 && value <= 168 ? value : 24;
+      const [timeline, attention, dashboard] = await Promise.all([
+        (companyTimeline.execute as (input: unknown) => Promise<unknown>)({ hours, limit: 50 }),
+        requestJson(baseUrl, '/v1/ceo/attention', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
+      ]);
+      return { generatedAt: new Date().toISOString(), periodHours: hours, timeline, attention, currentState: dashboard };
     },
   };
 
@@ -211,5 +269,5 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, ceoBriefing, ceoAttention, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, listArtifacts, inspectArtifact, retrieveMemory, delegateWork];
+  return [systemSnapshot, ceoBriefing, ceoAttention, attentionFeed, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, companyTimeline, awayBriefing, listArtifacts, inspectArtifact, retrieveMemory, delegateWork];
 }
