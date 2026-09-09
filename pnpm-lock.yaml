@@ -421,6 +421,9 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../config
+      '@umer/trust':
+        specifier: workspace:*
+        version: link:../trust
     devDependencies:
       typescript:
         specifier: ^5.7.2
