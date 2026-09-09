@@ -1,12 +1,10 @@
-import { InMemoryMemoryStore } from './store.js';
-import { InMemoryVectorStore } from './vector.js';
+import { InMemoryMemoryStore, type MemoryStore } from './store.js';
+import { InMemoryVectorStore, type VectorStore } from './vector.js';
 import { MemoryAccessService, type MemoryAccessServiceOptions } from './service.js';
 
 export type CreateMemoryAccessOptions = MemoryAccessServiceOptions;
 
-export function createMemoryAccessService(
-  options?: Partial<CreateMemoryAccessOptions>,
-): MemoryAccessService {
+export function createMemoryAccessService(options?: Partial<CreateMemoryAccessOptions>): MemoryAccessService {
   return new MemoryAccessService({
     store: options?.store ?? new InMemoryMemoryStore(),
     vectorStore: options?.vectorStore ?? new InMemoryVectorStore(),
@@ -17,13 +15,16 @@ export function createMemoryAccessService(
   });
 }
 
-export function createMemoryStack(): {
-  service: MemoryAccessService;
-  store: InMemoryMemoryStore;
-  vectorStore: InMemoryVectorStore;
-} {
+export function createMemoryStack(): { service: MemoryAccessService; store: InMemoryMemoryStore; vectorStore: InMemoryVectorStore } {
   const store = new InMemoryMemoryStore();
   const vectorStore = new InMemoryVectorStore();
   const service = createMemoryAccessService({ store, vectorStore });
   return { service, store, vectorStore };
+}
+
+export function createPersistentMemoryService(options: {
+  store: MemoryStore;
+  vectorStore: VectorStore;
+} & Partial<Omit<MemoryAccessServiceOptions, 'store' | 'vectorStore'>>): MemoryAccessService {
+  return createMemoryAccessService(options);
 }
