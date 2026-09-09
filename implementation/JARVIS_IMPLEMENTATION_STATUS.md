@@ -28,21 +28,28 @@ Branch: `feature/jarvis-ai-assistant`
 - `list_agents` reads registered workforce state.
 - `list_opportunities` reads the opportunity API with a bounded limit.
 - `delegate_work` submits normal control-plane intake and therefore preserves the existing planning, Work Package and human-gate lifecycle.
-- JARVIS defaults to the configured `CONTROL_API_PORT` and supports `CONTROL_API_BASE_URL` for local deployment overrides.
+- JARVIS uses `CONTROL_API_BASE_URL` with a local `3002` fallback.
 - No direct database writes or bypass of Trust/Control Plane were introduced.
+
+### Phase 3 — Governed memory retrieval foundation
+- Added `@umer/jarvis-memory` as a thin adapter over the existing `@umer/memory-access` runtime.
+- Memory retrieval keeps the existing principal/scope checks and correlation path; JARVIS does not maintain a second memory store.
+- Added `retrieve_memory` as a registered JARVIS tool with bounded limits and the canonical memory-kind enum.
+- Memory evidence is explicitly separated from live control-plane state in the tool description.
+- The adapter does not pretend that the current in-memory memory stack is durable persistence; a durable Memory Access store remains a separate implementation concern.
 
 ## Intentionally not claimed yet
 
-- Persistent memory is not simulated with an in-memory fake; the next phase will use `@umer/memory-access`.
+- Durable cross-process JARVIS memory is not implemented or simulated.
 - Full direct Agent Runtime run control is not exposed as an unrestricted JARVIS action; delegation stays behind the existing control-plane intake path.
 - Proactive monitoring is not implemented yet.
 - Voice and computer control are not implemented yet.
 
 ## Next implementation step
 
-1. memory retrieval and conversation continuity through `@umer/memory-access`
-2. richer agent/run/artifact inspection
-3. audit/trace correlation in JARVIS responses
+1. richer agent/run/artifact inspection
+2. audit/trace correlation in JARVIS responses
+3. durable Memory Access integration when a persistent store is available
 4. proactive CEO attention events
 5. voice interface
 6. computer-control capabilities with explicit approval gates
