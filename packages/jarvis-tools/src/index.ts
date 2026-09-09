@@ -37,6 +37,18 @@ function withinWindow(record: unknown, since: number): boolean {
   return time === 0 || time >= since;
 }
 
+function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) if (typeof record[key] === 'string' && record[key].trim()) return record[key].trim();
+  return undefined;
+}
+
+function matchesFocus(record: unknown, focus: string | undefined): boolean {
+  if (!focus) return true;
+  const r = objectInput(record);
+  const needle = focus.toLowerCase();
+  return Object.values(r).some((value) => typeof value === 'string' && value.toLowerCase().includes(needle));
+}
+
 export function createJarvisControlTools(options: JarvisControlToolsOptions = {}): JarvisTool[] {
   const baseUrl = options.controlApiBaseUrl ?? process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -258,6 +270,80 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
+  const ceoIntelligence: JarvisTool = {
+    name: 'ceo_intelligence',
+    description: 'Build an evidence graph across agents, projects, tasks, Work Packages, runs, artifacts, audit events and opportunities. Use when the CEO asks what is connected, why something matters, why work failed, which specialist is working on a project, or what should happen next. Return only relationships supported by authoritative read models; distinguish observed facts from recommended next steps.',
+    parameters: {
+      type: 'object',
+      properties: {
+        focus: { type: 'string', description: 'Optional project, agent, task, work package, run, artifact, opportunity or keyword to focus the evidence graph.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
+      },
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const focus = typeof body.focus === 'string' && body.focus.trim() ? body.focus.trim() : undefined;
+      const rawLimit = Number(body.limit ?? 50);
+      const limit = Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 100 ? rawLimit : 50;
+      const [dashboard, agents, runs, tasks, audit, artifacts, opportunities] = await Promise.all([
+        requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/agents', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/agent-runs', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/tasks', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/audit/recent', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/artifacts', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/opportunities?limit=50', { method: 'GET' }, fetchImpl),
+      ]);
+
+      const d = objectInput(dashboard);
+      const collections = {
+        agents: Array.isArray(objectInput(agents).agents) ? objectInput(agents).agents : [],
+        projects: Array.isArray(d.projects) ? d.projects : Array.isArray(d.workProjects) ? d.workProjects : [],
+        tasks: Array.isArray(objectInput(tasks).tasks) ? objectInput(tasks).tasks : [],
+        workPackages: Array.isArray(d.workPackages) ? d.workPackages : [],
+        runs: Array.isArray(objectInput(runs).agentRuns) ? objectInput(runs).agentRuns : [],
+        artifacts: Array.isArray(objectInput(artifacts).artifacts) ? objectInput(artifacts).artifacts : [],
+        opportunities: Array.isArray(objectInput(opportunities).opportunities) ? objectInput(opportunities).opportunities : [],
+        audit: Array.isArray(objectInput(audit).records) ? objectInput(audit).records : [],
+      };
+
+      const filtered = Object.fromEntries(Object.entries(collections).map(([kind, records]) => [kind, records.filter((record) => matchesFocus(record, focus)).slice(0, limit)]));
+      const facts: Array<Record<string, unknown>> = [];
+      const addFact = (type: string, source: string, record: unknown, relations: Record<string, unknown> = {}) => {
+        const r = objectInput(record);
+        facts.push({ type, source, id: firstString(r, ['id', 'agentId', 'taskId', 'workPackageId', 'artifactId', 'opportunityId', 'projectId', 'correlationId']), status: r.status, relations, evidence: record });
+      };
+
+      for (const record of filtered.agents) addFact('agent', 'agents', record, { projectId: firstString(objectInput(record), ['projectId', 'project']), taskId: firstString(objectInput(record), ['taskId', 'task']) });
+      for (const record of filtered.projects) addFact('project', 'dashboard.workProjects', record);
+      for (const record of filtered.tasks) addFact('task', 'tasks', record, { agentId: firstString(objectInput(record), ['agentId', 'agent']), projectId: firstString(objectInput(record), ['projectId', 'project']), workPackageId: firstString(objectInput(record), ['workPackageId']) });
+      for (const record of filtered.workPackages) addFact('work_package', 'dashboard.workPackages', record, { agentId: firstString(objectInput(record), ['agentId', 'specialistId', 'agent']), projectId: firstString(objectInput(record), ['projectId', 'project']), taskId: firstString(objectInput(record), ['taskId', 'task']), runId: firstString(objectInput(record), ['runId', 'executionId']), artifactId: firstString(objectInput(record), ['artifactId']) });
+      for (const record of filtered.runs) addFact('agent_run', 'agent-runs', record, { workPackageId: firstString(objectInput(record), ['workPackageId']), agentId: firstString(objectInput(record), ['agentId', 'specialistId']), projectId: firstString(objectInput(record), ['projectId']), artifactId: firstString(objectInput(record), ['artifactId']) });
+      for (const record of filtered.artifacts) addFact('artifact', 'artifacts', record, { execId: firstString(objectInput(record), ['execId', 'executionId']), workPackageId: firstString(objectInput(record), ['workPackageId']) });
+      for (const record of filtered.opportunities) addFact('opportunity', 'opportunities', record, { projectId: firstString(objectInput(record), ['projectId']), owner: firstString(objectInput(record), ['owner', 'agentId']) });
+      for (const record of filtered.audit) addFact('audit', 'audit', record, { correlationId: firstString(objectInput(record), ['correlationId']), actor: firstString(objectInput(record), ['actor', 'principalId']) });
+
+      const failures = facts.filter((fact) => fact.type === 'agent_run' && ['failed', 'error'].includes(String(fact.status ?? '').toLowerCase()));
+      const pendingGates = Array.isArray(d.pendingGates) ? d.pendingGates : [];
+      const recommendations: Array<Record<string, unknown>> = [];
+      for (const failure of failures.slice(0, 10)) recommendations.push({ priority: 'high', action: 'inspect_failed_run', reason: 'An authoritative agent run is marked failed.', evidenceId: failure.id, nextTool: 'inspect_agent_run' });
+      for (const gate of pendingGates.filter((gate) => matchesFocus(gate, focus)).slice(0, 10)) recommendations.push({ priority: 'high', action: 'review_pending_gate', reason: 'A human gate is still pending.', evidence: gate });
+
+      return {
+        generatedAt: new Date().toISOString(),
+        source: 'control-api-read-models',
+        focus: focus ?? null,
+        counts: Object.fromEntries(Object.entries(collections).map(([kind, records]) => [kind, records.length])),
+        evidenceGraph: facts.slice(0, limit),
+        observedFailureCount: failures.length,
+        pendingGateCount: pendingGates.length,
+        recommendedNextSteps: recommendations,
+        authority: 'authoritative read models; recommendations are derived and are not executed',
+      };
+    },
+  };
+
   const delegateWork: JarvisTool = {
     name: 'delegate_work',
     description: 'Create a governed work intake through the existing Umer AI OS control plane. This does not bypass gates or execute irreversible work; it creates the normal intake/work-package flow for the appropriate specialist.',
@@ -269,5 +355,5 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, ceoBriefing, ceoAttention, attentionFeed, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, companyTimeline, awayBriefing, listArtifacts, inspectArtifact, retrieveMemory, delegateWork];
+  return [systemSnapshot, ceoBriefing, ceoAttention, attentionFeed, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, companyTimeline, awayBriefing, listArtifacts, inspectArtifact, retrieveMemory, ceoIntelligence, delegateWork];
 }
