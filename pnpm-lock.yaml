@@ -233,6 +233,28 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  apps/jarvis-api:
+    dependencies:
+      '@umer/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@umer/jarvis-core':
+        specifier: workspace:*
+        version: link:../../packages/jarvis-core
+      '@umer/jarvis-tools':
+        specifier: workspace:*
+        version: link:../../packages/jarvis-tools
+      '@umer/model-routing':
+        specifier: workspace:*
+        version: link:../../packages/model-routing
+    devDependencies:
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   apps/orchestration-worker:
     dependencies:
       '@umer/config':
@@ -500,6 +522,54 @@ importers:
       '@umer/resilience':
         specifier: workspace:*
         version: link:../resilience
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/jarvis-core:
+    dependencies:
+      '@umer/model-routing':
+        specifier: workspace:*
+        version: link:../model-routing
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/jarvis-memory:
+    dependencies:
+      '@umer/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@umer/db':
+        specifier: workspace:*
+        version: link:../db
+      '@umer/memory-access':
+        specifier: workspace:*
+        version: link:../memory-access
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/jarvis-tools:
+    dependencies:
+      '@umer/jarvis-core':
+        specifier: workspace:*
+        version: link:../jarvis-core
+      '@umer/jarvis-memory':
+        specifier: workspace:*
+        version: link:../jarvis-memory
     devDependencies:
       typescript:
         specifier: ^5.7.2
