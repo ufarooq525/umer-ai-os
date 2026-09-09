@@ -38,6 +38,12 @@ Branch: `feature/jarvis-ai-assistant`
 - Memory evidence is explicitly separated from live control-plane state in the tool description.
 - The adapter does not pretend that the current in-memory memory stack is durable persistence; a durable Memory Access store remains a separate implementation concern.
 
+### Phase 4 — CEO workforce briefing
+- Added `ceo_briefing` as a composite read-only JARVIS tool.
+- It gathers dashboard, workforce and opportunity read models in parallel from Control API.
+- This gives JARVIS one authoritative briefing payload for questions such as “what is everyone doing?”, “what needs my attention?”, “what is active?”, and “what is in the pipeline?”.
+- The tool is explicitly read-only and does not infer missing activity.
+
 ## Intentionally not claimed yet
 
 - Durable cross-process JARVIS memory is not implemented or simulated.
@@ -47,10 +53,10 @@ Branch: `feature/jarvis-ai-assistant`
 
 ## Next implementation step
 
-1. richer agent/run/artifact inspection
-2. audit/trace correlation in JARVIS responses
-3. durable Memory Access integration when a persistent store is available
-4. proactive CEO attention events
+1. audit/trace correlation in JARVIS responses
+2. richer run/artifact inspection where authoritative read models expose it
+3. proactive CEO attention events and notification policy
+4. durable Memory Access integration when a persistent store is available
 5. voice interface
 6. computer-control capabilities with explicit approval gates
 
