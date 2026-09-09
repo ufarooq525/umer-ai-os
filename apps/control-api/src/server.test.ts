@@ -1,5 +1,8 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   bootstrapDemoState,
   createControlApiServer,
@@ -27,8 +30,42 @@ async function request(
 describe('control-api', () => {
   let state: Awaited<ReturnType<typeof createControlApiState>>;
   let server: ReturnType<typeof createControlApiServer>;
+  let projectsRoot = '';
+  const previousProjectsRoot = process.env.UMER_PROJECTS_ROOT;
 
   beforeAll(async () => {
+    // Real projects root, disposable and portable — the SEO apply test below
+    // patches real files on disk (public/robots.txt, public/sitemap.xml,
+    // index.html) for the catalog's `cursive-generator` project, and the QA
+    // apply test requires the `school-app` project root to exist on disk
+    // (applyQaToProject throws "Project path does not exist" otherwise).
+    // The developer's own C:\laragon\www checkout happens to have these
+    // folders, but CI (and any other machine) does not, so relying on the
+    // UMER_PROJECTS_ROOT default here made these tests non-portable — same
+    // fixture shape as packages/registry/src/registry.test.ts's disposable
+    // SEO project, just rooted under the catalog's real project ids/paths so
+    // ProjectRegistry resolves them identically everywhere.
+    projectsRoot = await mkdtemp(join(tmpdir(), 'umer-server-test-projects-'));
+    const cursiveDir = join(projectsRoot, 'cursive-generator');
+    await mkdir(join(cursiveDir, 'public'), { recursive: true });
+    await writeFile(
+      join(cursiveDir, 'public', 'robots.txt'),
+      'User-agent: *\nAllow: /\n',
+      'utf8',
+    );
+    await writeFile(
+      join(cursiveDir, 'public', 'sitemap.xml'),
+      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>https://www.cursive-font-generator.com/</loc><lastmod>2020-01-01</lastmod></url>\n</urlset>\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(cursiveDir, 'index.html'),
+      `<!doctype html><html><head><title>Cursive Font Generator</title><meta name="description" content="Generate cursive fonts online for free with live preview and export." /></head><body><h1>Cursive Generator</h1><a href="/gallery">g</a><a href="/about">a</a><a href="/faq">f</a></body></html>`,
+      'utf8',
+    );
+    await mkdir(join(projectsRoot, 'school-app'), { recursive: true });
+    process.env.UMER_PROJECTS_ROOT = projectsRoot;
+
     state = await createControlApiState();
     server = createControlApiServer(state);
     await bootstrapDemoState(state);
@@ -39,6 +76,9 @@ describe('control-api', () => {
     await new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
     });
+    if (previousProjectsRoot === undefined) delete process.env.UMER_PROJECTS_ROOT;
+    else process.env.UMER_PROJECTS_ROOT = previousProjectsRoot;
+    if (projectsRoot) await rm(projectsRoot, { recursive: true, force: true });
   });
 
   it('returns dashboard summary', async () => {
