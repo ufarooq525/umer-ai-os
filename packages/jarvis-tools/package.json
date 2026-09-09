@@ -17,7 +17,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@umer/jarvis-core": "workspace:*"
+    "@umer/jarvis-core": "workspace:*",
+    "@umer/jarvis-memory": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
