@@ -338,6 +338,76 @@ describe('GET /v1/company/graph', () => {
         }
       }
     });
+
+    it('also accepts active=true (the alias the graph client sends)', async () => {
+      const { json } = await request(server, '/v1/company/graph?active=true');
+      const graph = asGraph(json);
+      expect(graph.filtered).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // status filtering
+  // -------------------------------------------------------------------------
+  describe('status filtering', () => {
+    it('returns filtered:true when status is provided', async () => {
+      const { json } = await request(server, '/v1/company/graph?status=outreach_ready');
+      const graph = asGraph(json);
+      expect(graph.filtered).toBe(true);
+    });
+
+    it('returns only nodes with the exact requested status', async () => {
+      const { json } = await request(server, '/v1/company/graph?status=outreach_ready');
+      const graph = asGraph(json);
+      for (const node of graph.nodes) {
+        expect(node.status).toBe('outreach_ready');
+      }
+      // The opportunity seeded earlier in this file has status outreach_ready.
+      expect(graph.nodes.some((n) => n.id === 'opp:opp-graph-test-1')).toBe(true);
+    });
+
+    it('returns empty nodes for a status no real node has', async () => {
+      const { json } = await request(server, '/v1/company/graph?status=xkzq-not-a-real-status');
+      const graph = asGraph(json);
+      expect(graph.nodes.length).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // blocked filtering
+  // -------------------------------------------------------------------------
+  describe('blocked filtering', () => {
+    it('returns filtered:true when blocked=true', async () => {
+      const { json } = await request(server, '/v1/company/graph?blocked=true');
+      const graph = asGraph(json);
+      expect(graph.filtered).toBe(true);
+    });
+
+    it('only includes nodes in a real stuck/blocked status', async () => {
+      const { json } = await request(server, '/v1/company/graph?blocked=true');
+      const graph = asGraph(json);
+      const blockedStatuses = new Set(['Blocked', 'blocked', 'Failed', 'failed', 'AwaitingReview', 'awaiting_review']);
+      for (const node of graph.nodes) {
+        expect(node.status ? blockedStatuses.has(node.status) : false).toBe(true);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // customerId filtering
+  // -------------------------------------------------------------------------
+  describe('customerId filtering', () => {
+    it('returns filtered:true when customerId is provided', async () => {
+      const { json } = await request(server, '/v1/company/graph?customerId=cust-does-not-exist');
+      const graph = asGraph(json);
+      expect(graph.filtered).toBe(true);
+    });
+
+    it('returns no Customer nodes for a non-existent customerId', async () => {
+      const { json } = await request(server, '/v1/company/graph?customerId=cust-does-not-exist');
+      const graph = asGraph(json);
+      expect(graph.nodes.filter((n) => n.type === 'Customer').length).toBe(0);
+    });
   });
 
   // -------------------------------------------------------------------------

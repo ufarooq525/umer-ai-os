@@ -2491,7 +2491,9 @@ export function createControlApiServer(state: ControlApiState) {
       try {
         const nodeTypesParam = url.searchParams.get('nodeTypes');
         const searchParam = url.searchParams.get('search');
-        const activeOnlyParam = url.searchParams.get('activeOnly');
+        const statusParam = url.searchParams.get('status');
+        const activeOnlyParam = url.searchParams.get('active') ?? url.searchParams.get('activeOnly');
+        const blockedParam = url.searchParams.get('blocked');
         const limitParam = url.searchParams.get('limit');
         const depthParam = url.searchParams.get('depth'); // reserved for future neighborhood expansion
 
@@ -2499,8 +2501,11 @@ export function createControlApiServer(state: ControlApiState) {
           projectId: url.searchParams.get('projectId') ?? undefined,
           opportunityId: url.searchParams.get('opportunityId') ?? undefined,
           agentId: url.searchParams.get('agentId') ?? undefined,
+          customerId: url.searchParams.get('customerId') ?? undefined,
+          status: statusParam && statusParam.trim().length > 0 ? statusParam.trim() : undefined,
           search: searchParam && searchParam.trim().length > 0 ? searchParam.trim() : undefined,
           activeOnly: activeOnlyParam === 'true' || activeOnlyParam === '1',
+          blockedOnly: blockedParam === 'true' || blockedParam === '1',
           limit: limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10)), 1000) : 200,
           nodeTypes: nodeTypesParam
             ? (nodeTypesParam.split(',').map((t) => t.trim()).filter(Boolean) as GraphNodeType[])
