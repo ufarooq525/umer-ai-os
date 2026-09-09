@@ -8,6 +8,7 @@ Branch: `feature/jarvis-ai-assistant`
 - Added `@umer/jarvis-core` using the existing `@umer/model-routing` `LLMProvider` contract.
 - Bounded multi-turn tool calling; only registered tools are exposed and unknown tools fail closed.
 - Does not fabricate successful execution when tools fail.
+- Tool execution context now carries the authenticated principal and Trust authorization callback.
 
 ### Phase 1 — HTTP entry point
 - Added `@umer/jarvis-api` with `GET /health` and `POST /v1/jarvis/chat`.
@@ -48,12 +49,23 @@ Branch: `feature/jarvis-ai-assistant`
 - Added `away_briefing` for questions such as "what happened while I was away?".
 - Timeline entries retain source evidence and authoritative timestamps where available.
 
+### Phase 6 — Identity and Trust integration
+- Added `@umer/auth` session/authentication boundary with pluggable bearer-token resolution.
+- Development mode supports an explicitly configured single-operator principal; production mode fails closed without a configured session resolver.
+- JARVIS HTTP chat and attention endpoints now authenticate requests and bind the resulting human principal through the existing Trust Runtime.
+- Added Trust authorization at the JARVIS tool boundary: read tools require `read` on `jarvis`; governed delegation requires `execute` on `command`.
+- Authorization denials fail closed and are returned to the JARVIS reasoning loop as tool errors rather than bypassing Trust.
+- Trust grants are explicit and configurable through `JARVIS_TRUST_ACTIONS`; development defaults to `read,execute`, while production defaults to `read`.
+- Correlation IDs are preserved through authentication, Trust decisions and JARVIS tool execution.
+- Added authentication and Trust-boundary tests for missing credentials, bearer authentication and denied/allowed tool execution.
+
 ## Remaining / intentionally gated
 
-### Production authentication/session identity
-- Resolve JARVIS HTTP sessions to the existing Trust/identity model.
-- Propagate authenticated principal and tenant identity into tools and Memory Access.
-- Replace anonymous in-memory session state with production session identity.
+### Production identity provider and durable authorization grants
+- Connect `SessionResolver` to the organization's real identity/session provider.
+- Source Trust grants from the authoritative Trust/grant store instead of startup environment grants.
+- Propagate authenticated tenant identity into Memory Access and any tenant-scoped control-plane adapters.
+- Replace anonymous in-memory conversation history with a durable session/read model appropriate for production.
 
 ### Richer CEO reasoning
 - Expand cross-entity evidence into first-class project/agent/task/work-package/run/artifact timelines.
