@@ -235,6 +235,9 @@ importers:
 
   apps/jarvis-api:
     dependencies:
+      '@umer/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@umer/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -247,6 +250,9 @@ importers:
       '@umer/model-routing':
         specifier: workspace:*
         version: link:../../packages/model-routing
+      '@umer/trust':
+        specifier: workspace:*
+        version: link:../../packages/trust
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -421,13 +427,13 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../config
-      '@umer/trust':
-        specifier: workspace:*
-        version: link:../trust
     devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/config:
     dependencies:
@@ -573,6 +579,9 @@ importers:
       '@umer/jarvis-memory':
         specifier: workspace:*
         version: link:../jarvis-memory
+      '@umer/trust':
+        specifier: workspace:*
+        version: link:../trust
     devDependencies:
       typescript:
         specifier: ^5.7.2
