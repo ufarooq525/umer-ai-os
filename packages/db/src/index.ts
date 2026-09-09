@@ -18,6 +18,7 @@ import { WORK_MANAGEMENT_MIGRATIONS } from './work-management-migration.js';
 import { ARTIFACT_MIGRATIONS } from './artifact-migration.js';
 import { OBSERVABILITY_MIGRATIONS } from './observability-migration.js';
 import { REQUIREMENTS_MIGRATIONS } from './requirements-migration.js';
+import { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
 
 export const ALL_MYSQL_MIGRATIONS = [
   ...OPPORTUNITY_MIGRATIONS,
@@ -36,6 +37,7 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...ARTIFACT_MIGRATIONS,
   ...OBSERVABILITY_MIGRATIONS,
   ...REQUIREMENTS_MIGRATIONS,
+  ...COMMERCIAL_PIPELINE_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;
