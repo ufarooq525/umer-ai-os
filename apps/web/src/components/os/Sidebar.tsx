@@ -12,7 +12,7 @@ type NavSection = { title: string; items: NavEntry[] };
 const SECTIONS: NavSection[] = [
   { title: '', items: [{ href: '/command-center', label: 'Command Center', icon: '◈' }] },
   { title: 'Company', items: [
-    { href: '/company', label: 'Company', icon: '◉' }, { href: '/markets', label: 'Markets', icon: '◎' },
+    { href: '/company', label: 'Company', icon: '◉' }, { href: '/company/graph', label: 'Company Graph', icon: '⬡' }, { href: '/markets', label: 'Markets', icon: '◎' },
     { href: '/company/opportunities', label: 'Opportunities', icon: '✧' }, { href: '/company/projects', label: 'Projects', icon: '▦' },
     { href: '/company/tasks', label: 'Tasks', icon: '☑' }, { href: '/company/agents', label: 'Agents', icon: '◆' }, { href: '/seo', label: 'SEO Sites', icon: '◈' },
   ] },

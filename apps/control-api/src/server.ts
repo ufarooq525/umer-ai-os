@@ -93,6 +93,7 @@ import { runQaNightlyWatchdog } from './qa-nightly-watchdog.js';
 import { filterWatchdogPendingFindings } from './watchdog-findings.js';
 import { buildGateReview } from './gate-review.js';
 import { listCodeProducers, resolveCodeProducer } from './code-producer.js';
+import { buildCompanyGraph, type GraphFilterOptions, type GraphNodeType } from './company-graph-projection.js';
 
 const SERVICE_NAME = 'control-api';
 const log = createLogger(SERVICE_NAME);
@@ -2471,6 +2472,49 @@ export function createControlApiServer(state: ControlApiState) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+      return;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Company Intelligence Graph — Read-Model Projection
+    //
+    // Aggregates all existing authoritative domain stores (Opportunities,
+    // Projects, Agents, Deals, Customers, etc.) into a canonical read-model
+    // graph for CEO-level visualization.  This route never writes state and
+    // never fabricates data — every node and edge comes from real domain state.
+    //
+    // Supports query params for server-side filtering (before the payload is
+    // sent to the browser) so large company graphs remain performant.
+    // ---------------------------------------------------------------------------
+    if (path === '/v1/company/graph' && req.method === 'GET') {
+      try {
+        const nodeTypesParam = url.searchParams.get('nodeTypes');
+        const searchParam = url.searchParams.get('search');
+        const activeOnlyParam = url.searchParams.get('activeOnly');
+        const limitParam = url.searchParams.get('limit');
+        const depthParam = url.searchParams.get('depth'); // reserved for future neighborhood expansion
+
+        const filterOptions: GraphFilterOptions = {
+          projectId: url.searchParams.get('projectId') ?? undefined,
+          opportunityId: url.searchParams.get('opportunityId') ?? undefined,
+          agentId: url.searchParams.get('agentId') ?? undefined,
+          search: searchParam && searchParam.trim().length > 0 ? searchParam.trim() : undefined,
+          activeOnly: activeOnlyParam === 'true' || activeOnlyParam === '1',
+          limit: limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10)), 1000) : 200,
+          nodeTypes: nodeTypesParam
+            ? (nodeTypesParam.split(',').map((t) => t.trim()).filter(Boolean) as GraphNodeType[])
+            : undefined,
+        };
+
+        // depth is accepted but reserved — future: walk the graph N hops from
+        // focal nodes rather than returning the global projection.
+        void depthParam; // intentionally unused until neighborhood expansion is wired
+
+        const graph = await buildCompanyGraph(state, filterOptions);
+        sendJson(res, 200, graph);
+      } catch (err) {
+        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
       }
       return;
     }

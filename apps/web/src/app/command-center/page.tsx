@@ -98,6 +98,11 @@ export default async function CommandCenterPage() {
         </div>
         <p style={{ margin: 0, color: colors.text, fontSize: 'clamp(13px, 1.5vw, 15px)', lineHeight: 1.7, maxWidth: 850 }}>{story}</p>
         <p style={{ margin: 0, color: colors.muted, fontSize: 11.5, lineHeight: 1.5 }}>A calm view of the company: decisions, people, opportunities and proof — only from the live record.</p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+          <Link href="/company/graph" id="cmd-center-company-graph" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.045)', color: colors.text, fontSize: 12, fontWeight: 600, textDecoration: 'none', letterSpacing: '-0.01em' }}>
+            <span style={{ fontSize: 14 }}>⬡</span> Company Intelligence Graph →
+          </Link>
+        </div>
       </header>
 
       <CeoCompanyOperatingConsole overview={companyOverview} />

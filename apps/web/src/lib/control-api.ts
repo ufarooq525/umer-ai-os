@@ -985,3 +985,73 @@ export async function getCompanyOverview(): Promise<CompanyOverview | null> {
   }
 }
 
+// --- Company Intelligence Graph (read-model projection) --------------------
+// GET /v1/company/graph — aggregates all authoritative domain stores into a
+// canonical {nodes, edges} graph for CEO-level visualization.
+// No fabricated data; every node and edge comes from real domain state.
+
+export type GraphNodeType =
+  | 'Niche'
+  | 'Opportunity'
+  | 'Prospect'
+  | 'Contact'
+  | 'Outreach'
+  | 'Deal'
+  | 'Proposal'
+  | 'Project'
+  | 'Requirement'
+  | 'Agent'
+  | 'WorkPackage'
+  | 'AgentRun'
+  | 'Artifact'
+  | 'Customer'
+  | 'Learning'
+  | 'Deployment'
+  | 'Incident';
+
+export type CompanyGraphNode = {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  status?: string;
+  metadata: Record<string, unknown>;
+};
+
+export type CompanyGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  metadata: Record<string, unknown>;
+};
+
+export type CompanyGraphData = {
+  nodes: CompanyGraphNode[];
+  edges: CompanyGraphEdge[];
+  generatedAt: string;
+  filtered: boolean;
+  totalNodesBeforeLimit: number;
+};
+
+export type CompanyGraphParams = {
+  nodeTypes?: GraphNodeType[];
+  projectId?: string;
+  opportunityId?: string;
+  agentId?: string;
+  search?: string;
+  activeOnly?: boolean;
+  limit?: number;
+};
+
+export async function getCompanyGraph(params: CompanyGraphParams = {}): Promise<CompanyGraphData> {
+  const query = new URLSearchParams();
+  if (params.nodeTypes && params.nodeTypes.length > 0) query.set('nodeTypes', params.nodeTypes.join(','));
+  if (params.projectId) query.set('projectId', params.projectId);
+  if (params.opportunityId) query.set('opportunityId', params.opportunityId);
+  if (params.agentId) query.set('agentId', params.agentId);
+  if (params.search) query.set('search', params.search);
+  if (params.activeOnly) query.set('activeOnly', '1');
+  if (params.limit) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return fetchJson<CompanyGraphData>(`/v1/company/graph${qs ? `?${qs}` : ''}`);
+}

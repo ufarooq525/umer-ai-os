@@ -304,6 +304,10 @@ The entire enterprise loop is now connected into an observable, governed, closed
 
 The opportunity-intelligence package provides real market/business discovery, research, evidence, opportunity construction, prospect storage, contact/reachability intelligence, scoring, MySQL persistence, Google Places/website evidence adapters, scheduling, outreach generation, the commercial sales loop, and the customer success + revenue + learning loop.
 
+### Company Intelligence Graph
+
+`GET /v1/company/graph` (`apps/control-api/src/company-graph-projection.ts`) is a pure read-model projection over all existing authoritative domain stores (Opportunities, Projects, Agents, Agent Runs, Work Packages, Artifacts, Commercial Pipeline, Customer Success, Niches/Discovery/Evidence, Tasks, Requirements, Deployments/Incidents) — no new database, no fabricated nodes or edges; every node/edge is derived from a real store record and the endpoint returns an empty graph when the underlying stores are empty. It supports `nodeTypes`, `projectId`, `opportunityId`, `agentId`, `search`, `activeOnly`, and `limit` (capped at 1000) query filters. The web app renders it at `/company/graph` (`CompanyIntelligenceGraph.tsx`) as a dependency-free Canvas force-directed graph with zoom/pan/drag, search, focus-mode filters, and a real-metadata detail panel, polling every 30s (not streaming). Known limitations: in-memory stores (Agent, Artifact, Work Package) don't survive a control-api restart until they're backed by MySQL like the other domains; there is no authoritative Market/Trend store yet so no such nodes are emitted; CEO decisions are shown via existing proposal/gate nodes since there is no separate decision entity store.
+
 ### CEO/control plane
 
 The system has real CEO commands for agents, projects, tasks, and opportunities, plus attention/decision/gate mechanisms and audit trails.
