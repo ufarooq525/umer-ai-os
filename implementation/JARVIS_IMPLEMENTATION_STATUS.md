@@ -59,6 +59,14 @@ Branch: `feature/jarvis-ai-assistant`
 - Correlation IDs are preserved through authentication, Trust decisions and JARVIS tool execution.
 - Added authentication and Trust-boundary tests for missing credentials, bearer authentication and denied/allowed tool execution.
 
+### Phase 7 — Cross-entity CEO intelligence
+- Added `ceo_intelligence`, an evidence-graph tool spanning agents, projects, tasks, Work Packages, agent runs, artifacts, opportunities and audit records.
+- Supports an optional focus keyword so the CEO can investigate a specific project, specialist, task, Work Package, run, artifact or opportunity.
+- Normalizes observed relationships such as agent → project/task, task → project/Work Package, Work Package → specialist/project/run/artifact, run → Work Package/specialist/project/artifact and artifact → execution/Work Package.
+- Separates observed evidence from derived recommended next steps; recommendations are never executed by this tool.
+- Failed runs and pending human gates are surfaced with evidence and suggested follow-up tools.
+- The LLM remains a reasoning layer over authoritative read models; it is not treated as the source of truth.
+
 ## Remaining / intentionally gated
 
 ### Production identity provider and durable authorization grants
@@ -67,10 +75,10 @@ Branch: `feature/jarvis-ai-assistant`
 - Propagate authenticated tenant identity into Memory Access and any tenant-scoped control-plane adapters.
 - Replace anonymous in-memory conversation history with a durable session/read model appropriate for production.
 
-### Richer CEO reasoning
-- Expand cross-entity evidence into first-class project/agent/task/work-package/run/artifact timelines.
-- Add stronger root-cause and recommended-next-action evidence chains.
+### Deeper CEO reasoning
+- Add first-class causal/root-cause chains where authoritative relationships support them.
 - Add budget/quota and system-health attention policies where authoritative read models exist.
+- Add richer project-level summaries and decision-quality scoring without fabricating missing evidence.
 
 ### Voice
 - Real STT → JARVIS → TTS provider/runtime integration with the same authorization, correlation and audit boundaries.
