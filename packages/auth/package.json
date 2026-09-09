@@ -20,7 +20,8 @@
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
   },
   "dependencies": {
-    "@umer/config": "workspace:*"
+    "@umer/config": "workspace:*",
+    "@umer/trust": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
