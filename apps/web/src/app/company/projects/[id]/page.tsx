@@ -71,9 +71,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <header>
-        <Link href="/company/projects" style={{ fontSize: 12, color: colors.muted, textDecoration: 'none' }}>
-          ← Projects
-        </Link>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <Link href="/company/projects" style={{ fontSize: 12, color: colors.muted, textDecoration: 'none' }}>
+            ← Projects
+          </Link>
+          <Link
+            href={`/company/graph?q=${encodeURIComponent(project.name)}`}
+            style={{ fontSize: 12, color: colors.accent, textDecoration: 'none' }}
+          >
+            ⬡ View in Company Graph
+          </Link>
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
           <h1 style={{ fontSize: 'clamp(1.4rem, 2.4vw, 1.9rem)', fontWeight: 650, margin: 0, letterSpacing: '-0.03em' }}>
             {project.name}

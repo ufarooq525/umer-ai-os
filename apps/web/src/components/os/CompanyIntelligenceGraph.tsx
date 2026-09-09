@@ -174,6 +174,8 @@ export type CompanyIntelligenceGraphProps = {
   initialGraph: CompanyGraphData;
   onRefresh?: () => Promise<CompanyGraphData>;
   liveMode?: boolean;
+  /** Pre-fills the search box — used when an entity detail page links here focused on one real node. */
+  initialSearch?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -184,6 +186,7 @@ export function CompanyIntelligenceGraph({
   initialGraph,
   onRefresh,
   liveMode = false,
+  initialSearch = '',
 }: CompanyIntelligenceGraphProps) {
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const simRef      = useRef<{ nodes: SimNode[]; edges: SimEdge[]; running: boolean; raf?: number }>({
@@ -195,7 +198,7 @@ export function CompanyIntelligenceGraph({
   const [graph, setGraph]           = useState<CompanyGraphData>(initialGraph);
   const [selectedNode, setSelected] = useState<SimNode | null>(null);
   const [focusMode, setFocusMode]   = useState<FocusMode>('COMPANY');
-  const [search, setSearch]         = useState('');
+  const [search, setSearch]         = useState(initialSearch);
   const [error, setError]           = useState<string | null>(null);
   const [loading, setLoading]       = useState(false);
   const [, startTransition]         = useTransition();

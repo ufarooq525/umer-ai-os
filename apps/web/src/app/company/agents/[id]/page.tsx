@@ -47,9 +47,17 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ id
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <header>
-        <Link href="/company/agents" style={{ fontSize: 12, color: colors.muted, textDecoration: 'none' }}>
-          ← Agents
-        </Link>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          <Link href="/company/agents" style={{ fontSize: 12, color: colors.muted, textDecoration: 'none' }}>
+            ← Agents
+          </Link>
+          <Link
+            href={`/company/graph?q=${encodeURIComponent(agent.name ?? agent.agentId)}`}
+            style={{ fontSize: 12, color: colors.accent, textDecoration: 'none' }}
+          >
+            ⬡ View in Company Graph
+          </Link>
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
           <div>
             <h1 style={{ fontSize: 'clamp(1.4rem, 2.4vw, 1.9rem)', fontWeight: 650, margin: 0, letterSpacing: '-0.03em' }}>
