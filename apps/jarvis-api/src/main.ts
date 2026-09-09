@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { loadEnv } from '@umer/config';
 import { JarvisCore } from '@umer/jarvis-core';
 import { createJarvisControlTools } from '@umer/jarvis-tools';
@@ -8,7 +9,7 @@ const env = loadEnv();
 const port = Number(process.env.JARVIS_PORT ?? 3010);
 const provider = createLLMProviderFromEnv({ env });
 const tools = createJarvisControlTools({
-  controlApiBaseUrl: process.env.CONTROL_API_BASE_URL ?? `http://127.0.0.1:${env.CONTROL_API_PORT}`,
+  controlApiBaseUrl: process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002',
 });
 const jarvis = new JarvisCore({ provider, tools, maxIterations: 12 });
 
@@ -53,7 +54,7 @@ const server = createServer(async (req, res) => {
   try {
     const body = await readJson(req);
     const message = typeof body.message === 'string' ? body.message.trim() : '';
-    const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : crypto.randomUUID();
+    const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim() ? body.sessionId.trim() : randomUUID();
     if (!message) return send(res, 400, { error: 'message_required' });
 
     const history = sessions.get(sessionId) ?? [];
@@ -73,6 +74,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log(`JARVIS API listening on http://127.0.0.1:${port}`);
+  console.log(`JARVIS API listening on port ${port}`);
   console.log(`Control-plane tools: ${tools.map((tool) => tool.name).join(', ')}`);
 });
