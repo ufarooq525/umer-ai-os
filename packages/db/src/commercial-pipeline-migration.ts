@@ -4,7 +4,7 @@ import type { MySqlMigration } from './migrations.js';
 export const COMMERCIAL_PIPELINE_MIGRATIONS: readonly MySqlMigration[] = [
   {
     id: '016_commercial_pipeline',
-    checksum: 'commercial-pipeline-v1-20260909',
+    checksum: '6d3b6f1f7d2e9c5b4a8e1f0d7c6b5a49382716f0e9d8c7b6a5f4e3d2c1b0a987',
     statements: [
       `CREATE TABLE IF NOT EXISTS commercial_contacts (id VARCHAR(191) PRIMARY KEY, prospect_id VARCHAR(191) NOT NULL, name VARCHAR(255) NOT NULL, email VARCHAR(320) NULL, phone VARCHAR(64) NULL, role VARCHAR(128) NULL, is_primary BOOLEAN NOT NULL DEFAULT FALSE, verification_status VARCHAR(32) NOT NULL, provenance_json JSON NULL, created_at DATETIME(3) NOT NULL, updated_at DATETIME(3) NOT NULL, INDEX idx_commercial_contacts_prospect (prospect_id), INDEX idx_commercial_contacts_email (email))`,
       `CREATE TABLE IF NOT EXISTS commercial_opportunity_prospect_links (id VARCHAR(191) PRIMARY KEY, opportunity_id VARCHAR(191) NOT NULL, prospect_id VARCHAR(191) NOT NULL, role VARCHAR(32) NOT NULL, linked_at DATETIME(3) NOT NULL, UNIQUE KEY uq_commercial_opp_prospect_role (opportunity_id, prospect_id, role), INDEX idx_commercial_links_opportunity (opportunity_id), INDEX idx_commercial_links_prospect (prospect_id))`,
