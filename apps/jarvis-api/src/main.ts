@@ -1,12 +1,16 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { loadEnv } from '@umer/config';
 import { JarvisCore } from '@umer/jarvis-core';
+import { createJarvisControlTools } from '@umer/jarvis-tools';
 import { createLLMProviderFromEnv } from '@umer/model-routing';
 
 const env = loadEnv();
 const port = Number(process.env.JARVIS_PORT ?? 3010);
 const provider = createLLMProviderFromEnv({ env });
-const jarvis = new JarvisCore({ provider });
+const tools = createJarvisControlTools({
+  controlApiBaseUrl: process.env.CONTROL_API_BASE_URL ?? `http://127.0.0.1:${env.CONTROL_API_PORT}`,
+});
+const jarvis = new JarvisCore({ provider, tools, maxIterations: 12 });
 
 const sessions = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
 const MAX_HISTORY = 20;
@@ -35,7 +39,12 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && req.url === '/health') {
-    return send(res, 200, { status: 'ok', service: 'jarvis-api', provider: provider.providerId });
+    return send(res, 200, {
+      status: 'ok',
+      service: 'jarvis-api',
+      provider: provider.providerId,
+      tools: tools.map((tool) => tool.name),
+    });
   }
   if (req.method !== 'POST' || req.url !== '/v1/jarvis/chat') {
     return send(res, 404, { error: 'not_found' });
@@ -65,4 +74,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`JARVIS API listening on http://127.0.0.1:${port}`);
+  console.log(`Control-plane tools: ${tools.map((tool) => tool.name).join(', ')}`);
 });
