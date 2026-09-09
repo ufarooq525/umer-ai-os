@@ -59,10 +59,10 @@ function toContract(row: MemoryRow): MemoryContract {
   return {
     kind: 'memory',
     schemaVersion: row.schema_version as MemoryContract['schemaVersion'],
-    memoryId: row.memory_id,
+    memoryId: row.memory_id as MemoryContract['memoryId'],
     memoryKind: row.memory_kind as MemoryContract['memoryKind'],
     scope: row.scope as MemoryContract['scope'],
-    tenantId: row.tenant_id ?? undefined,
+    tenantId: (row.tenant_id ?? undefined) as MemoryContract['tenantId'],
     title: row.title,
     contentRef: row.content_ref,
     embeddingRef: row.embedding_ref ?? undefined,

@@ -22,6 +22,12 @@ export { CompositeDiscoveryAdapter, EvidenceResearchAdapter, GooglePlacesDiscove
 export { OpportunityAutonomousScheduler, type AutonomousSchedulerState, type SchedulerConfig } from './autonomous-scheduler.js';
 export { DefaultOutreachGenerator, type OutreachGenerator, type OutreachGeneratorInput } from './outreach-generator.js';
 export { CommercialPipelineEngine, type CommercialPipelineDependencies, type CommercialProjectPort, type CommercialOpportunityPort } from './commercial-pipeline.js';
+export { type CommercialStore, InMemoryCommercialStore } from './commercial-store.js';
+export { MySqlCommercialStore, type MySqlCommercialStoreOptions } from './commercial-store-mysql.js';
+export { createMySqlCommercialStore } from './mysql.js';
 export { CustomerSuccessEngine, type CustomerSuccessDeps, type CreateCustomerInput, type RecordDeliveryOutcomeInput, type CreateSupportCaseInput, type ResolveSupportCaseInput, type RecordCustomerFeedbackInput, type CalculateFinancialSummaryInput, type ExtractLearningInput } from './customer-success.js';
+export { type CustomerSuccessStore, InMemoryCustomerSuccessStore } from './customer-success-store.js';
+export { MySqlCustomerSuccessStore, type MySqlCustomerSuccessStoreOptions } from './customer-success-store-mysql.js';
+export { createMySqlCustomerSuccessStore } from './mysql.js';
 export { AutonomousCompanyLoop, type AutonomousCompanyLoopOptions, type RunCycleInput, type CompanyLoopProjectPort, type CompanyLoopRequirementsPort, type CompanyLoopWorkGraphPort, type CompanyLoopDeploymentsPort, type CompanyLoopGatesPort, type CompanyLoopAgentsPort, type CompanyLoopArtifactsPort } from './autonomous-company-loop.js';
 

@@ -48,7 +48,16 @@ describe('Deployment & Operations Routes (M7)', () => {
 
   beforeEach(async () => {
     state = await createControlApiState();
-    state.deploymentEngine = new DeploymentEngine();
+    state.deploymentEngine = new DeploymentEngine({
+      probeRunner: async (probe) => ({
+        status: 'pass',
+        responseTimeMs: 15,
+        message: `${probe.service} is reachable and responding OK`,
+      }),
+      rollbackRunner: async () => ({
+        status: 'success',
+      }),
+    });
     server = createControlApiServer(state);
     await new Promise<void>((resolve) => server.listen(0, resolve));
   });
@@ -156,5 +165,37 @@ describe('Deployment & Operations Routes (M7)', () => {
     const incidents = await request(server, 'GET', '/v1/projects/proj-test/incidents');
     expect(incidents.status).toBe(200);
     expect(incidents.json.incidents?.length).toBe(1);
+  });
+
+  it('POST /v1/projects/:projectId/deploy fails closed when probe runner is missing', async () => {
+    state.deploymentEngine = new DeploymentEngine(); // unconfigured
+    const { status, json } = await request(server, 'POST', '/v1/projects/proj-test/deploy', {
+      releasePackageId: 'art-rel-fail-closed',
+      targetVersion: '1.0.0',
+    });
+    expect(status).toBe(400);
+    expect(json.error).toContain('real health probe runner');
+  });
+
+  it('POST /v1/projects/:projectId/rollback fails closed when rollback runner is missing', async () => {
+    const deployment = await state.deploymentEngine!.prepareRelease({
+      projectId: 'proj-test',
+      releasePackageId: 'art-rel-rb',
+      targetVersion: '1.0.0',
+      rollbackPlan: {
+        strategy: 'helm',
+        targetVersion: '0.9.0',
+        steps: ['helm rollback umer 1'],
+        verificationCriteria: ['GET /health returns 200'],
+      },
+    });
+    state.deploymentEngine = new DeploymentEngine(); // unconfigured, missing rollback runner
+    (state.deploymentEngine as unknown as { deploymentsById: Map<string, unknown> }).deploymentsById.set(deployment.deploymentId, deployment);
+    const { status, json } = await request(server, 'POST', '/v1/projects/proj-test/rollback', {
+      deploymentId: deployment.deploymentId,
+      reason: 'Missing runner test',
+    });
+    expect(status).toBe(400);
+    expect(json.error).toContain('real rollback runner');
   });
 });

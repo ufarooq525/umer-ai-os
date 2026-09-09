@@ -898,3 +898,160 @@ export async function executeCommand(input: {
     body: JSON.stringify(input),
   });
 }
+
+export type CompanyOverview = {
+  whatCompanyIsDoing: {
+    activeProjectsCount: number;
+    activeWorkPackagesCount: number;
+    activeLoopCyclesCount: number;
+    summary: string;
+  };
+  opportunitiesPursued: Array<{
+    id: string;
+    title: string;
+    status: string;
+    overallScore: number;
+    estimatedValue?: number;
+    recommendation: string;
+  }>;
+  prospectsThatMatter: Array<{
+    prospectId: string;
+    dealId?: string;
+    companyName: string;
+    stage?: string;
+    estimatedValue?: number;
+  }>;
+  agentsWorking: Array<{
+    agentId: string;
+    name?: string;
+    department: string;
+    specialistId: string;
+    status: string;
+    currentProjectId?: string;
+    currentTaskId?: string;
+  }>;
+  projectsByAgent: Record<
+    string,
+    {
+      agentId: string;
+      projectId: string;
+      taskId?: string;
+    }
+  >;
+  evidenceSummary: {
+    totalSealedArtifacts: number;
+    testPlanResultsCount: number;
+    securityReportsCount: number;
+    signedDeliveryOutcomesCount: number;
+  };
+  blockedItems: Array<{
+    type: 'work_graph_node' | 'gate' | 'support_case' | 'deal';
+    id: string;
+    reason: string;
+    blockedSince: string;
+  }>;
+  decisionsNeeded: Array<{
+    type: 'deal_approval' | 'deployment_approval' | 'gate_review' | 'incident_review';
+    id: string;
+    title: string;
+    urgency: 'low' | 'medium' | 'high' | 'critical';
+    requiredApprovers: string[];
+  }>;
+  nextActions: Array<{
+    action: string;
+    targetType: string;
+    targetId: string;
+    priority: 'low' | 'medium' | 'high';
+  }>;
+  revenueAndOutcomes: {
+    totalWonRevenue: number;
+    recognizedRevenue: number;
+    pipelineValue: number;
+    averageMarginPercent: number;
+    averageCustomerHealthScore: number;
+    activeCustomersCount: number;
+    completedDeliveriesCount: number;
+    recommendedPriceMultiplier: number;
+  };
+  generatedAt: string;
+};
+
+export async function getCompanyOverview(): Promise<CompanyOverview | null> {
+  try {
+    const res = await fetchJson<{ overview: CompanyOverview }>('/v1/company/overview');
+    return res.overview;
+  } catch {
+    return null;
+  }
+}
+
+// --- Company Intelligence Graph (read-model projection) --------------------
+// GET /v1/company/graph — aggregates all authoritative domain stores into a
+// canonical {nodes, edges} graph for CEO-level visualization.
+// No fabricated data; every node and edge comes from real domain state.
+
+export type GraphNodeType =
+  | 'Niche'
+  | 'Opportunity'
+  | 'Prospect'
+  | 'Contact'
+  | 'Outreach'
+  | 'Deal'
+  | 'Proposal'
+  | 'Project'
+  | 'Requirement'
+  | 'Agent'
+  | 'WorkPackage'
+  | 'AgentRun'
+  | 'Artifact'
+  | 'Customer'
+  | 'Learning'
+  | 'Deployment'
+  | 'Incident';
+
+export type CompanyGraphNode = {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  status?: string;
+  metadata: Record<string, unknown>;
+};
+
+export type CompanyGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  metadata: Record<string, unknown>;
+};
+
+export type CompanyGraphData = {
+  nodes: CompanyGraphNode[];
+  edges: CompanyGraphEdge[];
+  generatedAt: string;
+  filtered: boolean;
+  totalNodesBeforeLimit: number;
+};
+
+export type CompanyGraphParams = {
+  nodeTypes?: GraphNodeType[];
+  projectId?: string;
+  opportunityId?: string;
+  agentId?: string;
+  search?: string;
+  activeOnly?: boolean;
+  limit?: number;
+};
+
+export async function getCompanyGraph(params: CompanyGraphParams = {}): Promise<CompanyGraphData> {
+  const query = new URLSearchParams();
+  if (params.nodeTypes && params.nodeTypes.length > 0) query.set('nodeTypes', params.nodeTypes.join(','));
+  if (params.projectId) query.set('projectId', params.projectId);
+  if (params.opportunityId) query.set('opportunityId', params.opportunityId);
+  if (params.agentId) query.set('agentId', params.agentId);
+  if (params.search) query.set('search', params.search);
+  if (params.activeOnly) query.set('activeOnly', '1');
+  if (params.limit) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return fetchJson<CompanyGraphData>(`/v1/company/graph${qs ? `?${qs}` : ''}`);
+}

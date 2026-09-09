@@ -5,7 +5,7 @@ import postgres from 'postgres';
 import { OPPORTUNITY_MIGRATIONS } from './migrations.js';
 import { WORKFORCE_MIGRATIONS } from './workforce-migrations.js';
 import { AI_OS_KERNEL_MIGRATIONS } from './ai-os-kernel-migrations.js';
-import { AI_KERNEL_TELEMETRY_MIGRATIONS } from './ai-kernel-telemetry-migration.js';
+import { AI_KERNEL_TELEMETRY_MIGRATIONS } from './ai-kernel-telemetry-migrations.js';
 import { AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS } from './ai-kernel-runtime-hardening-migration.js';
 import { AI_KERNEL_EXPLAINABILITY_MIGRATIONS } from './ai-kernel-explainability-migration.js';
 import { AI_OS_CONTROL_LINEAGE_MIGRATIONS } from './ai-os-control-lineage-migration.js';
@@ -19,16 +19,32 @@ import { ARTIFACT_MIGRATIONS } from './artifact-migration.js';
 import { OBSERVABILITY_MIGRATIONS } from './observability-migration.js';
 import { REQUIREMENTS_MIGRATIONS } from './requirements-migration.js';
 import { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
+import { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
 import { JARVIS_MEMORY_MIGRATIONS } from './jarvis-memory-migration.js';
 
+export { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
+export { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
+
 export const ALL_MYSQL_MIGRATIONS = [
-  ...OPPORTUNITY_MIGRATIONS, ...WORKFORCE_MIGRATIONS, ...AI_OS_KERNEL_MIGRATIONS,
-  ...AI_KERNEL_TELEMETRY_MIGRATIONS, ...AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS,
-  ...AI_KERNEL_EXPLAINABILITY_MIGRATIONS, ...AI_OS_CONTROL_LINEAGE_MIGRATIONS,
-  ...AI_WORKER_SUPERVISOR_MIGRATIONS, ...WORK_GRAPH_MIGRATIONS, ...GATE_WAIT_MIGRATIONS,
-  ...WORK_PACKAGE_MIGRATIONS, ...WORK_PACKAGE_TARGET_PATH_MIGRATIONS, ...WORK_MANAGEMENT_MIGRATIONS,
-  ...ARTIFACT_MIGRATIONS, ...OBSERVABILITY_MIGRATIONS, ...REQUIREMENTS_MIGRATIONS,
-  ...COMMERCIAL_PIPELINE_MIGRATIONS, ...JARVIS_MEMORY_MIGRATIONS,
+  ...OPPORTUNITY_MIGRATIONS,
+  ...WORKFORCE_MIGRATIONS,
+  ...AI_OS_KERNEL_MIGRATIONS,
+  ...AI_KERNEL_TELEMETRY_MIGRATIONS,
+  ...AI_KERNEL_RUNTIME_HARDENING_MIGRATIONS,
+  ...AI_KERNEL_EXPLAINABILITY_MIGRATIONS,
+  ...AI_OS_CONTROL_LINEAGE_MIGRATIONS,
+  ...AI_WORKER_SUPERVISOR_MIGRATIONS,
+  ...WORK_GRAPH_MIGRATIONS,
+  ...GATE_WAIT_MIGRATIONS,
+  ...WORK_PACKAGE_MIGRATIONS,
+  ...WORK_PACKAGE_TARGET_PATH_MIGRATIONS,
+  ...WORK_MANAGEMENT_MIGRATIONS,
+  ...ARTIFACT_MIGRATIONS,
+  ...OBSERVABILITY_MIGRATIONS,
+  ...REQUIREMENTS_MIGRATIONS,
+  ...COMMERCIAL_PIPELINE_MIGRATIONS,
+  ...CUSTOMER_SUCCESS_MIGRATIONS,
+  ...JARVIS_MEMORY_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;

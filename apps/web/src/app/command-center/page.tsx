@@ -1,7 +1,7 @@
 import { Card, colors, fonts } from '@umer/ui';
 import {
   getAgentRuns, getAgents, getArtifacts, getCommercialIntelligenceSummary, getDashboard, getOpportunities,
-  getPendingGates, getProjects, getRecentAudit, getTasks, getWorkPackages, getWorkProjects,
+  getPendingGates, getProjects, getRecentAudit, getTasks, getWorkPackages, getWorkProjects, getCompanyOverview,
   type OpportunityRecord, type WorkProjectRecord, type WorkTaskRecord,
 } from '@/lib/control-api';
 import { deriveActivityFeed, deriveAttentionCases, deriveCompanyPulse, deriveCompanyStory, deriveLiveActivity } from '@/lib/company-derive';
@@ -25,6 +25,7 @@ import { MorningBrief } from '@/components/os/MorningBrief';
 import { SeoOwnerBoard } from '@/components/os/SeoOwnerBoard';
 import { RuntimeTruthStrip } from '@/components/os/RuntimeTruthStrip';
 import { PulseDot } from '@/components/os/PulseDot';
+import { CeoCompanyOperatingConsole } from '@/components/os/CeoCompanyOperatingConsole';
 import { GlobalAISearch } from '@/components/GlobalAISearch';
 import { WorkerSupervisor } from '@/components/WorkerSupervisor';
 import { OpportunityControlCenter } from '@/components/OpportunityControlCenter';
@@ -41,10 +42,36 @@ export const dynamic = 'force-dynamic';
 async function settled<T>(task: Promise<T>, fallback: T): Promise<T> { try { return await task; } catch { return fallback; } }
 
 export default async function CommandCenterPage() {
-  const [opportunities, projects, tasks, agents, agentRuns, auditRecords, artifacts, commercialSummary, dashboard, gates, catalog, workPackages, runtime] = await Promise.all([
-    settled(getOpportunities(), []), settled(getWorkProjects(), []), settled(getTasks(), []), settled(getAgents(), []), settled(getAgentRuns(), []), settled(getRecentAudit(), []), settled(getArtifacts(), []),
-    settled(getCommercialIntelligenceSummary(), { niches: [], outreachDraftsAwaitingReview: 0, businessesConsidered: 0, cap: 0 }), settled(getDashboard(), null), settled(getPendingGates(), []),
-    settled(getProjects(), { projectsRoot: '', projects: [] }), settled(getWorkPackages(), []), probeRuntimeTruth(),
+  const [
+    opportunities,
+    projects,
+    tasks,
+    agents,
+    agentRuns,
+    auditRecords,
+    artifacts,
+    commercialSummary,
+    dashboard,
+    gates,
+    catalog,
+    workPackages,
+    runtime,
+    companyOverview,
+  ] = await Promise.all([
+    settled(getOpportunities(), []),
+    settled(getWorkProjects(), []),
+    settled(getTasks(), []),
+    settled(getAgents(), []),
+    settled(getAgentRuns(), []),
+    settled(getRecentAudit(), []),
+    settled(getArtifacts(), []),
+    settled(getCommercialIntelligenceSummary(), { niches: [], outreachDraftsAwaitingReview: 0, businessesConsidered: 0, cap: 0 }),
+    settled(getDashboard(), null),
+    settled(getPendingGates(), []),
+    settled(getProjects(), { projectsRoot: '', projects: [] }),
+    settled(getWorkPackages(), []),
+    probeRuntimeTruth(),
+    settled(getCompanyOverview(), null),
   ]);
   const pulse = deriveCompanyPulse(agents, projects, tasks, opportunities);
   const attentionCases = [...deriveAttentionCases(agents, agentRuns, projects, tasks, opportunities), ...deriveCommercialAttentionCases(commercialSummary)];
@@ -71,7 +98,14 @@ export default async function CommandCenterPage() {
         </div>
         <p style={{ margin: 0, color: colors.text, fontSize: 'clamp(13px, 1.5vw, 15px)', lineHeight: 1.7, maxWidth: 850 }}>{story}</p>
         <p style={{ margin: 0, color: colors.muted, fontSize: 11.5, lineHeight: 1.5 }}>A calm view of the company: decisions, people, opportunities and proof — only from the live record.</p>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+          <Link href="/company/graph" id="cmd-center-company-graph" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '6px 14px', borderRadius: 8, border: '1px solid rgba(255,255,255,.1)', background: 'rgba(255,255,255,.045)', color: colors.text, fontSize: 12, fontWeight: 600, textDecoration: 'none', letterSpacing: '-0.01em' }}>
+            <span style={{ fontSize: 14 }}>⬡</span> Company Intelligence Graph →
+          </Link>
+        </div>
       </header>
+
+      <CeoCompanyOperatingConsole overview={companyOverview} />
 
       <WatchdogFindingsBanner findings={watchdogFindings} />
       <RuntimeTruthStrip truth={runtime} />

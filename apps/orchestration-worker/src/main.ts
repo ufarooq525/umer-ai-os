@@ -122,12 +122,11 @@ const workGraphTaskContextResolver: WorkGraphPlanningOptions['resolveTaskContext
 
 const fabric = await createMessageFabric({ producer: serviceName });
 
-// Best-effort MySQL Work Package store — the Orchestrator's own
-// authoritative record of every Work Package it has ever queued/dispatched/
-// run. Without this, a restart loses every in-flight Work Package: attempt
-// counts, timeout tracking, and the "Running" status itself all vanish,
-// silently orphaning whatever the AgentWorker was actually doing. Same
-// fail-open pattern as the Work Graph store below.
+const requireDurable =
+  process.env.AUTONOMY_REQUIRE_DURABLE_STATE === 'true' ||
+  env.NODE_ENV === 'production';
+
+// Authoritative MySQL Work Package store
 let workPackageStore: WorkPackageStore = new InMemoryWorkPackageStore();
 try {
   if (await pingMySql()) {
@@ -137,6 +136,11 @@ try {
     throw new Error('pingMySql returned false');
   }
 } catch (err) {
+  if (requireDurable) {
+    throw new Error(
+      `FATAL: MySQL is unreachable and AUTONOMY_REQUIRE_DURABLE_STATE is enabled. Refusing to start orchestration-worker with in-memory Work Package store: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   log.warn(
     { err: err instanceof Error ? err.message : String(err) },
     'work package store unavailable (MySQL unreachable) — Work Packages will not survive a restart until this recovers',
@@ -144,11 +148,7 @@ try {
 }
 const orchestrator = createOrchestrator({ fabric, producer: serviceName, store: workPackageStore });
 
-// Best-effort MySQL Work Graph store — same fail-open pattern as
-// control-api's work-graph-link.ts. Both processes must point at the SAME
-// store for the projector below to see graph nodes control-api's
-// decompose/plan routes created; the in-memory fallback only works for a
-// single-process dev setup where nothing decomposed a graph yet.
+// Authoritative MySQL Work Graph store
 let workGraphStore: WorkGraphStore = new InMemoryWorkGraphStore();
 try {
   if (await pingMySql()) {
@@ -158,6 +158,11 @@ try {
     throw new Error('pingMySql returned false');
   }
 } catch (err) {
+  if (requireDurable) {
+    throw new Error(
+      `FATAL: MySQL is unreachable and AUTONOMY_REQUIRE_DURABLE_STATE is enabled. Refusing to start orchestration-worker with in-memory Work Graph store: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
   log.warn(
     { err: err instanceof Error ? err.message : String(err) },
     'work graph store unavailable (MySQL unreachable) — Work Package lifecycle will not project onto any Work Graph until this recovers',

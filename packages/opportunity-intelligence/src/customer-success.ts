@@ -42,6 +42,7 @@ import {
   type ContactId,
   type DealId,
 } from '@umer/contracts';
+import { type CustomerSuccessStore, InMemoryCustomerSuccessStore } from './customer-success-store.js';
 
 export interface CustomerSuccessDeps {
   projects?: {
@@ -51,6 +52,7 @@ export interface CustomerSuccessDeps {
   opportunities?: {
     get(id: string): Promise<{ id: string; title: string } | null | undefined>;
   };
+  store?: CustomerSuccessStore;
 }
 
 export interface CreateCustomerInput {
@@ -134,20 +136,20 @@ export interface ExtractLearningInput {
 }
 
 export class CustomerSuccessEngine {
-  private readonly customers = new Map<string, CustomerAccount>();
-  private readonly deliveryOutcomes = new Map<string, DeliveryOutcome>();
-  private readonly supportCases = new Map<string, SupportCase>();
-  private readonly feedbackList = new Map<string, CustomerFeedback>();
-  private readonly financialSummaries = new Map<string, ProjectFinancialSummary>();
-  private readonly learnings = new Map<string, LearningRecord>();
+  private readonly store: CustomerSuccessStore;
 
-  constructor(public readonly deps: CustomerSuccessDeps = {}) {}
+  constructor(
+    public readonly deps: CustomerSuccessDeps = {},
+    store?: CustomerSuccessStore,
+  ) {
+    this.store = store ?? deps.store ?? new InMemoryCustomerSuccessStore();
+  }
 
   // ---------------------------------------------------------------------------
   // Customer Accounts
   // ---------------------------------------------------------------------------
 
-  createCustomer(input: CreateCustomerInput): CustomerAccount {
+  async createCustomer(input: CreateCustomerInput): Promise<CustomerAccount> {
     const now = new Date().toISOString();
     const id = input.id ?? CustomerIdSchema.parse(`cust-${randomUUID().slice(0, 8)}`);
 
@@ -167,20 +169,24 @@ export class CustomerSuccessEngine {
       updatedAt: now,
     });
 
-    this.customers.set(id, record);
+    await this.store.saveCustomer(record);
     return record;
   }
 
-  getCustomer(id: CustomerId): CustomerAccount | undefined {
-    return this.customers.get(id);
+  async getCustomer(id: CustomerId): Promise<CustomerAccount | undefined> {
+    return this.store.getCustomer(id);
   }
 
-  listCustomers(): CustomerAccount[] {
-    return Array.from(this.customers.values());
+  async listCustomers(): Promise<CustomerAccount[]> {
+    return this.store.listCustomers();
   }
 
-  updateCustomerHealth(customerId: CustomerId, healthDelta: number, reason?: string): CustomerAccount {
-    const customer = this.customers.get(customerId);
+  async updateCustomerHealth(
+    customerId: CustomerId,
+    healthDelta: number,
+    reason?: string,
+  ): Promise<CustomerAccount> {
+    const customer = await this.store.getCustomer(customerId);
     if (!customer) {
       throw new Error(`Customer ${customerId} not found`);
     }
@@ -204,10 +210,10 @@ export class CustomerSuccessEngine {
       updatedAt: new Date().toISOString(),
     };
 
-    this.customers.set(customerId, updated);
+    await this.store.saveCustomer(updated);
 
     if (tier === 'critical' && reason) {
-      this.extractLearning({
+      await this.extractLearning({
         sourceType: 'customer_feedback',
         customerId,
         title: `Customer Health Deterioration: ${customer.companyName}`,
@@ -230,7 +236,7 @@ export class CustomerSuccessEngine {
   // Delivery Outcomes
   // ---------------------------------------------------------------------------
 
-  recordDeliveryOutcome(input: RecordDeliveryOutcomeInput): DeliveryOutcome {
+  async recordDeliveryOutcome(input: RecordDeliveryOutcomeInput): Promise<DeliveryOutcome> {
     const now = new Date().toISOString();
     const id = input.id ?? DeliveryOutcomeIdSchema.parse(`out-${randomUUID().slice(0, 8)}`);
 
@@ -249,10 +255,10 @@ export class CustomerSuccessEngine {
       updatedAt: now,
     });
 
-    this.deliveryOutcomes.set(record.id, record);
+    await this.store.saveDeliveryOutcome(record);
 
     // Update customer account
-    const customer = this.customers.get(input.customerId);
+    const customer = await this.store.getCustomer(input.customerId);
     if (customer) {
       const activeProjects = new Set(customer.activeProjectIds);
       activeProjects.add(input.projectId);
@@ -260,24 +266,32 @@ export class CustomerSuccessEngine {
       let delta = 0;
       if (record.status === 'successful' && record.clientSignoff.clientSatisfactionScore >= 4) {
         delta = 5;
-      } else if (record.status === 'partially_successful' || record.clientSignoff.clientSatisfactionScore === 3) {
+      } else if (
+        record.status === 'partially_successful' ||
+        record.clientSignoff.clientSatisfactionScore === 3
+      ) {
         delta = -10;
       } else if (record.status === 'failed' || record.clientSignoff.clientSatisfactionScore <= 2) {
         delta = -30;
       }
 
-      this.updateCustomerHealth(input.customerId, delta, `Delivery outcome status: ${record.status}`);
-      const refreshed = this.customers.get(input.customerId)!;
-      this.customers.set(input.customerId, {
+      await this.updateCustomerHealth(
+        input.customerId,
+        delta,
+        `Delivery outcome status: ${record.status}`,
+      );
+      const refreshed = (await this.store.getCustomer(input.customerId))!;
+      await this.store.saveCustomer({
         ...refreshed,
         status: refreshed.healthScore >= 50 ? 'active' : 'at_risk',
         activeProjectIds: Array.from(activeProjects),
+        updatedAt: new Date().toISOString(),
       });
     }
 
     // Automatically synthesize organizational learning from the delivery outcome
     const isSuccess = record.status === 'successful' && record.acceptanceCriteriaMet;
-    this.extractLearning({
+    await this.extractLearning({
       sourceType: 'delivery_outcome',
       projectId: input.projectId,
       customerId: input.customerId,
@@ -298,24 +312,19 @@ export class CustomerSuccessEngine {
     return record;
   }
 
-  getDeliveryOutcome(projectId: ProjectId): DeliveryOutcome | undefined {
-    for (const outcome of this.deliveryOutcomes.values()) {
-      if (outcome.projectId === projectId) {
-        return outcome;
-      }
-    }
-    return undefined;
+  async getDeliveryOutcome(projectId: ProjectId): Promise<DeliveryOutcome | undefined> {
+    return this.store.getDeliveryOutcome(projectId);
   }
 
-  listDeliveryOutcomes(): DeliveryOutcome[] {
-    return Array.from(this.deliveryOutcomes.values());
+  async listDeliveryOutcomes(): Promise<DeliveryOutcome[]> {
+    return this.store.listDeliveryOutcomes();
   }
 
   // ---------------------------------------------------------------------------
   // Support Cases
   // ---------------------------------------------------------------------------
 
-  createSupportCase(input: CreateSupportCaseInput): SupportCase {
+  async createSupportCase(input: CreateSupportCaseInput): Promise<SupportCase> {
     const now = new Date().toISOString();
     const id = input.id ?? CaseIdSchema.parse(`case-${randomUUID().slice(0, 8)}`);
 
@@ -342,7 +351,7 @@ export class CustomerSuccessEngine {
       updatedAt: now,
     });
 
-    this.supportCases.set(record.id, record);
+    await this.store.saveSupportCase(record);
 
     // Apply temporary health penalty while case is open
     const penalties: Record<SupportCaseSeverity, number> = {
@@ -351,13 +360,17 @@ export class CustomerSuccessEngine {
       medium: -4,
       low: -1,
     };
-    this.updateCustomerHealth(input.customerId, penalties[input.severity], `Support case opened: ${input.title}`);
+    await this.updateCustomerHealth(
+      input.customerId,
+      penalties[input.severity],
+      `Support case opened: ${input.title}`,
+    );
 
     return record;
   }
 
-  resolveSupportCase(caseId: CaseId, input: ResolveSupportCaseInput): SupportCase {
-    const existing = this.supportCases.get(caseId);
+  async resolveSupportCase(caseId: CaseId, input: ResolveSupportCaseInput): Promise<SupportCase> {
+    const existing = await this.store.getSupportCase(caseId);
     if (!existing) {
       throw new Error(`Support case ${caseId} not found`);
     }
@@ -377,7 +390,7 @@ export class CustomerSuccessEngine {
       updatedAt: new Date().toISOString(),
     };
 
-    this.supportCases.set(caseId, updated);
+    await this.store.saveSupportCase(updated);
 
     // Restore customer health score based on SLA compliance
     const bonusMap: Record<SupportCaseSeverity, number> = {
@@ -386,11 +399,17 @@ export class CustomerSuccessEngine {
       medium: 3,
       low: 1,
     };
-    const bonus = slaBreached ? Math.floor(bonusMap[existing.severity] / 2) : bonusMap[existing.severity];
-    this.updateCustomerHealth(existing.customerId, bonus, `Support case resolved (SLA ${slaBreached ? 'Breached' : 'Met'})`);
+    const bonus = slaBreached
+      ? Math.floor(bonusMap[existing.severity] / 2)
+      : bonusMap[existing.severity];
+    await this.updateCustomerHealth(
+      existing.customerId,
+      bonus,
+      `Support case resolved (SLA ${slaBreached ? 'Breached' : 'Met'})`,
+    );
 
     if (slaBreached || existing.severity === 'critical') {
-      this.extractLearning({
+      await this.extractLearning({
         sourceType: 'support_postmortem',
         projectId: existing.projectId,
         customerId: existing.customerId,
@@ -410,20 +429,19 @@ export class CustomerSuccessEngine {
     return updated;
   }
 
-  getSupportCase(caseId: CaseId): SupportCase | undefined {
-    return this.supportCases.get(caseId);
+  async getSupportCase(caseId: CaseId): Promise<SupportCase | undefined> {
+    return this.store.getSupportCase(caseId);
   }
 
-  listSupportCases(customerId?: CustomerId): SupportCase[] {
-    const cases = Array.from(this.supportCases.values());
-    return customerId ? cases.filter((c) => c.customerId === customerId) : cases;
+  async listSupportCases(customerId?: CustomerId): Promise<SupportCase[]> {
+    return this.store.listSupportCases(customerId);
   }
 
   // ---------------------------------------------------------------------------
   // Customer Feedback
   // ---------------------------------------------------------------------------
 
-  recordFeedback(input: RecordCustomerFeedbackInput): CustomerFeedback {
+  async recordFeedback(input: RecordCustomerFeedbackInput): Promise<CustomerFeedback> {
     const now = new Date().toISOString();
     const id = input.id ?? FeedbackIdSchema.parse(`fb-${randomUUID().slice(0, 8)}`);
 
@@ -442,16 +460,16 @@ export class CustomerSuccessEngine {
       updatedAt: now,
     });
 
-    this.feedbackList.set(record.id, record);
+    await this.store.saveCustomerFeedback(record);
 
     // Adjust customer health according to feedback
     if (record.npsScore >= 9) {
-      this.updateCustomerHealth(input.customerId, 10, 'NPS Promoter rating');
+      await this.updateCustomerHealth(input.customerId, 10, 'NPS Promoter rating');
     } else if (record.npsScore <= 6) {
-      this.updateCustomerHealth(input.customerId, -20, 'NPS Detractor rating');
+      await this.updateCustomerHealth(input.customerId, -20, 'NPS Detractor rating');
     }
 
-    this.extractLearning({
+    await this.extractLearning({
       sourceType: 'customer_feedback',
       projectId: input.projectId,
       customerId: input.customerId,
@@ -470,16 +488,17 @@ export class CustomerSuccessEngine {
     return record;
   }
 
-  listFeedback(customerId?: CustomerId): CustomerFeedback[] {
-    const list = Array.from(this.feedbackList.values());
-    return customerId ? list.filter((f) => f.customerId === customerId) : list;
+  async listFeedback(customerId?: CustomerId): Promise<CustomerFeedback[]> {
+    return this.store.listCustomerFeedback(customerId);
   }
 
   // ---------------------------------------------------------------------------
   // Project Financials & Profitability
   // ---------------------------------------------------------------------------
 
-  calculateFinancialSummary(input: CalculateFinancialSummaryInput): ProjectFinancialSummary {
+  async calculateFinancialSummary(
+    input: CalculateFinancialSummaryInput,
+  ): Promise<ProjectFinancialSummary> {
     const now = new Date().toISOString();
     const id = input.id ?? FinancialSummaryIdSchema.parse(`fin-${randomUUID().slice(0, 8)}`);
 
@@ -491,9 +510,10 @@ export class CustomerSuccessEngine {
     const totalCost = computeCost + tokenCost + laborCost + toolingCost;
 
     const grossMargin = input.contractRevenue - totalCost;
-    const marginPercent = input.contractRevenue > 0
-      ? Number(((grossMargin / input.contractRevenue) * 100).toFixed(2))
-      : 0;
+    const marginPercent =
+      input.contractRevenue > 0
+        ? Number(((grossMargin / input.contractRevenue) * 100).toFixed(2))
+        : 0;
 
     let profitabilityStatus: ProfitabilityStatus = 'profitable';
     if (marginPercent >= 70) {
@@ -530,21 +550,22 @@ export class CustomerSuccessEngine {
       updatedAt: now,
     });
 
-    this.financialSummaries.set(record.projectId, record);
+    await this.store.saveFinancialSummary(record);
 
     // Update customer lifetime value
-    const customer = this.customers.get(input.customerId);
+    const customer = await this.store.getCustomer(input.customerId);
     if (customer) {
-      this.customers.set(input.customerId, {
+      await this.store.saveCustomer({
         ...customer,
-        lifetimeValue: customer.lifetimeValue + (input.recognizedRevenue ?? input.contractRevenue),
+        lifetimeValue:
+          customer.lifetimeValue + (input.recognizedRevenue ?? input.contractRevenue),
         updatedAt: now,
       });
     }
 
     // Extract financial calibration learning
     const isUnderperforming = marginPercent < 20;
-    this.extractLearning({
+    await this.extractLearning({
       sourceType: 'profitability_analysis',
       projectId: input.projectId,
       customerId: input.customerId,
@@ -566,19 +587,19 @@ export class CustomerSuccessEngine {
     return record;
   }
 
-  getFinancialSummary(projectId: ProjectId): ProjectFinancialSummary | undefined {
-    return this.financialSummaries.get(projectId);
+  async getFinancialSummary(projectId: ProjectId): Promise<ProjectFinancialSummary | undefined> {
+    return this.store.getFinancialSummary(projectId);
   }
 
-  listFinancialSummaries(): ProjectFinancialSummary[] {
-    return Array.from(this.financialSummaries.values());
+  async listFinancialSummaries(customerId?: CustomerId): Promise<ProjectFinancialSummary[]> {
+    return this.store.listFinancialSummaries(customerId);
   }
 
   // ---------------------------------------------------------------------------
   // Learning & Institutional Memory
   // ---------------------------------------------------------------------------
 
-  extractLearning(input: ExtractLearningInput): LearningRecord {
+  async extractLearning(input: ExtractLearningInput): Promise<LearningRecord> {
     const now = new Date().toISOString();
     const id = input.id ?? LearningIdSchema.parse(`learn-${randomUUID().slice(0, 8)}`);
 
@@ -597,30 +618,30 @@ export class CustomerSuccessEngine {
       updatedAt: now,
     });
 
-    this.learnings.set(record.id, record);
+    await this.store.saveLearning(record);
     return record;
   }
 
-  listLearnings(category?: LearningCategory): LearningRecord[] {
-    const list = Array.from(this.learnings.values());
-    return category ? list.filter((l) => l.category === category) : list;
+  async listLearnings(category?: LearningCategory): Promise<LearningRecord[]> {
+    return this.store.listLearnings(category ? { category } : undefined);
   }
 
   // ---------------------------------------------------------------------------
   // Opportunity Calibration (The Closed-Loop Feedback into Sales & Intelligence)
   // ---------------------------------------------------------------------------
 
-  getOpportunityCalibration(): OpportunityCalibration {
-    const outcomes = Array.from(this.deliveryOutcomes.values());
-    const financials = Array.from(this.financialSummaries.values());
-    const customers = Array.from(this.customers.values());
-    const learnings = Array.from(this.learnings.values());
+  async getOpportunityCalibration(): Promise<OpportunityCalibration> {
+    const outcomes = await this.store.listDeliveryOutcomes();
+    const financials = await this.store.listFinancialSummaries();
+    const customers = await this.store.listCustomers();
+    const learnings = await this.store.listLearnings();
 
     const completedDeliveriesCount = outcomes.length;
     const successfulCount = outcomes.filter((o) => o.status === 'successful').length;
-    const successRatePercent = completedDeliveriesCount > 0
-      ? Number(((successfulCount / completedDeliveriesCount) * 100).toFixed(1))
-      : 100;
+    const successRatePercent =
+      completedDeliveriesCount > 0
+        ? Number(((successfulCount / completedDeliveriesCount) * 100).toFixed(1))
+        : 100;
 
     let averageMarginPercent = 70;
     if (financials.length > 0) {

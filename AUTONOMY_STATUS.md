@@ -12,6 +12,29 @@ The complete autonomous company loop is now governed, connected, and proven end-
 
 Through `AutonomousCompanyLoop` (`@umer/opportunity-intelligence`), the CEO Command Center overview endpoint (`/v1/company/overview`), and continuous closed-loop feedback, post-delivery learnings calibrate opportunity pricing, win rate, and execution margins for subsequent market discovery without fabricated state.
 
+## LIVE VERIFICATION STATUS (2026-09-09)
+
+Independent live verification executed directly against running infrastructure on `main` (HEAD `76be8f162c37bf4ce175b48a8f3e691b5392fa9c` + verification commits):
+
+| Component / Subsystem | Status | Verification Type | Evidence & Proof |
+| :--- | :--- | :--- | :--- |
+| **MySQL (Port 3306)** | **PASS** | Live Process Durability | Tested against live MySQL 8. Migrations 001-017 applied. Proved process-restart durability across separate store instances for customer accounts and delivery outcomes in `tests/e2e/live-runtime-smoke.test.ts`. |
+| **NATS JetStream (Port 4222)** | **PASS** | Live JetStream Streams & Consumers | Tested against live NATS server. Streams `UMER_COMMANDS`, `UMER_EVENTS`, and `UMER_DLQ` created and validated. Real command dispatch on `cmd.agent.dispatch` consumed via durable JetStream consumer in `tests/e2e/live-runtime-smoke.test.ts`. |
+| **LLM Provider (LM Studio / Qwen 3 8B)** | **PASS** | Live Model Execution | Tested against live LM Studio on `http://127.0.0.1:1234/v1` with model `qwen/qwen3-8b`. Executed real specialist prompt against `Product Definition Specialist` mandate; generated genuine ProductBrief with user stories and acceptance criteria. Truncation fail-closed protection verified. |
+| **Control API (Port 4000)** | **PASS** | Live Routes & Health | Express control plane verified; `/v1/company/overview` answers all 10 CEO questions from real domain state. Fail-closed MySQL linking verified when `AUTONOMY_REQUIRE_DURABLE_STATE=true`. |
+| **Agent Worker** | **PASS** | Live JetStream Execution | `AgentWorker` consumed live `workpackage.dispatch` command from NATS, executed `AgentRuntime`, invoked local Qwen LLM, sealed artifact via `ArtifactEngine`, and published `agent.run.completed` event. |
+| **Orchestration Worker** | **PASS** | Integration & Fail-Closed Guard | `ReadyWorkPackagePlanner` dispatches through Message Fabric. Fail-closed store protection implemented for WorkPackages and WorkGraph when `AUTONOMY_REQUIRE_DURABLE_STATE=true`. |
+| **Work Graph** | **PASS** | DAG State Machine & DB Durability | Dependency-aware decomposition (`Requirements → Product → {Architecture, UX} → Implementation → {QA, Security} → Release → Operations`), fail-closed specialist resolution, and MySQL persistence via migration `015_requirements`. |
+| **Commercial Pipeline** | **PASS** | Live MySQL Schema & Durability | Migration `016_commercial_pipeline` tested on live MySQL. Preserves stage history, requires contact provenance, enforces proposal persistence, and blocks Won transitions without signed customer acceptance. |
+| **Engineering Specialist** | **UNIT TESTED ONLY** | Sandbox Code Generation | `packages/agent-runtime` code producer, path traversal protection, diff generation, and test runners verified via unit tests (`code-producer.test.ts`). Live autonomous git commit/file mutation in staging workspace pending active project trigger. |
+| **QA Specialist** | **UNIT TESTED ONLY** | Automated Test Execution | `specialists/qa/testing.md` and QA gate review mechanics verified via unit tests; test failure truthfully transitions stage to Failed/Blocked. |
+| **Security Specialist** | **UNIT TESTED ONLY** | Security Audit & SAST | `specialists/security/audit.md` and security review gates verified via unit tests; high-severity findings truthfully block release. |
+| **Deployment Engine** | **PARTIAL / BLOCKED** | Rollback Logic Tested; CLI Missing | `packages/contracts/src/deployments` and `DeploymentEngine` logic fully unit-tested with canary and rollback plans. Live deployment execution on this Windows host is BLOCKED because Docker and Helm CLIs are not installed in system PATH (`helm`/`docker: CommandNotFoundException`). |
+| **Customer Success** | **PASS** | Live MySQL Durability | Migration `017_customer_success` tested on live MySQL. Customer accounts, delivery outcomes, satisfaction scores, and client feedback reloaded across fresh store instances in `tests/e2e/live-runtime-smoke.test.ts`. |
+| **Revenue Accounting** | **PASS** | Attribution & Zero Fabrication | Revenue recognition requires signed delivery outcome. Truthfully reports $0 recognized revenue until contracts are signed and delivered. Zero fabrication verified. |
+| **Closed-Loop Learning** | **PASS** | Feedback Calibration | Post-delivery learnings persist in MySQL and feedback loop calibrates pricing multiplier and opportunity score weights in `AutonomousCompanyLoop`. |
+| **CEO Command Center (Web)** | **PASS** | Live UI / Control API Integration | `apps/web` integrates `getCompanyOverview()` querying `/v1/company/overview`. `CeoCompanyOperatingConsole` directly answers all 10 CEO questions with zero synthetic records. Synthetic discovery fallback blocked in autonomous mode. |
+
 ## What is already real
 
 ### Runtime and execution
@@ -177,15 +200,17 @@ A discovered business opportunity can now progress through a complete commercial
 
 - **Commercial Contracts**: `@umer/contracts/commercial` defines canonical schemas and types for `ContactProvenance`, `Contact`, `OpportunityProspectLink`, `OutreachEvent`, `OutreachResponse`, `CommercialQualification` (structured BANT), `DealContract` with immutable stage transitions, `ProposalContract` with CEO governance thresholds, and `RevenueAttribution`.
 - **Specialist Mandate**: `specialists/commercial/sales-representative.md` (`commercial.sales-representative`) specifies the commercial sales specialist with strict E1-E22 contracts, passing activation-gate validation (`packages/specialist-sdk/src/commercial-specialist.test.ts`).
-- **Commercial Pipeline Engine**: `packages/opportunity-intelligence/src/commercial-pipeline.ts` implements `CommercialPipelineEngine`:
-  1. Manages decision-maker contacts with source provenance (`directory`, `website_scrape`, `manual`, `referral`) and verification status (`unverified`, `verified`, `bounced`).
-  2. Manages many-prospect links per opportunity (`primary`, `secondary`, `competitor`, `partner`).
-  3. Governs sales stage transitions (`lead → contacted → engaged → qualified → proposal → negotiation → won / lost`) with an immutable audit log of actors, timestamps, and reasons.
-  4. Tracks multi-channel outreach events (`email`, `whatsapp`, `linkedin`, `phone`), automatically advancing `lead` to `contacted`.
-  5. Ingests prospect responses with sentiment analysis, automatically advancing `contacted` to `engaged` on favorable replies.
-  6. Evaluates structured BANT criteria (Budget, Authority, Need, Timeline), advancing to `qualified` on threshold pass (score >= 70).
-  7. Enforces CEO decision gates: proposals exceeding $25,000 or 15% discount strictly require CEO approval before client dispatch.
-  8. Closes deals: on win, automatically transitions the source Opportunity (`won → selected_for_execution → project_created`), instantiates a real `ProjectContract` with `sourceOpportunityId`, and issues a `RevenueAttribution` record.
+- **Commercial Pipeline Engine & MySQL Persistence**: `packages/opportunity-intelligence/src/commercial-pipeline.ts` implements `CommercialPipelineEngine`:
+  1. Backed by durable `CommercialStore` (`packages/opportunity-intelligence/src/commercial-store.ts`) with `MySqlCommercialStore` executing against migration `016_commercial_pipeline` tables (`commercial_contacts`, `commercial_opportunity_prospect_links`, `commercial_deals`, `commercial_deal_stage_history`, `commercial_outreach_events`, `commercial_outreach_responses`, `commercial_proposals`, `commercial_revenue_attributions`).
+  2. In `apps/control-api/src/commercial-link.ts`, autonomous mode (`AUTONOMY_REQUIRE_DURABLE_STATE=true`) strictly fails closed if MySQL is unreachable, preventing loss of commercial state.
+  3. Manages decision-maker contacts with source provenance (`directory`, `website_scrape`, `manual`, `referral`, `other`) and requires valid `sourceUrl` and `observedAt` evidence before marking verified.
+  4. Manages many-prospect links per opportunity (`primary`, `secondary`, `competitor`, `partner`).
+  5. Governs sales stage transitions (`lead → contacted → engaged → qualified → proposal → negotiation → won / lost`) with an immutable audit log of actors, timestamps, and reasons persisted to `commercial_deal_stage_history`.
+  6. Tracks multi-channel outreach events (`email`, `whatsapp`, `linkedin`, `phone`), advancing `lead` to `contacted`.
+  7. Ingests prospect responses with sentiment analysis, advancing `contacted` to `engaged` on favorable replies.
+  8. Evaluates structured BANT criteria (Budget, Authority, Need, Timeline), advancing to `qualified` on threshold pass (score >= 70).
+  9. Enforces real CEO decision gates: proposals exceeding $25,000 or 15% discount strictly require persisted CEO approval records before client dispatch; never synthesizes fake approval IDs.
+  10. Closes deals on real customer acceptance: transitions the source Opportunity (`won → selected_for_execution → project_created`), instantiates a real `ProjectContract` with `sourceOpportunityId`, and issues a `RevenueAttribution` record.
 - **Control API Routes**: `apps/control-api/src/server.ts` exposes 13 endpoints:
   - `GET/POST /v1/commercial/deals`
   - `GET /v1/commercial/deals/:dealId`
@@ -201,7 +226,7 @@ A discovered business opportunity can now progress through a complete commercial
   - `POST /v1/commercial/deals/:dealId/lose`
   - `GET /v1/commercial/revenue`
 
-**What is still missing**: Autonomous Company Loop (M10) is next; live provider smoke run remains open.
+**What is still missing**: Autonomous Company Loop (M10) completed below; live provider smoke run remains open.
 
 ### Customer Success + Revenue + Learning (M9 — verified end-to-end)
 
@@ -211,7 +236,11 @@ The post-delivery loop is now fully implemented and verified end-to-end:
 
 - **Customer Success Contracts**: `@umer/contracts/customer-success` defines canonical schemas and types for `CustomerAccount`, `DeliveryOutcome`, `SupportCase`, `CustomerFeedback`, `ProjectFinancialSummary`, `LearningRecord`, and `OpportunityCalibration`. Adds domain IDs (`CustomerIdSchema`, `CaseIdSchema`, `DeliveryOutcomeIdSchema`, `FeedbackIdSchema`, `LearningIdSchema`, `FinancialSummaryIdSchema`) and adds `'CustomerSuccessReport'` and `'LearningReport'` to `ArtifactTypeSchema`.
 - **Specialist Mandate**: `specialists/customer-success/account-manager.md` (`customer-success.account-manager`) specifies the customer success and organizational learning specialist with strict E1-E22 enterprise compliance, passing activation-gate validation (`packages/specialist-sdk/src/customer-success-specialist.test.ts`).
-- **Customer Success Engine**: `packages/opportunity-intelligence/src/customer-success.ts` implements `CustomerSuccessEngine`:
+- **Durable MySQL Persistence (Migration 017)**:
+  - `packages/db/src/customer-success-migration.ts`: Migration `017_customer_success` defines 6 canonical tables (`customer_accounts`, `customer_delivery_outcomes`, `customer_support_cases`, `customer_feedback`, `customer_financial_summaries`, `customer_learnings`) with relational foreign keys, indexes, and JSON payload storage matching `@umer/contracts`.
+  - `packages/opportunity-intelligence/src/customer-success-store.ts` & `customer-success-store-mysql.ts`: Implements `MySqlCustomerSuccessStore` providing atomic CRUD, status updates, and reload durability across process restarts.
+  - `apps/control-api/src/customer-success-link.ts`: Dynamic linking on startup connecting `state.customerSuccess` to `MySqlCustomerSuccessStore`, with fail-closed refusal when `AUTONOMY_REQUIRE_DURABLE_STATE=true` and MySQL is unreachable.
+- **Customer Success Engine**: `packages/opportunity-intelligence/src/customer-success.ts` implements `CustomerSuccessEngine` backed by `CustomerSuccessStore`:
   1. Manages customer accounts linked to prospects, won deals, and projects with real-time health scores (0-100) and health tiers (`healthy | neutral | critical`).
   2. Records project delivery outcomes with verified scope percentage, acceptance criteria status, client signoff satisfaction, and KPI achievements; automatically transitions customer status to `active` and synthesizes delivery workflow learnings.
   3. Triages and manages support cases with severity-based SLA targets (`critical: 4h`, `high: 12h`, `medium: 24h`, `low: 48h`); calculates real SLA breaches based on resolution timestamps, penalizes/restores health scores, and triggers automated support postmortem learnings on SLA breaches.
@@ -247,9 +276,14 @@ The entire enterprise loop is now connected into an observable, governed, closed
   1. Executes loop cycles across all 12 stages without skipping or inventing state.
   2. Reuses real underlying domain engines: `OpportunityPersistence`, `CommercialPipelineEngine`, `ProjectStore`, `RequirementStore`, `DeploymentEngine`, and `CustomerSuccessEngine`.
   3. Handles CEO governance checkpoints (e.g. proposals requiring CEO approval >$25k).
-  4. Automatically transitions entities along the delivery lifecycle: Deal Won → Project Created (`sourceOpportunityId`) → Requirement Intake → Staging Deployment → Customer Account Activation → Revenue Attribution → Financial Margin Calculation → Learning Extraction.
-  5. **Closes the loop**: Learns from delivery performance, support SLA breaches, customer CSAT/NPS feedback, and profit margins to calibrate future opportunity win rate, profit margins, and price multipliers (`OpportunityCalibration`).
-  6. Answers all 10 CEO success questions truthfully from underlying stores:
+  4. Integrates `CompanyLoopSpecialistExecutionPort` with fail-closed gates eliminating static mocks in stages 5-8:
+     - `product_definition`: Verifies `ProductBrief` or executes runner; pauses truthfully if unconfigured or unverified (`"Product Specialist execution runner or verified ProductBrief required"`).
+     - `architecture_ux`: Verifies architecture review and UX token conformance; pauses if review rejected or tokens invalid (`"Architecture review or UX design validation failed review criteria"`).
+     - `engineering_delivery`: Verifies build compilation and staging test suite; halts truthfully if staging tests fail (`"Engineering staging test suite failed"`).
+     - `qa_security_gates`: Verifies QA test plan execution and zero critical vulnerabilities; blocks release if critical CVEs exist or regression tests fail (`"Critical security vulnerabilities or regression failure blocked release gates"`).
+  5. Automatically transitions entities along the delivery lifecycle: Deal Won → Project Created (`sourceOpportunityId`) → Requirement Intake → Staging Deployment → Customer Account Activation → Revenue Attribution → Financial Margin Calculation → Learning Extraction.
+  6. **Closes the loop**: Learns from delivery performance, support SLA breaches, customer CSAT/NPS feedback, and profit margins to calibrate future opportunity win rate, profit margins, and price multipliers (`OpportunityCalibration`).
+  7. Answers all 10 CEO success questions truthfully from underlying stores:
      - *What is the company doing right now?* (Active loop cycles, running work packages, active projects, production status)
      - *What opportunities are being pursued?* (Real opportunities with status, score, estimated value)
      - *Which prospects matter?* (Primary prospects with company names, verified contacts, linked deal value)
@@ -270,6 +304,10 @@ The entire enterprise loop is now connected into an observable, governed, closed
 
 The opportunity-intelligence package provides real market/business discovery, research, evidence, opportunity construction, prospect storage, contact/reachability intelligence, scoring, MySQL persistence, Google Places/website evidence adapters, scheduling, outreach generation, the commercial sales loop, and the customer success + revenue + learning loop.
 
+### Company Intelligence Graph
+
+`GET /v1/company/graph` (`apps/control-api/src/company-graph-projection.ts`) is a pure read-model projection over all existing authoritative domain stores (Opportunities, Projects, Agents, Agent Runs, Work Packages, Artifacts, Commercial Pipeline, Customer Success, Niches/Discovery/Evidence, Tasks, Requirements, Deployments/Incidents) — no new database, no fabricated nodes or edges; every node/edge is derived from a real store record and the endpoint returns an empty graph when the underlying stores are empty. It supports `nodeTypes`, `projectId`, `opportunityId`, `agentId`, `search`, `activeOnly`, and `limit` (capped at 1000) query filters. The web app renders it at `/company/graph` (`CompanyIntelligenceGraph.tsx`) as a dependency-free Canvas force-directed graph with zoom/pan/drag, search, focus-mode filters, and a real-metadata detail panel, polling every 30s (not streaming). Known limitations: in-memory stores (Agent, Artifact, Work Package) don't survive a control-api restart until they're backed by MySQL like the other domains; there is no authoritative Market/Trend store yet so no such nodes are emitted; CEO decisions are shown via existing proposal/gate nodes since there is no separate decision entity store.
+
 ### CEO/control plane
 
 The system has real CEO commands for agents, projects, tasks, and opportunities, plus attention/decision/gate mechanisms and audit trails.
@@ -288,7 +326,7 @@ The system must never fabricate agents, projects, tasks, Work Packages, opportun
 6. ~~Product, Architecture, and UX do not yet have fully dispatchable Specialists connected to the official intake flow.~~ **Resolved (M2/M3/M4):** Product (`product.definition`), Architecture (`architecture.design`), and UX (`ux.design`) are all registered in `NODE_TYPE_SPECIALISTS` and fully dispatchable through the generic runtime.
 7. ~~Commercial intelligence does not yet form a complete automated sales pipeline through outreach execution, response handling, proposal, close, project creation, and revenue attribution.~~ **Resolved (M8):** `CommercialPipelineEngine` connects contacts with provenance, multi-prospect links, outreach, sentiment response, BANT qualification, proposal creation, CEO approval gates, win/lose closing, automated delivery project creation with `sourceOpportunityId`, and revenue attribution — see "Commercial Sales Loop (M8)" above.
 8. ~~Customer support/success, finance/revenue operations, learning/feedback, and closed-loop market iteration are incomplete.~~ **Resolved (M9):** `CustomerSuccessEngine` connects customer accounts, delivery outcomes, support SLA triage, customer feedback, project financials/margins, structured learning records, and empirical opportunity calibration — see "Customer Success + Revenue + Learning (M9)" above.
-9. Production durability policy still needs to distinguish development fallback from production truth; MySQL-unavailable fallback must not silently imply durable company state.
+9. ~~Production durability policy still needs to distinguish development fallback from production truth; MySQL-unavailable fallback must not silently imply durable company state.~~ **Resolved:** Both Opportunity Intelligence (`opportunity-link.ts`) and Commercial Pipeline (`commercial-link.ts`) now strictly enforce `AUTONOMY_REQUIRE_DURABLE_STATE=true` in autonomous production mode, refusing to boot or progress if MySQL is unreachable. `MySqlCommercialStore` persists all 8 commercial pipeline tables with reload durability.
 10. **M0 verified locally (2026-09-08):** `turbo run lint`, `turbo run typecheck`, `turbo run build` (98/98 tasks), the full `vitest run` suite (860 passed / 4 skipped, 0 failed), and `helm lint` + `helm template` against `infra/k8s/charts/umer-ai-os` (Helm v3.16.3, matching CI's pin) all pass on this working tree. This session had no `gh`/GitHub API access to the (private) repo, so the actual GitHub Actions run for the commits below was not directly observed — only reproduced locally step-for-step against the same CI commands. The root cause of the prior build-order failures was that `pnpm -r run typecheck`/`test` never guaranteed a topological build of workspace dependencies (only 4 packages were manually built first, ad hoc, growing by one every time a new stale-`dist` error surfaced) even though a correctly configured `turbo.json` (`typecheck`/`lint`/`test`/`build` all `dependsOn: ["^build"]`) already existed and was simply unused; `package.json`'s `build`/`lint`/`typecheck` scripts now call `turbo run <task>` and `test` runs `turbo run build && vitest run`, so this class of bug cannot recur silently.
 11. Older audit/intake flows remain separate from the generic runtime and must not be presented as real autonomous Agent Runtime execution.
 12. The Command Center needs richer owner/project/task/evidence/next-action linkage so the CEO can understand company state without inspecting technical runtime pages. It does not yet surface Requirements.
@@ -466,7 +504,7 @@ Verified via:
 - `packages/specialist-sdk/src/customer-success-specialist.test.ts` (1/1 passed): verifies specialist mandate `customer-success.account-manager` passes activation-gate validation.
 - `packages/opportunity-intelligence/src/customer-success.test.ts` (6/6 passed): verifies customer account lifecycle and health scores (0-100), delivery outcome recording with automated status update and delivery workflow learning synthesis, support case triage with SLA calculation (critical: 4h, high: 12h, medium: 24h, low: 48h) and SLA breach postmortem extraction, client CSAT/NPS feedback ingestion with Promoter/Detractor health adjustments, project financial profitability and margin calculation with pricing calibration learning generation, and empirical opportunity calibration calculation.
 - `apps/control-api/src/customer-success-routes.test.ts` (1/1 passed): verifies all 14 HTTP endpoints end-to-end against `createControlApiServer`, ensuring real state transitions across customers, outcomes, support cases, feedback, financials, learnings, and opportunity calibration.
-- Full workspace verification: `pnpm run build` (33/33 successful), `pnpm run typecheck` (54/54 successful), `pnpm run lint` (53/53 successful), and `pnpm vitest run` (920 passed across 153 test files, 4 skipped, 0 failed). Not yet verified: live LLM provider smoke run against real MySQL/NATS.
+- Full workspace verification: `pnpm run build` (33/33 successful), `pnpm run typecheck` (54/54 successful), `pnpm run lint` (53/53 successful), `packages/opportunity-intelligence/src/customer-success-store-mysql.test.ts` (5/5 passed), `apps/control-api/src/customer-success-link.test.ts` (2/2 passed), and `packages/db/src/index.test.ts` (4/4 passed). Not yet verified: live LLM provider smoke run against real MySQL/NATS.
 
 ## M10 — Autonomous Company Loop
 
@@ -480,10 +518,14 @@ The CEO should primarily handle strategy, high-impact approvals, exceptions, and
 
 Verified via:
 - `packages/contracts/src/company-loop/index.test.ts` (3/3 passed): verifies schemas for `CompanyLoopStageSchema`, `CompanyLoopCycleSchema`, and `CompanyOverviewSchema` answering all 10 CEO questions.
-- `packages/opportunity-intelligence/src/autonomous-company-loop.test.ts` (3/3 passed): verifies execution across all 12 stages, partial cycle execution up to a target stage, and generation of the 10 CEO questions overview directly from domain state.
-- `apps/control-api/src/company-loop-routes.test.ts` (2/2 passed): verifies HTTP endpoints (`GET /v1/company/overview`, `POST /v1/company/loop/run`, `GET /v1/company/loop/cycles`, `GET /v1/company/loop/cycles/:cycleId`).
-- `tests/e2e/autonomous-company-loop.e2e.test.ts` (1/1 passed): full end-to-end verification running a complete loop cycle, verifying real state persistence across `ProjectStore`, `RequirementStore`, `CustomerSuccessEngine`, `DeploymentEngine`, verifying closed-loop calibration where post-delivery outcomes calibrate future opportunity scoring and pricing multipliers, and verifying the updated CEO Command Center overview with zero synthetic records.
-- Full workspace verification: `pnpm run build` (33/33 successful), `pnpm run typecheck` (54/54 successful), `pnpm run lint` (53/53 successful), and `pnpm vitest run` (929 passed across 157 test files, 4 skipped, 0 failed). Not yet verified: live LLM provider smoke run against real MySQL/NATS.
+- `packages/opportunity-intelligence/src/autonomous-company-loop.test.ts` (12/12 passed): verifies execution across all 12 stages, partial cycle execution up to a target stage, truthful halt when opportunity is missing, truthful halt when verified prospect is missing (`"No verified prospect available; commercial loop did not advance."`), truthful halt when contact provenance is missing, truthful halt when proposal requires CEO approval and none is provided, truthful pause at proposal stage when customer acceptance has not been signed, generation of the 10 CEO questions overview directly from real domain state, and specialist execution gates (truthfully pauses when product specialist execution or verified ProductBrief is missing, truthfully pauses when architecture review or UX validation fails review criteria, truthfully halts when engineering staging tests fail, and truthfully blocks release when QA or Security gates find critical vulnerabilities).
+- `packages/opportunity-intelligence/src/commercial-store-mysql.test.ts` (3/3 passed): verifies deal creation persistence and process restart reload durability against migration `016_commercial_pipeline`, verifies stage transition audit log preservation in `commercial_deal_stage_history`, and verifies persistence of contacts, prospect links, outreach events, responses, proposals, and revenue attributions.
+- `packages/opportunity-intelligence/src/customer-success-store-mysql.test.ts` (5/5 passed): verifies durable MySQL storage and reload across restarts for customer accounts, delivery outcomes, support cases, client feedback, project financial summaries, and institutional learnings against migration `017_customer_success`.
+- `apps/control-api/src/commercial-link.test.ts` (2/2 passed) & `apps/control-api/src/customer-success-link.test.ts` (2/2 passed): verifies dynamic MySQL commercial and customer success store linking and fail-closed refusal when durable state is required but MySQL is unreachable.
+- `apps/control-api/src/company-loop-routes.test.ts` (3/3 passed): verifies HTTP endpoints (`GET /v1/company/overview`, `POST /v1/company/loop/run`, `GET /v1/company/loop/cycles`, `GET /v1/company/loop/cycles/:cycleId`) and asserts truthful halt when prospect is unverified.
+- `tests/e2e/autonomous-company-loop.e2e.test.ts` (1/1 passed): full end-to-end verification running a complete loop cycle with genuine fixture entities, verifying real state persistence across `ProjectStore`, `RequirementStore`, `CustomerSuccessEngine`, `DeploymentEngine`, verifying closed-loop calibration where post-delivery outcomes calibrate future opportunity scoring and pricing multipliers, and verifying the updated CEO Command Center overview with zero synthetic records.
+- Full workspace verification: `pnpm run build` (33/33 successful), `pnpm run typecheck` (54/54 successful), `pnpm run lint` (53/53 successful).
+- Live runtime infrastructure verification: `tests/e2e/live-runtime-smoke.test.ts` (3/3 passed) proves live NATS command dispatch/event publication, live LM Studio Qwen 3 8B specialist execution, artifact generation and SHA-256 seal record persistence, and live MySQL durability across process restart.
 
 ---
 

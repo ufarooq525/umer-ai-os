@@ -8,6 +8,28 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # MySQL backs the durable Opportunity Intelligence / Revenue OS tests
+    # (e.g. packages/opportunity-intelligence/src/e2e-mysql-flow.test.ts) —
+    # these run against a real database, not a mock, matching this repo's
+    # zero-fabrication testing philosophy. Credentials/db name match
+    # infra/docker/docker-compose.yml exactly, which is also what
+    # packages/config's OPPORTUNITY_DATABASE_URL default already points at,
+    # so no extra env wiring is needed for the test run below.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: umer_root
+          MYSQL_DATABASE: umer_revenue_os
+          MYSQL_USER: umer_revenue
+          MYSQL_PASSWORD: umer_revenue
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uumer_revenue -pumer_revenue --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -3,6 +3,7 @@ import type {
   CommercialQualificationInput,
   Contact,
   ContactVerificationStatus,
+  ContactProvenance,
   DealContract,
   DealStageTransition,
   Opportunity,
@@ -32,6 +33,10 @@ import {
   SCHEMA_VERSION,
   parseContract,
 } from '@umer/contracts';
+import {
+  type CommercialStore,
+  InMemoryCommercialStore,
+} from './commercial-store.js';
 
 export type CommercialProjectPort = {
   create(
@@ -55,6 +60,7 @@ export type CommercialOpportunityPort = {
 export type CommercialPipelineDependencies = {
   opportunities?: CommercialOpportunityPort;
   projects?: CommercialProjectPort;
+  store?: CommercialStore;
 };
 
 const defaultProjectsPort: CommercialProjectPort = {
@@ -79,18 +85,12 @@ const defaultProjectsPort: CommercialProjectPort = {
 };
 
 export class CommercialPipelineEngine {
-  private readonly contacts = new Map<string, Contact>();
-  private readonly prospectLinks = new Map<string, OpportunityProspectLink>();
-  private readonly deals = new Map<string, DealContract>();
-  private readonly outreachEvents = new Map<string, OutreachEvent>();
-  private readonly outreachResponses = new Map<string, OutreachResponse>();
-  private readonly proposals = new Map<string, ProposalContract>();
-  private readonly attributions = new Map<string, RevenueAttribution>();
-
+  private readonly store: CommercialStore;
   private readonly opportunitiesPort?: CommercialOpportunityPort;
   private readonly projectsPort: CommercialProjectPort;
 
   constructor(deps: CommercialPipelineDependencies = {}) {
+    this.store = deps.store ?? new InMemoryCommercialStore();
     this.opportunitiesPort = deps.opportunities;
     this.projectsPort = deps.projects ?? defaultProjectsPort;
   }
@@ -108,38 +108,36 @@ export class CommercialPipelineEngine {
       createdAt: now,
       updatedAt: now,
     });
-    this.contacts.set(id, structuredClone(contact));
-    return structuredClone(contact);
+    await this.store.saveContact(contact);
+    return contact;
   }
 
   async getContact(id: string): Promise<Contact | undefined> {
-    const contact = this.contacts.get(id);
-    return contact ? structuredClone(contact) : undefined;
+    return this.store.getContact(id);
   }
 
   async listContacts(prospectId?: string): Promise<Contact[]> {
-    const list = [...this.contacts.values()];
-    if (prospectId) {
-      return structuredClone(list.filter((c) => c.prospectId === prospectId));
-    }
-    return structuredClone(list);
+    return this.store.listContacts(prospectId);
   }
 
   async verifyContact(
     contactId: string,
     status: ContactVerificationStatus,
+    provenanceEvidence?: ContactProvenance,
   ): Promise<Contact> {
-    const contact = this.contacts.get(contactId);
+    const contact = await this.store.getContact(contactId);
     if (!contact) {
       throw new Error(`Contact not found: ${contactId}`);
     }
-    const updated: Contact = {
-      ...contact,
-      verificationStatus: status,
-      updatedAt: new Date().toISOString(),
-    };
-    this.contacts.set(contactId, updated);
-    return structuredClone(updated);
+    if (status === 'verified') {
+      const prov = provenanceEvidence ?? contact.provenance;
+      if (!prov || !prov.sourceUrl || !prov.observedAt) {
+        throw new Error(
+          `Contact ${contactId} cannot be marked verified without valid evidence-backed provenance (sourceUrl and observedAt required)`,
+        );
+      }
+    }
+    return this.store.updateContactStatus(contactId, status, provenanceEvidence);
   }
 
   // --- Multi-Prospect Links ---
@@ -158,18 +156,14 @@ export class CommercialPipelineEngine {
       role,
       linkedAt: now,
     });
-    this.prospectLinks.set(id, structuredClone(link));
-    return structuredClone(link);
+    await this.store.saveProspectLink(link);
+    return link;
   }
 
   async listProspectsForOpportunity(
     opportunityId: string,
   ): Promise<OpportunityProspectLink[]> {
-    return structuredClone(
-      [...this.prospectLinks.values()].filter(
-        (link) => link.opportunityId === opportunityId,
-      ),
-    );
+    return this.store.listProspectLinks(opportunityId);
   }
 
   // --- Deals Lifecycle & Stages ---
@@ -204,27 +198,19 @@ export class CommercialPipelineEngine {
       createdAt: now,
       updatedAt: now,
     });
-    this.deals.set(id, structuredClone(deal));
-    return structuredClone(deal);
+    await this.store.saveDeal(deal);
+    return deal;
   }
 
   async getDeal(dealId: string): Promise<DealContract | undefined> {
-    const deal = this.deals.get(dealId);
-    return deal ? structuredClone(deal) : undefined;
+    return this.store.getDeal(dealId);
   }
 
   async listDeals(filter?: {
     stage?: SalesStage;
     opportunityId?: string;
   }): Promise<DealContract[]> {
-    let list = [...this.deals.values()];
-    if (filter?.stage) {
-      list = list.filter((d) => d.stage === filter.stage);
-    }
-    if (filter?.opportunityId) {
-      list = list.filter((d) => d.opportunityId === filter.opportunityId);
-    }
-    return structuredClone(list);
+    return this.store.listDeals(filter);
   }
 
   async transitionDealStage(
@@ -233,7 +219,7 @@ export class CommercialPipelineEngine {
     actor: string,
     reason?: string,
   ): Promise<DealContract> {
-    const deal = this.deals.get(dealId);
+    const deal = await this.store.getDeal(dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${dealId}`);
     }
@@ -252,8 +238,7 @@ export class CommercialPipelineEngine {
       stageHistory: [...deal.stageHistory, transition],
       updatedAt: now,
     };
-    this.deals.set(dealId, updated);
-    return structuredClone(updated);
+    return this.store.addDealStageTransition(dealId, transition, updated);
   }
 
   // --- Outreach & Inbound Response Analysis ---
@@ -266,7 +251,7 @@ export class CommercialPipelineEngine {
     body: string;
     senderAgentId?: string;
   }): Promise<OutreachEvent> {
-    const deal = this.deals.get(input.dealId);
+    const deal = await this.store.getDeal(input.dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${input.dealId}`);
     }
@@ -282,7 +267,7 @@ export class CommercialPipelineEngine {
       sentAt: now,
       senderAgentId: input.senderAgentId,
     });
-    this.outreachEvents.set(id, structuredClone(event));
+    await this.store.saveOutreachEvent(event);
 
     // Progress deal to contacted if currently a lead
     if (deal.stage === 'lead') {
@@ -294,15 +279,11 @@ export class CommercialPipelineEngine {
       );
     }
 
-    return structuredClone(event);
+    return event;
   }
 
   async listOutreachEvents(dealId?: string): Promise<OutreachEvent[]> {
-    const list = [...this.outreachEvents.values()];
-    if (dealId) {
-      return structuredClone(list.filter((e) => e.dealId === dealId));
-    }
-    return structuredClone(list);
+    return this.store.listOutreachEvents(dealId ?? '');
   }
 
   async recordOutreachResponse(input: {
@@ -312,7 +293,7 @@ export class CommercialPipelineEngine {
     sentiment: OutreachSentiment;
     content: string;
   }): Promise<OutreachResponse> {
-    const deal = this.deals.get(input.dealId);
+    const deal = await this.store.getDeal(input.dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${input.dealId}`);
     }
@@ -327,7 +308,7 @@ export class CommercialPipelineEngine {
       content: input.content,
       receivedAt: now,
     });
-    this.outreachResponses.set(id, structuredClone(response));
+    await this.store.saveOutreachResponse(response);
 
     // Advance to engaged if prospect replied favorably or neutrally
     if (
@@ -342,15 +323,11 @@ export class CommercialPipelineEngine {
       );
     }
 
-    return structuredClone(response);
+    return response;
   }
 
   async listOutreachResponses(dealId?: string): Promise<OutreachResponse[]> {
-    const list = [...this.outreachResponses.values()];
-    if (dealId) {
-      return structuredClone(list.filter((r) => r.dealId === dealId));
-    }
-    return structuredClone(list);
+    return this.store.listOutreachResponses(dealId ?? '');
   }
 
   // --- Commercial BANT Qualification ---
@@ -360,7 +337,7 @@ export class CommercialPipelineEngine {
     qualificationInput: Omit<CommercialQualificationInput, 'dealId' | 'evaluatedAt'>,
     actor: string,
   ): Promise<DealContract> {
-    const deal = this.deals.get(dealId);
+    const deal = await this.store.getDeal(dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${dealId}`);
     }
@@ -376,7 +353,7 @@ export class CommercialPipelineEngine {
       qualification,
       updatedAt: evaluatedAt,
     };
-    this.deals.set(dealId, updatedDeal);
+    await this.store.saveDeal(updatedDeal);
 
     if (
       qualification.qualified &&
@@ -390,7 +367,7 @@ export class CommercialPipelineEngine {
       );
     }
 
-    return structuredClone(updatedDeal);
+    return updatedDeal;
   }
 
   // --- Proposal & CEO Decision Gate ---
@@ -406,7 +383,7 @@ export class CommercialPipelineEngine {
     discountPercent?: number;
     validUntil: string;
   }): Promise<ProposalContract> {
-    const deal = this.deals.get(input.dealId);
+    const deal = await this.store.getDeal(input.dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${input.dealId}`);
     }
@@ -434,21 +411,16 @@ export class CommercialPipelineEngine {
       updatedAt: now,
     });
 
-    this.proposals.set(id, structuredClone(proposal));
-    return structuredClone(proposal);
+    await this.store.saveProposal(proposal);
+    return proposal;
   }
 
   async getProposal(proposalId: string): Promise<ProposalContract | undefined> {
-    const proposal = this.proposals.get(proposalId);
-    return proposal ? structuredClone(proposal) : undefined;
+    return this.store.getProposal(proposalId);
   }
 
   async listProposals(dealId?: string): Promise<ProposalContract[]> {
-    const list = [...this.proposals.values()];
-    if (dealId) {
-      return structuredClone(list.filter((p) => p.dealId === dealId));
-    }
-    return structuredClone(list);
+    return this.store.listProposals(dealId ?? '');
   }
 
   async approveProposal(
@@ -456,7 +428,7 @@ export class CommercialPipelineEngine {
     actor: string,
     ceoApprovalId?: string,
   ): Promise<ProposalContract> {
-    const proposal = this.proposals.get(proposalId);
+    const proposal = await this.store.getProposal(proposalId);
     if (!proposal) {
       throw new Error(`Proposal not found: ${proposalId}`);
     }
@@ -473,21 +445,15 @@ export class CommercialPipelineEngine {
       }
     }
 
-    const updated: ProposalContract = {
-      ...proposal,
-      status: 'approved',
-      ceoApprovalId: ceoApprovalId ?? `ceo-approval-${randomUUID()}`,
-      updatedAt: new Date().toISOString(),
-    };
-    this.proposals.set(proposalId, updated);
-    return structuredClone(updated);
+    const approvalId = ceoApprovalId ?? (proposal.requiresCeoApproval ? `ceo-approval-${actor}` : undefined);
+    return this.store.updateProposalStatus(proposalId, 'approved', approvalId);
   }
 
   async sendProposal(
     proposalId: string,
     actor: string,
   ): Promise<ProposalContract> {
-    const proposal = this.proposals.get(proposalId);
+    const proposal = await this.store.getProposal(proposalId);
     if (!proposal) {
       throw new Error(`Proposal not found: ${proposalId}`);
     }
@@ -498,15 +464,9 @@ export class CommercialPipelineEngine {
       );
     }
 
-    const now = new Date().toISOString();
-    const updated: ProposalContract = {
-      ...proposal,
-      status: 'sent',
-      updatedAt: now,
-    };
-    this.proposals.set(proposalId, updated);
+    const updated = await this.store.updateProposalStatus(proposalId, 'sent');
 
-    const deal = this.deals.get(proposal.dealId);
+    const deal = await this.store.getDeal(proposal.dealId);
     if (
       deal &&
       (deal.stage === 'qualified' ||
@@ -522,7 +482,7 @@ export class CommercialPipelineEngine {
       );
     }
 
-    return structuredClone(updated);
+    return updated;
   }
 
   // --- Closing Won / Lost, Project Creation & Revenue Attribution ---
@@ -536,7 +496,7 @@ export class CommercialPipelineEngine {
     project: ProjectContract;
     attribution: RevenueAttribution;
   }> {
-    const deal = this.deals.get(dealId);
+    const deal = await this.store.getDeal(dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${dealId}`);
     }
@@ -556,12 +516,7 @@ export class CommercialPipelineEngine {
       dealProposals[0];
 
     if (activeProposal) {
-      const updatedProp: ProposalContract = {
-        ...activeProposal,
-        status: 'accepted',
-        updatedAt: new Date().toISOString(),
-      };
-      this.proposals.set(activeProposal.id, updatedProp);
+      await this.store.updateProposalStatus(activeProposal.id, 'accepted');
     }
 
     // Update Opportunity in OpportunityIntelligence persistence if available
@@ -607,12 +562,12 @@ export class CommercialPipelineEngine {
       status: 'won',
     });
 
-    this.attributions.set(attributionId, structuredClone(attribution));
+    await this.store.saveRevenueAttribution(attribution);
 
     return {
       deal: updatedDeal,
       project,
-      attribution: structuredClone(attribution),
+      attribution,
     };
   }
 
@@ -621,7 +576,7 @@ export class CommercialPipelineEngine {
     actor: string,
     reason?: string,
   ): Promise<DealContract> {
-    const deal = this.deals.get(dealId);
+    const deal = await this.store.getDeal(dealId);
     if (!deal) {
       throw new Error(`Deal not found: ${dealId}`);
     }
@@ -645,8 +600,8 @@ export class CommercialPipelineEngine {
     return updatedDeal;
   }
 
-  async listRevenueAttributions(): Promise<RevenueAttribution[]> {
-    return structuredClone([...this.attributions.values()]);
+  async listRevenueAttributions(dealId?: string): Promise<RevenueAttribution[]> {
+    return this.store.listRevenueAttributions(dealId);
   }
 
   async getRevenueSummary(): Promise<{
@@ -654,15 +609,17 @@ export class CommercialPipelineEngine {
     totalPipeline: number;
     currency: string;
   }> {
+    const attributions = await this.store.listRevenueAttributions();
     let totalWon = 0;
-    for (const attr of this.attributions.values()) {
+    for (const attr of attributions) {
       if (attr.status === 'won' || attr.status === 'billed' || attr.status === 'collected') {
         totalWon += attr.recognizedAmount;
       }
     }
 
+    const deals = await this.store.listDeals();
     let totalPipeline = 0;
-    for (const deal of this.deals.values()) {
+    for (const deal of deals) {
       if (deal.stage !== 'lost' && deal.stage !== 'won') {
         totalPipeline += (deal.estimatedValue ?? 0) * (deal.probability ?? 0.2);
       }

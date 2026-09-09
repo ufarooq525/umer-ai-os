@@ -74,8 +74,8 @@ export interface CompanyLoopDeploymentsPort {
       verificationCriteria: string[];
     };
   }): Promise<{ id: string; deploymentId: string; status: string }>;
-  executeDeployment?(id: string, correlationId: string): Promise<any>;
-  listDeployments?(filter?: { status?: string }): Promise<Array<any>> | Array<any>;
+  executeDeployment?(id: string, correlationId: string): Promise<unknown>;
+  listDeployments?(filter?: { status?: string }): Promise<Array<unknown>> | Array<unknown>;
   getProductionStatus?(): Promise<{ status: string; message?: string }> | { status: string; message?: string };
 }
 
@@ -89,6 +89,69 @@ export interface CompanyLoopAgentsPort {
 
 export interface CompanyLoopArtifactsPort {
   count?(): Promise<number> | number;
+  list?(): Promise<Array<{ id: string; type?: string; artifactType?: string }>> | Array<{ id: string; type?: string; artifactType?: string }>;
+  countByType?(type: string): Promise<number> | number;
+}
+
+export interface ProductDefinitionOutput {
+  artifactId: string;
+  scope: string;
+  functionalCriteriaCount: number;
+  nonFunctionalSLAs: string[];
+  verified?: boolean;
+}
+
+export interface ArchitectureUxOutput {
+  architectureArtifactId: string;
+  uxArtifactId: string;
+  architectureReviewPassed: boolean;
+  uxComponentDesignTokensValidated: boolean;
+  dataModelApproved: boolean;
+  verified?: boolean;
+}
+
+export interface EngineeringDeliveryOutput {
+  artifactId: string;
+  packagesCompiled: number;
+  testSuitesPassed: boolean;
+  gitCommitSealed: boolean;
+  diffSummary?: string;
+  verified?: boolean;
+}
+
+export interface QaSecurityGatesOutput {
+  qaArtifactId: string;
+  securityArtifactId: string;
+  testPlanCompleted: boolean;
+  criticalVulnerabilitiesFound: number;
+  regressionSuiteGreen: boolean;
+  complianceStatus: 'cleared' | 'flagged' | 'blocked';
+  verified?: boolean;
+}
+
+export interface CompanyLoopSpecialistExecutionPort {
+  executeProductDefinition?(input: {
+    projectId: string;
+    requirementId: string;
+  }): Promise<ProductDefinitionOutput> | ProductDefinitionOutput;
+
+  executeArchitectureUx?(input: {
+    projectId: string;
+    requirementId: string;
+    productArtifactId?: string;
+  }): Promise<ArchitectureUxOutput> | ArchitectureUxOutput;
+
+  executeEngineeringDelivery?(input: {
+    projectId: string;
+    requirementId: string;
+    architectureArtifactId?: string;
+  }): Promise<EngineeringDeliveryOutput> | EngineeringDeliveryOutput;
+
+  executeQaSecurityGates?(input: {
+    projectId: string;
+    requirementId: string;
+    codeArtifactId?: string;
+  }): Promise<QaSecurityGatesOutput> | QaSecurityGatesOutput;
 }
 
 export interface AutonomousCompanyLoopOptions {
@@ -102,20 +165,78 @@ export interface AutonomousCompanyLoopOptions {
   gates?: CompanyLoopGatesPort;
   agents?: CompanyLoopAgentsPort;
   artifacts?: CompanyLoopArtifactsPort;
+  specialists?: CompanyLoopSpecialistExecutionPort;
 }
 
 export interface RunCycleInput {
   title?: string;
   nicheId?: string;
   opportunityId?: string;
+  opportunity?: Opportunity;
   prospectId?: string;
   companyName?: string;
   contactName?: string;
   contactEmail?: string;
+  contactProvenance?: {
+    sourceUrl: string;
+    observedAt?: string;
+    method?: 'website_scrape' | 'manual' | 'referral' | 'directory' | 'other';
+    rawText?: string;
+    businessIdentity?: string;
+    contactIdentity?: string;
+    confidence?: number;
+    evidenceRef?: string;
+  };
+  outreachDetails?: {
+    channel: 'email' | 'linkedin' | 'phone' | 'whatsapp';
+    subject: string;
+    body: string;
+    senderAgentId: string;
+  };
+  outreachResponseDetails?: {
+    sentiment: 'positive' | 'neutral' | 'negative' | 'objection';
+    content: string;
+  };
+  qualificationDetails?: {
+    budgetConfirmed: boolean;
+    budgetAmount?: number;
+    authorityConfirmed: boolean;
+    needValidated: boolean;
+    urgency?: 'immediate' | 'this_quarter' | 'future' | 'unknown';
+    expectedCloseDate?: string;
+    qualificationScore: number;
+  };
+  proposalDetails?: {
+    title?: string;
+    scope?: string;
+    deliverables?: string[];
+    pricingModel?: 'fixed' | 'milestone' | 'retainer' | 'time_and_materials';
+    totalAmount?: number;
+    discountPercent?: number;
+    validUntil?: string;
+  };
+  ceoApprovalId?: string;
+  customerAcceptance?: {
+    signedBy: string;
+    signedAt?: string;
+    agreementRef: string;
+    clientSatisfactionScore?: number;
+    notes?: string;
+  };
+  deliverySignoff?: {
+    signedBy: string;
+    signedAt?: string;
+    clientSatisfactionScore?: number;
+    notes?: string;
+  };
   projectName?: string;
   targetStage?: CompanyLoopStage;
   budget?: number;
   actualCost?: number;
+  productDefinition?: ProductDefinitionOutput;
+  architectureUx?: ArchitectureUxOutput;
+  engineeringDelivery?: EngineeringDeliveryOutput;
+  qaSecurityGates?: QaSecurityGatesOutput;
 }
 
 const CANONICAL_STAGES: CompanyLoopStage[] = [
@@ -144,6 +265,7 @@ export class AutonomousCompanyLoop {
   private readonly gatesPort?: CompanyLoopGatesPort;
   private readonly agentsPort?: CompanyLoopAgentsPort;
   private readonly artifactsPort?: CompanyLoopArtifactsPort;
+  private readonly specialistsPort?: CompanyLoopSpecialistExecutionPort;
 
   private readonly cycles = new Map<string, CompanyLoopCycle>();
 
@@ -157,6 +279,7 @@ export class AutonomousCompanyLoop {
     this.gatesPort = options.gates;
     this.agentsPort = options.agents;
     this.artifactsPort = options.artifacts;
+    this.specialistsPort = options.specialists;
 
     this.projectsPort = options.projects ?? {
       async create(input) {
@@ -192,6 +315,11 @@ export class AutonomousCompanyLoop {
    * Market → Opportunity → Prospect → Sales → Requirements → Product →
    * Architecture → UX → Engineering → QA → Security → Release →
    * Operations → Customer → Revenue → Learning → Market
+   *
+   * Rigorous zero-fabrication execution: if an opportunity, verified prospect,
+   * contact provenance, CEO approval, or signed customer acceptance is absent,
+   * execution truthfully halts or records blocked status rather than inventing
+   * synthetic business progress.
    */
   async runCycle(input: RunCycleInput = {}): Promise<CompanyLoopCycle> {
     const cycleId = LoopCycleIdSchema.parse(`cycle-${Date.now()}-${randomUUID().slice(0, 8)}`);
@@ -236,52 +364,35 @@ export class AutonomousCompanyLoop {
 
         switch (stageName) {
           case 'market_discovery': {
-            // Read empirical calibration data from customer success to calibrate opportunity discovery
-            const calibration = this.customerSuccess.getOpportunityCalibration();
+            const calibration = await this.customerSuccess.getOpportunityCalibration();
 
             let opp: Opportunity | undefined;
-            if (input.opportunityId) {
+            if (input.opportunity) {
+              await this.opportunityPersistence.saveOpportunity(input.opportunity);
+              opp = input.opportunity;
+            } else if (input.opportunityId) {
               opp = await this.opportunityPersistence.getOpportunity(input.opportunityId);
             }
             if (!opp) {
               const opps = await this.opportunityPersistence.listOpportunities(input.nicheId);
               opp = opps[0];
             }
+
             if (!opp) {
-              // Create real opportunity record if none exists
-              const oppId = `opp-${randomUUID().slice(0, 8)}`;
-              const baseValue = input.budget ?? 35000;
-              const calibratedValue = Math.round(baseValue * calibration.recommendedPriceMultiplier);
-              opp = {
-                id: oppId,
-                title: input.projectName
-                  ? `${input.projectName} Automated Suite`
-                  : 'Autonomous Business Capability Delivery',
-                description: 'End-to-end automated software solution identified via opportunity scanning',
-                status: 'qualified',
-                score: {
-                  overall: 88,
-                  impact: 90,
-                  feasibility: 85,
-                  urgency: 80,
-                  confidence: 90,
-                },
-                financialModel: {
-                  estimatedCost: Math.round(calibratedValue * 0.45),
-                  estimatedRevenue: calibratedValue,
-                  expectedMargin: 55,
-                },
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                nicheId: input.nicheId,
-              } as unknown as Opportunity;
-              await this.opportunityPersistence.saveOpportunity(opp);
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'No verified opportunity available in persistence or input; market discovery did not advance.',
+              };
+              cycle.status = 'paused';
+              return cycle;
             }
 
             currentOpp = opp;
             cycle.opportunityId = opp.id;
             stageRecord.details = {
               opportunityId: opp.id,
+              title: opp.title,
               calibratedPriceMultiplier: calibration.recommendedPriceMultiplier,
               historicalMarginPercent: calibration.averageMarginPercent,
             };
@@ -289,84 +400,345 @@ export class AutonomousCompanyLoop {
           }
 
           case 'opportunity_scoring': {
-            const score = (currentOpp as any)?.score?.overall ?? 85;
+            if (!currentOpp) {
+              stageRecord.status = 'pending';
+              stageRecord.details = { blocked: true, reason: 'No opportunity available for scoring.' };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            const score = currentOpp.score?.overall;
+            if (score === undefined) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Opportunity has no verified score; scoring gate halted.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            if (score < 70) {
+              stageRecord.details = {
+                overallScore: score,
+                recommendation: 'review',
+                blocked: true,
+                reason: 'Opportunity score below threshold (70) for autonomous progression.',
+              };
+              stageRecord.status = 'completed';
+              stageRecord.completedAt = new Date().toISOString();
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             stageRecord.details = {
               overallScore: score,
-              recommendation: score >= 70 ? 'pursue' : 'review',
+              recommendation: 'pursue',
             };
             break;
           }
 
           case 'commercial_sales': {
-            const prospectId = input.prospectId ?? `prosp-${randomUUID().slice(0, 8)}`;
-            const companyName = input.companyName ?? 'Acme Dynamic Enterprises';
-            const contactEmail = input.contactEmail ?? 'operations@acme.example';
-            const contactName = input.contactName ?? 'Jordan Vance';
+            // 1. Resolve Prospect
+            let prospectId = input.prospectId;
+            if (!prospectId && cycle.opportunityId) {
+              const links = await this.commercialPipeline.listProspectsForOpportunity(cycle.opportunityId);
+              if (links.length > 0) {
+                prospectId = links[0].prospectId;
+              }
+            }
 
-            await this.commercialPipeline.createContact({
-              prospectId,
-              name: contactName,
-              email: contactEmail,
-              role: 'buyer',
-              isPrimary: true,
-              verificationStatus: 'verified',
-              provenance: {
-                sourceUrl: 'https://example.com/commercial-contact',
-                observedAt: new Date().toISOString(),
-                method: 'referral',
-              },
-            });
+            if (!prospectId && input.companyName) {
+              prospectId = `prosp-${input.companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 24)}`;
+            }
 
-            await this.commercialPipeline.linkProspect(
-              cycle.opportunityId!,
-              prospectId,
-              'primary',
+            if (!prospectId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'No verified prospect available; commercial loop did not advance.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            // Link prospect to opportunity
+            if (cycle.opportunityId) {
+              const existingLinks = await this.commercialPipeline.listProspectsForOpportunity(cycle.opportunityId);
+              if (!existingLinks.some((l) => l.prospectId === prospectId)) {
+                await this.commercialPipeline.linkProspect(cycle.opportunityId, prospectId, 'primary');
+              }
+            }
+
+            // 2. Resolve Verified Contact
+            const existingContacts = await this.commercialPipeline.listContacts(prospectId);
+            let contact = existingContacts.find((c) => c.verificationStatus === 'verified');
+
+            if (!contact) {
+              if (!input.contactName || !input.contactEmail) {
+                stageRecord.status = 'pending';
+                stageRecord.details = {
+                  blocked: true,
+                  prospectId,
+                  reason: 'No verified contact available for prospect; commercial loop did not advance.',
+                };
+                cycle.status = 'paused';
+                return cycle;
+              }
+
+              const hasValidProvenance = Boolean(
+                input.contactProvenance?.sourceUrl &&
+                (input.contactProvenance?.observedAt ||
+                  input.contactProvenance?.businessIdentity ||
+                  input.contactProvenance?.contactIdentity),
+              );
+
+              if (!hasValidProvenance) {
+                const unverified = await this.commercialPipeline.createContact({
+                  prospectId,
+                  name: input.contactName,
+                  email: input.contactEmail,
+                  role: 'buyer',
+                  isPrimary: true,
+                  verificationStatus: 'unverified',
+                  provenance: {
+                    sourceUrl: input.contactProvenance?.sourceUrl ?? 'https://unverified.local/contact',
+                    observedAt: new Date().toISOString(),
+                    method: 'manual',
+                  },
+                });
+                stageRecord.status = 'pending';
+                stageRecord.details = {
+                  blocked: true,
+                  contactId: unverified.id,
+                  prospectId,
+                  reason: 'Contact verification evidence missing; commercial loop did not advance to outreach.',
+                };
+                cycle.status = 'paused';
+                return cycle;
+              }
+
+              contact = await this.commercialPipeline.createContact({
+                prospectId,
+                name: input.contactName,
+                email: input.contactEmail,
+                role: 'buyer',
+                isPrimary: true,
+                verificationStatus: 'verified',
+                provenance: {
+                  sourceUrl: input.contactProvenance!.sourceUrl,
+                  observedAt: input.contactProvenance!.observedAt ?? new Date().toISOString(),
+                  method: input.contactProvenance!.method ?? 'referral',
+                  rawText: input.contactProvenance!.rawText,
+                },
+              });
+            }
+
+            // 3. Resolve Deal Value & Deal Record
+            const existingDeals = await this.commercialPipeline.listDeals();
+            let deal = existingDeals.find(
+              (d) => d.opportunityId === cycle.opportunityId && d.primaryProspectId === prospectId,
             );
 
-            const dealValue = (currentOpp as any)?.financialModel?.estimatedRevenue ?? 35000;
-            const deal = await this.commercialPipeline.createDeal({
-              opportunityId: cycle.opportunityId!,
-              primaryProspectId: prospectId,
-              title: `${companyName} Solution Engagement`,
-              estimatedValue: dealValue,
-              actor: 'spec.sales-exec',
-            });
+            const dealValue =
+              input.proposalDetails?.totalAmount ??
+              input.budget ??
+              (currentOpp as unknown as { financialModel?: { estimatedRevenue?: number } })?.financialModel?.estimatedRevenue ??
+              currentOpp?.estimatedValueMax ??
+              currentOpp?.estimatedValueMin;
+
+            if (!dealValue && !deal) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                prospectId,
+                reason: 'Deal value cannot be determined without opportunity financial estimate or explicit budget.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            if (!deal) {
+              const companyLabel = input.companyName ?? (contact?.email ? contact.email.split('@')[1] : prospectId);
+              deal = await this.commercialPipeline.createDeal({
+                opportunityId: cycle.opportunityId!,
+                primaryProspectId: prospectId,
+                title: `${companyLabel} Solution Engagement`,
+                estimatedValue: dealValue,
+                actor: 'commercial.sales-representative',
+              });
+            }
+
             dealId = DealIdSchema.parse(deal.id);
             cycle.dealId = dealId;
 
-            await this.commercialPipeline.transitionDealStage(
-              deal.id,
-              'engaged',
-              'spec.sales-exec',
-              'Initial commercial discovery completed with prospect executive',
-            );
+            // 4. Outreach Stage Transition
+            if (deal.stage === 'lead') {
+              if (!input.outreachDetails) {
+                stageRecord.status = 'pending';
+                stageRecord.details = {
+                  dealId,
+                  stage: deal.stage,
+                  blocked: true,
+                  reason: 'Deal created in lead stage; awaiting real outreach dispatch.',
+                };
+                cycle.status = 'paused';
+                return cycle;
+              }
 
-            const validUntil = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
-            const proposal = await this.commercialPipeline.createProposal({
-              dealId: deal.id,
-              title: `${companyName} Autonomous Capability Proposal`,
-              scope: 'Full autonomous architecture, UX, engineering delivery and verified deployment',
-              deliverables: [
-                'Custom Microservice Architecture',
-                'Automated QA & Security Gate Validation',
-                'Production Helm Deployments',
-              ],
-              pricingModel: 'fixed',
-              totalAmount: dealValue,
-              validUntil,
-            });
-
-            // If CEO approval required, approve as executive.ceo
-            if (proposal.requiresCeoApproval) {
-              await this.commercialPipeline.approveProposal(proposal.id, 'executive.ceo');
+              await this.commercialPipeline.recordOutreachEvent({
+                dealId: deal.id,
+                contactId: contact.id,
+                channel: input.outreachDetails.channel,
+                subject: input.outreachDetails.subject,
+                body: input.outreachDetails.body,
+                senderAgentId: input.outreachDetails.senderAgentId,
+              });
+              deal = (await this.commercialPipeline.getDeal(deal.id))!;
             }
 
-            await this.commercialPipeline.sendProposal(proposal.id, 'spec.sales-exec');
+            // 5. Response Stage Transition
+            if (deal.stage === 'contacted') {
+              if (!input.outreachResponseDetails) {
+                stageRecord.status = 'pending';
+                stageRecord.details = {
+                  dealId,
+                  stage: deal.stage,
+                  blocked: true,
+                  reason: 'Outreach dispatched; awaiting inbound prospect response.',
+                };
+                cycle.status = 'paused';
+                return cycle;
+              }
+
+              const outreachEvents = await this.commercialPipeline.listOutreachEvents(deal.id);
+              const latestEventId = outreachEvents[outreachEvents.length - 1]?.id ?? 'out-initial';
+
+              await this.commercialPipeline.recordOutreachResponse({
+                outreachEventId: latestEventId,
+                dealId: deal.id,
+                contactId: contact.id,
+                sentiment: input.outreachResponseDetails.sentiment,
+                content: input.outreachResponseDetails.content,
+              });
+              deal = (await this.commercialPipeline.getDeal(deal.id))!;
+            }
+
+            // 6. Qualification Stage Transition
+            if (deal.stage === 'engaged') {
+              if (!input.qualificationDetails) {
+                stageRecord.status = 'pending';
+                stageRecord.details = {
+                  dealId,
+                  stage: deal.stage,
+                  blocked: true,
+                  reason: 'Prospect engaged; awaiting BANT qualification evidence.',
+                };
+                cycle.status = 'paused';
+                return cycle;
+              }
+
+              deal = await this.commercialPipeline.qualifyDeal(
+                deal.id,
+                {
+                  budget: {
+                    confirmed: input.qualificationDetails.budgetConfirmed,
+                    amount: input.qualificationDetails.budgetAmount ?? dealValue,
+                    currency: 'USD',
+                  },
+                  authority: {
+                    decisionMakerIdentified: input.qualificationDetails.authorityConfirmed,
+                    decisionMakerContactId: contact.id,
+                  },
+                  need: {
+                    problemValidated: input.qualificationDetails.needValidated,
+                    urgency: input.qualificationDetails.urgency ?? 'immediate',
+                  },
+                  timeline: {
+                    expectedCloseDate:
+                      input.qualificationDetails.expectedCloseDate ??
+                      new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+                  },
+                  score: input.qualificationDetails.qualificationScore,
+                  qualified: input.qualificationDetails.qualificationScore >= 70,
+                },
+                'commercial.sales-representative',
+              );
+            }
+
+            // 7. Proposal Stage Transition & Governance
+            const proposals = await this.commercialPipeline.listProposals(deal.id);
+            let proposal = proposals[0];
+
+            if (!proposal) {
+              const validUntil =
+                input.proposalDetails?.validUntil ??
+                new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+              proposal = await this.commercialPipeline.createProposal({
+                dealId: deal.id,
+                title: input.proposalDetails?.title ?? `${deal.title} Proposal`,
+                scope:
+                  input.proposalDetails?.scope ??
+                  'Full autonomous architecture, UX, engineering delivery and verified deployment',
+                deliverables: input.proposalDetails?.deliverables ?? [
+                  'Custom Microservice Architecture',
+                  'Automated QA & Security Gate Validation',
+                  'Production Helm Deployments',
+                ],
+                pricingModel: input.proposalDetails?.pricingModel ?? 'fixed',
+                totalAmount: input.proposalDetails?.totalAmount ?? dealValue!,
+                discountPercent: input.proposalDetails?.discountPercent,
+                validUntil,
+              });
+            }
+
+            // Check CEO Approval if required
+            if (proposal.status === 'pending_approval' && proposal.requiresCeoApproval) {
+              if (!input.ceoApprovalId) {
+                stageRecord.status = 'pending';
+                stageRecord.details = {
+                  dealId,
+                  proposalId: proposal.id,
+                  blocked: true,
+                  reason: 'Proposal requires explicit CEO approval; awaiting executive decision authorization.',
+                };
+                cycle.status = 'paused';
+                return cycle;
+              }
+
+              proposal = await this.commercialPipeline.approveProposal(
+                proposal.id,
+                'executive.ceo',
+                input.ceoApprovalId,
+              );
+            }
+
+            if (proposal.status === 'approved' || proposal.status === 'draft') {
+              proposal = await this.commercialPipeline.sendProposal(
+                proposal.id,
+                'commercial.sales-representative',
+              );
+              deal = (await this.commercialPipeline.getDeal(deal.id))!;
+            }
+
+            // 8. Closing Won Gate (Evidence-backed customer acceptance)
+            if (!input.customerAcceptance) {
+              stageRecord.status = 'completed';
+              stageRecord.completedAt = new Date().toISOString();
+              stageRecord.details = {
+                dealId,
+                proposalId: proposal.id,
+                stage: 'proposal',
+                message: 'Proposal dispatched to prospect; awaiting formal customer acceptance and signed agreement.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
 
             const won = await this.commercialPipeline.closeDealWon(
               deal.id,
-              'executive.ceo',
-              'Proposal accepted and contract signed',
+              input.customerAcceptance.signedBy,
+              input.customerAcceptance.agreementRef,
             );
 
             if (won.project?.id) {
@@ -375,7 +747,7 @@ export class AutonomousCompanyLoop {
             } else {
               const project = await this.projectsPort.create(
                 {
-                  name: `${companyName} Project Delivery`,
+                  name: `${input.companyName ?? deal.title} Project Delivery`,
                   status: 'Active',
                   sourceOpportunityId: cycle.opportunityId,
                 },
@@ -391,11 +763,22 @@ export class AutonomousCompanyLoop {
               projectId,
               value: dealValue,
               prospectId,
+              closedWon: true,
             };
             break;
           }
 
           case 'requirements_intake': {
+            if (!cycle.projectId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'No active project available for requirements intake.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             const reqTitle = `Requirement: Solution delivery for ${cycle.projectId}`;
             if (this.requirementsPort?.create) {
               const req = await this.requirementsPort.create({
@@ -428,24 +811,139 @@ export class AutonomousCompanyLoop {
           }
 
           case 'product_definition': {
+            if (!cycle.projectId || !cycle.requirementId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Missing project or requirement for product definition.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            let prodOutput: ProductDefinitionOutput | undefined = input.productDefinition;
+            if (!prodOutput && this.specialistsPort?.executeProductDefinition) {
+              prodOutput = await this.specialistsPort.executeProductDefinition({
+                projectId: cycle.projectId,
+                requirementId: cycle.requirementId,
+              });
+            }
+
+            if (!prodOutput || prodOutput.verified === false) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Product Specialist execution runner or verified ProductBrief required; definition did not advance.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             stageRecord.details = {
-              scope: 'Enterprise autonomous loop execution',
-              functionalCriteriaCount: 5,
-              nonFunctionalSLAs: ['99.9% uptime', '<200ms p95 latency'],
+              artifactId: prodOutput.artifactId,
+              scope: prodOutput.scope,
+              functionalCriteriaCount: prodOutput.functionalCriteriaCount,
+              nonFunctionalSLAs: prodOutput.nonFunctionalSLAs,
+              verified: true,
             };
             break;
           }
 
           case 'architecture_ux': {
+            if (!cycle.projectId || !cycle.requirementId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Missing project or requirement for architecture and UX design.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            const productArtifactId = cycle.stages.find((s) => s.stage === 'product_definition')?.details?.artifactId as string | undefined;
+
+            let archUxOutput: ArchitectureUxOutput | undefined = input.architectureUx;
+            if (!archUxOutput && this.specialistsPort?.executeArchitectureUx) {
+              archUxOutput = await this.specialistsPort.executeArchitectureUx({
+                projectId: cycle.projectId,
+                requirementId: cycle.requirementId,
+                productArtifactId,
+              });
+            }
+
+            if (!archUxOutput || archUxOutput.verified === false) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Architecture & UX Specialist execution runner or verified design artifacts required; design stage did not advance.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            if (!archUxOutput.architectureReviewPassed || !archUxOutput.uxComponentDesignTokensValidated || !archUxOutput.dataModelApproved) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Architecture review or UX design validation failed review criteria; stage halted.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             stageRecord.details = {
-              architectureReviewPassed: true,
-              uxComponentDesignTokensValidated: true,
-              dataModelApproved: true,
+              architectureArtifactId: archUxOutput.architectureArtifactId,
+              uxArtifactId: archUxOutput.uxArtifactId,
+              architectureReviewPassed: archUxOutput.architectureReviewPassed,
+              uxComponentDesignTokensValidated: archUxOutput.uxComponentDesignTokensValidated,
+              dataModelApproved: archUxOutput.dataModelApproved,
+              verified: true,
             };
             break;
           }
 
           case 'engineering_delivery': {
+            if (!cycle.projectId || !cycle.requirementId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Missing project or requirement for engineering delivery.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            const architectureArtifactId = cycle.stages.find((s) => s.stage === 'architecture_ux')?.details?.architectureArtifactId as string | undefined;
+
+            let engOutput: EngineeringDeliveryOutput | undefined = input.engineeringDelivery;
+            if (!engOutput && this.specialistsPort?.executeEngineeringDelivery) {
+              engOutput = await this.specialistsPort.executeEngineeringDelivery({
+                projectId: cycle.projectId,
+                requirementId: cycle.requirementId,
+                architectureArtifactId,
+              });
+            }
+
+            if (!engOutput || engOutput.verified === false) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Engineering Specialist execution runner or verified Code package required; application delivery did not advance.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            if (!engOutput.testSuitesPassed) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Engineering staging test suite failed; delivery cannot proceed to QA/Security verification.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             if (this.workGraphPort?.addNode) {
               await this.workGraphPort.addNode({
                 id: `node-eng-${cycleId}`,
@@ -454,20 +952,70 @@ export class AutonomousCompanyLoop {
                 status: 'completed',
               });
             }
+
             stageRecord.details = {
-              packagesCompiled: 1,
-              testSuitesPassed: true,
-              gitCommitSealed: true,
+              artifactId: engOutput.artifactId,
+              packagesCompiled: engOutput.packagesCompiled,
+              testSuitesPassed: engOutput.testSuitesPassed,
+              gitCommitSealed: engOutput.gitCommitSealed,
+              diffSummary: engOutput.diffSummary,
+              verified: true,
             };
             break;
           }
 
           case 'qa_security_gates': {
+            if (!cycle.projectId || !cycle.requirementId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Missing project or requirement for QA & Security gates.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            const codeArtifactId = cycle.stages.find((s) => s.stage === 'engineering_delivery')?.details?.artifactId as string | undefined;
+
+            let qaSecOutput: QaSecurityGatesOutput | undefined = input.qaSecurityGates;
+            if (!qaSecOutput && this.specialistsPort?.executeQaSecurityGates) {
+              qaSecOutput = await this.specialistsPort.executeQaSecurityGates({
+                projectId: cycle.projectId,
+                requirementId: cycle.requirementId,
+                codeArtifactId,
+              });
+            }
+
+            if (!qaSecOutput || qaSecOutput.verified === false) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'QA & Security Specialist verification runner or verified test/security reports required; gates did not advance.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            if (qaSecOutput.criticalVulnerabilitiesFound > 0 || !qaSecOutput.regressionSuiteGreen || qaSecOutput.complianceStatus === 'blocked') {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                criticalVulnerabilitiesFound: qaSecOutput.criticalVulnerabilitiesFound,
+                complianceStatus: qaSecOutput.complianceStatus,
+                reason: `Critical security vulnerabilities (${qaSecOutput.criticalVulnerabilitiesFound}) or regression failure blocked release gates.`,
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             stageRecord.details = {
-              testPlanCompleted: true,
-              e2eTestsPassed: true,
-              securityAuditFindings: 0,
-              complianceStatus: 'cleared',
+              qaArtifactId: qaSecOutput.qaArtifactId,
+              securityArtifactId: qaSecOutput.securityArtifactId,
+              testPlanCompleted: qaSecOutput.testPlanCompleted,
+              criticalVulnerabilitiesFound: qaSecOutput.criticalVulnerabilitiesFound,
+              regressionSuiteGreen: qaSecOutput.regressionSuiteGreen,
+              complianceStatus: qaSecOutput.complianceStatus,
+              verified: true,
             };
             break;
           }
@@ -503,32 +1051,69 @@ export class AutonomousCompanyLoop {
           }
 
           case 'customer_success': {
+            if (!cycle.projectId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'No active project available for customer delivery.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
             const cid = CustomerIdSchema.parse(`cust-${randomUUID().slice(0, 8)}`);
             customerId = cid;
             cycle.customerId = customerId;
 
-            this.customerSuccess.createCustomer({
+            const revenueAttributions = await this.commercialPipeline.listRevenueAttributions(cycle.dealId);
+            const totalAttributed = revenueAttributions.reduce((s, a) => s + a.recognizedAmount, 0);
+            const companyName = input.companyName ?? `Customer for ${cycle.projectId}`;
+
+            await this.customerSuccess.createCustomer({
               id: customerId,
               prospectId: (cycle.stages[2].details.prospectId as string) ?? `prosp-${cycleId}`,
               dealId: cycle.dealId,
-              companyName: input.companyName ?? 'Acme Dynamic Enterprises',
+              companyName,
               activeProjectIds: [cycle.projectId!],
-              mrr: 2500,
-              lifetimeValue: (currentOpp as any)?.financialModel?.estimatedRevenue ?? 35000,
+              mrr: Math.round(totalAttributed / 12) || 2500,
+              lifetimeValue: totalAttributed || (currentOpp as unknown as { financialModel?: { estimatedRevenue?: number } })?.financialModel?.estimatedRevenue || 0,
             });
 
-            const outcome = this.customerSuccess.recordDeliveryOutcome({
+            const signoffData =
+              input.deliverySignoff ??
+              (input.customerAcceptance
+                ? {
+                    signedBy: input.customerAcceptance.signedBy,
+                    signedAt: input.customerAcceptance.signedAt ?? new Date().toISOString(),
+                    clientSatisfactionScore: input.customerAcceptance.clientSatisfactionScore ?? 5,
+                    notes: input.customerAcceptance.notes ?? 'Delivery completed and signed off.',
+                  }
+                : undefined);
+
+            if (!signoffData) {
+              stageRecord.status = 'completed';
+              stageRecord.completedAt = new Date().toISOString();
+              stageRecord.details = {
+                customerId,
+                deliveryStatus: 'deployed',
+                clientSignoff: false,
+                message: 'System deployed; awaiting formal client delivery signoff.',
+              };
+              break;
+            }
+
+            const outcome = await this.customerSuccess.recordDeliveryOutcome({
               projectId: cycle.projectId!,
               customerId,
               status: 'successful',
               scopeDeliveredPercent: 100,
               acceptanceCriteriaMet: true,
               clientSignoff: {
-                signedBy: input.contactName ?? 'Jordan Vance',
-                signedAt: new Date().toISOString(),
-                clientSatisfactionScore: 5,
+                signedBy: signoffData.signedBy,
+                signedAt: signoffData.signedAt ?? new Date().toISOString(),
+                clientSatisfactionScore: signoffData.clientSatisfactionScore ?? 5,
               },
-              notes: 'Delivery completed autonomously and signed off by client sponsor.',
+              notes: signoffData.notes ?? 'Delivery completed autonomously and signed off by client sponsor.',
             });
 
             stageRecord.details = {
@@ -541,13 +1126,30 @@ export class AutonomousCompanyLoop {
           }
 
           case 'revenue_realization': {
-            const revenue = (currentOpp as any)?.financialModel?.estimatedRevenue ?? 35000;
-            const cost = input.actualCost ?? Math.round(revenue * 0.45);
-            const financialSummary = this.customerSuccess.calculateFinancialSummary({
+            if (!cycle.projectId || !cycle.customerId) {
+              stageRecord.status = 'pending';
+              stageRecord.details = {
+                blocked: true,
+                reason: 'Missing project or customer for revenue realization.',
+              };
+              cycle.status = 'paused';
+              return cycle;
+            }
+
+            // Base revenue on actual recorded financial events from commercial pipeline
+            const attributions = await this.commercialPipeline.listRevenueAttributions(cycle.dealId);
+            const recognizedRevenue = attributions.reduce((sum, a) => sum + a.recognizedAmount, 0);
+            const contractRevenue =
+              recognizedRevenue > 0
+                ? recognizedRevenue
+                : ((currentOpp as unknown as { financialModel?: { estimatedRevenue?: number } })?.financialModel?.estimatedRevenue ?? 0);
+
+            const cost = input.actualCost ?? Math.round(contractRevenue * 0.45);
+            const financialSummary = await this.customerSuccess.calculateFinancialSummary({
               projectId: cycle.projectId!,
               customerId: cycle.customerId!,
-              contractRevenue: revenue,
-              recognizedRevenue: revenue,
+              contractRevenue,
+              recognizedRevenue,
               costs: {
                 computeCost: Math.round(cost * 0.3),
                 laborCost: Math.round(cost * 0.5),
@@ -557,8 +1159,8 @@ export class AutonomousCompanyLoop {
 
             stageRecord.details = {
               financialSummaryId: financialSummary.id,
-              contractedRevenue: revenue,
-              recognizedRevenue: revenue,
+              contractedRevenue: contractRevenue,
+              recognizedRevenue,
               actualMarginPercent: financialSummary.marginPercent,
               profitabilityStatus: financialSummary.profitabilityStatus,
             };
@@ -566,7 +1168,26 @@ export class AutonomousCompanyLoop {
           }
 
           case 'learning_calibration': {
-            const learning = this.customerSuccess.extractLearning({
+            if (!cycle.projectId || !cycle.customerId) {
+              stageRecord.status = 'completed';
+              stageRecord.completedAt = new Date().toISOString();
+              stageRecord.details = {
+                message: 'Cycle completed without active project delivery; no delivery learning extracted.',
+              };
+              break;
+            }
+
+            const outcome = await this.customerSuccess.getDeliveryOutcome(cycle.projectId);
+            if (!outcome) {
+              stageRecord.status = 'completed';
+              stageRecord.completedAt = new Date().toISOString();
+              stageRecord.details = {
+                message: 'No delivery outcome recorded yet; learning calibration pending outcome.',
+              };
+              break;
+            }
+
+            const learning = await this.customerSuccess.extractLearning({
               sourceType: 'delivery_outcome',
               projectId: cycle.projectId!,
               customerId: cycle.customerId!,
@@ -576,7 +1197,7 @@ export class AutonomousCompanyLoop {
               recommendedActions: ['Maintain current calibrated pricing and expand automated pipeline cadence.'],
             });
 
-            const updatedCalibration = this.customerSuccess.getOpportunityCalibration();
+            const updatedCalibration = await this.customerSuccess.getOpportunityCalibration();
 
             stageRecord.details = {
               learningId: learning.id,
@@ -592,11 +1213,19 @@ export class AutonomousCompanyLoop {
         stageRecord.completedAt = new Date().toISOString();
       }
 
-      cycle.status = targetStageIndex === CANONICAL_STAGES.length - 1 ? 'completed' : 'active';
-      cycle.completedAt = cycle.status === 'completed' ? new Date().toISOString() : undefined;
-    } catch (err: any) {
+      const allCompleted = cycle.stages
+        .slice(0, targetStageIndex + 1)
+        .every((s) => s.status === 'completed');
+
+      if (allCompleted) {
+        cycle.status = targetStageIndex === CANONICAL_STAGES.length - 1 ? 'completed' : 'active';
+        cycle.completedAt = cycle.status === 'completed' ? new Date().toISOString() : undefined;
+      } else if (cycle.status !== 'paused' && cycle.status !== 'failed') {
+        cycle.status = 'paused';
+      }
+    } catch (err: unknown) {
       cycle.status = 'failed';
-      cycle.error = err.message ?? String(err);
+      cycle.error = err instanceof Error ? err.message : String(err);
       const activeStage = cycle.stages.find((s) => s.stage === cycle.currentStage);
       if (activeStage) {
         activeStage.status = 'failed';
@@ -635,12 +1264,15 @@ export class AutonomousCompanyLoop {
     const productionStatusRaw = this.deploymentsPort?.getProductionStatus
       ? await this.deploymentsPort.getProductionStatus()
       : { status: 'healthy' };
-    const productionStatus = typeof productionStatusRaw === 'object' && productionStatusRaw !== null
-      ? (productionStatusRaw as any).status ?? 'healthy'
-      : 'healthy';
+    const productionStatus =
+      typeof productionStatusRaw === 'object' && productionStatusRaw !== null
+        ? (productionStatusRaw as { status?: string }).status ?? 'healthy'
+        : 'healthy';
 
     const runningTasksCount = this.workGraphPort?.listNodes
-      ? (await this.workGraphPort.listNodes()).filter((n) => n.status === 'in_progress' || n.status === 'running').length
+      ? (await this.workGraphPort.listNodes()).filter(
+          (n) => n.status === 'in_progress' || n.status === 'running',
+        ).length
       : 0;
 
     const whatCompanyIsDoing = {
@@ -654,25 +1286,23 @@ export class AutonomousCompanyLoop {
 
     // 2. What opportunities are being pursued?
     const rawOpps = await this.opportunityPersistence.listOpportunities();
-    const opportunitiesPursued = rawOpps.slice(0, 10).map((opp: any) => ({
+    const opportunitiesPursued = rawOpps.slice(0, 10).map((opp: Opportunity) => ({
       id: opp.id,
       title: opp.title ?? `Opportunity ${opp.id}`,
       status: opp.status ?? 'active',
       overallScore: opp.score?.overall ?? 75,
-      estimatedValue: opp.financialModel?.estimatedRevenue,
-      recommendation: (opp.score?.overall ?? 75) >= 70 ? 'pursue' : 'review',
+      estimatedValue: (opp as unknown as { financialModel?: { estimatedRevenue?: number } })?.financialModel?.estimatedRevenue ?? opp.estimatedValueMax,
+      recommendation: ((opp.score?.overall ?? 75) >= 70 ? 'pursue' : 'review') as 'pursue' | 'review' | 'reject',
     }));
 
     // 3. Which prospects matter?
-    const prospectsThatMatter = deals
-      .slice(0, 10)
-      .map((deal) => ({
-        prospectId: deal.primaryProspectId,
-        dealId: deal.id,
-        companyName: deal.title.replace(' Solution Engagement', ''),
-        stage: deal.stage,
-        estimatedValue: deal.estimatedValue,
-      }));
+    const prospectsThatMatter = deals.slice(0, 10).map((deal) => ({
+      prospectId: deal.primaryProspectId,
+      dealId: deal.id,
+      companyName: deal.title.replace(' Solution Engagement', ''),
+      stage: deal.stage,
+      estimatedValue: deal.estimatedValue,
+    }));
 
     // 4 & 5. Which Specialists/agents are working and on which projects?
     const rawAgents = this.agentsPort?.list ? await this.agentsPort.list() : [];
@@ -699,17 +1329,31 @@ export class AutonomousCompanyLoop {
 
     // 6. What evidence exists?
     const totalSealedArtifacts = this.artifactsPort?.count ? await this.artifactsPort.count() : 0;
-    const signedDeliveries = this.customerSuccess.listDeliveryOutcomes();
+    const signedDeliveries = (await this.customerSuccess.listDeliveryOutcomes())
+      .filter((d) => d.clientSignoff && Boolean(d.clientSignoff.signedBy));
+
+    let testPlanResultsCount = 0;
+    let securityReportsCount = 0;
+    if (this.artifactsPort?.countByType) {
+      testPlanResultsCount = await this.artifactsPort.countByType('TestPlanResults');
+      securityReportsCount = await this.artifactsPort.countByType('SecurityReport');
+    } else if (this.artifactsPort?.list) {
+      const allArtifacts = await this.artifactsPort.list();
+      testPlanResultsCount = allArtifacts.filter((a) => (a.type ?? a.artifactType) === 'TestPlanResults').length;
+      securityReportsCount = allArtifacts.filter((a) => (a.type ?? a.artifactType) === 'SecurityReport').length;
+    }
+
     const evidenceSummary = {
       totalSealedArtifacts,
-      testPlanResultsCount: activeProjects.length * 3,
-      securityReportsCount: activeProjects.length * 2,
+      testPlanResultsCount,
+      securityReportsCount,
       signedDeliveryOutcomesCount: signedDeliveries.length,
     };
 
     // 7. What is blocked?
     const blockedItems: CompanyOverview['blockedItems'] = [];
-    const criticalCases = this.customerSuccess.listSupportCases().filter((c) => c.severity === 'critical' && c.status === 'open');
+    const criticalCases = (await this.customerSuccess.listSupportCases())
+      .filter((c) => c.severity === 'critical' && c.status === 'open');
     for (const c of criticalCases) {
       blockedItems.push({
         type: 'support_case',
@@ -721,6 +1365,21 @@ export class AutonomousCompanyLoop {
 
     // 8. What needs my decision?
     const decisionsNeeded: CompanyOverview['decisionsNeeded'] = [];
+
+    // Check proposals requiring CEO approval
+    const proposals = await this.commercialPipeline.listProposals();
+    for (const p of proposals) {
+      if (p.status === 'pending_approval' && p.requiresCeoApproval) {
+        decisionsNeeded.push({
+          type: 'deal_approval',
+          id: p.id,
+          title: `CEO Approval Required for Proposal: ${p.title} ($${p.totalAmount})`,
+          urgency: 'high',
+          requiredApprovers: ['executive.ceo'],
+        });
+      }
+    }
+
     if (this.gatesPort?.listPending) {
       const pendingGates = await this.gatesPort.listPending();
       for (const g of pendingGates) {
@@ -734,11 +1393,13 @@ export class AutonomousCompanyLoop {
       }
     }
     if (this.deploymentsPort?.listDeployments) {
-      const pendingDeployments = await this.deploymentsPort.listDeployments({ status: 'pending_approval' });
+      const pendingDeployments = (await this.deploymentsPort.listDeployments({
+        status: 'pending_approval',
+      })) as Array<{ id?: string; deploymentId?: string; projectId?: string; targetVersion?: string }>;
       for (const dep of pendingDeployments) {
         decisionsNeeded.push({
           type: 'deployment_approval',
-          id: dep.id ?? dep.deploymentId,
+          id: dep.id ?? dep.deploymentId ?? 'dep-unknown',
           title: `Release Deployment Approval for ${dep.projectId ?? 'Core System'} (v${dep.targetVersion ?? '1.0.0'})`,
           urgency: 'critical',
           requiredApprovers: ['human.approver', 'SecuritySpecialist'],
@@ -776,16 +1437,17 @@ export class AutonomousCompanyLoop {
     // 10. What money/outcome is this producing?
     const totalWonRevenue = wonDeals.reduce((sum, d) => sum + (d.estimatedValue ?? 0), 0);
     const pipelineValue = openDeals.reduce((sum, d) => sum + (d.estimatedValue ?? 0), 0);
-    const financialSummaries = this.customerSuccess.listFinancialSummaries();
+    const financialSummaries = await this.customerSuccess.listFinancialSummaries();
     const recognizedRevenue = financialSummaries.reduce((sum, f) => sum + (f.recognizedRevenue ?? 0), 0);
 
-    const customers = this.customerSuccess.listCustomers();
+    const customers = await this.customerSuccess.listCustomers();
     const activeCustomers = customers.filter((c) => c.status === 'active' || c.status === 'onboarding');
-    const averageHealth = customers.length > 0
-      ? Math.round(customers.reduce((sum, c) => sum + c.healthScore, 0) / customers.length)
-      : 100;
+    const averageHealth =
+      customers.length > 0
+        ? Math.round(customers.reduce((sum, c) => sum + c.healthScore, 0) / customers.length)
+        : 100;
 
-    const calibration = this.customerSuccess.getOpportunityCalibration();
+    const calibration = await this.customerSuccess.getOpportunityCalibration();
 
     const revenueAndOutcomes = {
       totalWonRevenue,

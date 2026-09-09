@@ -20,14 +20,26 @@ export async function connectWorkGraphStore(state: ControlApiState): Promise<voi
     state.workGraphStore = new InMemoryWorkGraphStore();
   }
 
+  const requireDurable =
+    process.env.AUTONOMY_REQUIRE_DURABLE_STATE === 'true' ||
+    process.env.NODE_ENV === 'production';
+
   try {
     const reachable = await pingMySql();
     if (!reachable) {
+      if (requireDurable) {
+        throw new Error(
+          'FATAL: MySQL is unreachable and AUTONOMY_REQUIRE_DURABLE_STATE is enabled. Refusing to boot with in-memory Work Graph store.',
+        );
+      }
       throw new Error('pingMySql returned false');
     }
     state.workGraphStore = new MySqlWorkGraphStore({ db: createMySqlExecutor() });
     log.info('work graph store connected to MySQL');
   } catch (err) {
+    if (requireDurable) {
+      throw err;
+    }
     log.warn(
       { err: err instanceof Error ? err.message : String(err) },
       'work graph store unavailable (MySQL unreachable) — using in-memory store; the graph will not survive a restart until this recovers',

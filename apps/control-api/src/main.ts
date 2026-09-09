@@ -12,6 +12,8 @@ import { connectWorkManagementStores } from './work-management-store-link.js';
 import { connectRequirementStore } from './requirement-store-link.js';
 import { connectArtifactStore } from './artifact-store-link.js';
 import { connectRequirementWorkGraphBridge } from './requirement-workgraph-bridge.js';
+import { connectCommercialPipeline } from './commercial-link.js';
+import { connectCustomerSuccessStore } from './customer-success-link.js';
 
 const serviceName = 'control-api';
 const log = createLogger(serviceName);
@@ -30,6 +32,8 @@ if (process.env.CONTROL_API_SEED_DEMO === 'true') {
 const agentRunSubscription = await startAgentRunReadModelSubscription(state);
 const runtimeWorkPackageBridge = await connectRuntimeWorkPackageBridge(state);
 await connectOpportunityReader(state);
+await connectCommercialPipeline(state);
+await connectCustomerSuccessStore(state);
 await connectWorkGraphStore(state);
 
 connectRequirementWorkGraphBridge(state);
