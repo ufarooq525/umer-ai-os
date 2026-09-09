@@ -41,6 +41,33 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     execute: async () => requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
   };
 
+  const ceoBriefing: JarvisTool = {
+    name: 'ceo_briefing',
+    description: 'Build a current CEO briefing from authoritative control-plane read models. Use for morning briefings, catch-up, what changed, what needs attention, workforce status, blockers, active work, and business pipeline. Do not infer missing fields.',
+    parameters: {
+      type: 'object',
+      properties: { opportunityLimit: { type: 'integer', minimum: 1, maximum: 20 } },
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const n = Number(body.opportunityLimit ?? 10);
+      const limit = Number.isInteger(n) && n >= 1 && n <= 20 ? n : 10;
+      const [dashboard, agents, opportunities] = await Promise.all([
+        requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/agents', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, `/v1/opportunities?limit=${limit}`, { method: 'GET' }, fetchImpl),
+      ]);
+      return {
+        generatedAt: new Date().toISOString(),
+        source: 'control-api-read-models',
+        dashboard,
+        agents,
+        opportunities,
+      };
+    },
+  };
+
   const listAgents: JarvisTool = {
     name: 'list_agents',
     description: 'Read the currently registered AI workforce and their current project/task state from the control plane.',
@@ -127,5 +154,5 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, listAgents, listOpportunities, retrieveMemory, delegateWork];
+  return [systemSnapshot, ceoBriefing, listAgents, listOpportunities, retrieveMemory, delegateWork];
 }
