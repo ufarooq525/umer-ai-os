@@ -34,27 +34,46 @@ Branch: `feature/jarvis-ai-assistant`
 - Added `list_artifacts` and `inspect_artifact` over the existing Artifact Store read model.
 - Audit and artifact tools remain read-only; they do not mutate execution state.
 
-### Phase 5/6 foundation — CEO Attention evaluation
-- Added `ceo_attention` as a deterministic read-only evaluation over watchdog findings, pending gates, failed runs and recent audit evidence.
-- Each attention item includes an evidence source and, where appropriate, a recommended next step.
-- No background notification service is claimed yet; this is an on-demand evaluation surface.
+### Phase 5/6 — CEO Attention and proactive delivery
+- Added deterministic `ceo_attention` evaluation over watchdog findings, pending gates, failed runs and recent audit evidence.
+- Added `attention_feed` as a dedicated read-only JARVIS tool.
+- Added `GET /v1/jarvis/attention` for a machine-readable current attention snapshot.
+- Added `GET /v1/jarvis/attention/stream` as an SSE stream so a CEO dashboard can receive newly detected attention without polling itself.
+- JARVIS API performs bounded background polling of the existing Control API attention evaluator; it does not create a second event bus or invent runtime events.
+- Attention changes are deduplicated by payload fingerprint before being sent to connected clients.
 
-## Intentionally not claimed yet
+### Phase 6 foundation — Timeline / catch-up intelligence
+- Added `company_timeline`, combining audit, agent-run, task and opportunity read models into a bounded time-window timeline.
+- Added `away_briefing` for questions such as "what happened while I was away?".
+- Timeline entries retain their source evidence and are sorted by authoritative timestamps where available.
 
-- Durable cross-process JARVIS memory.
-- Unrestricted direct Agent Runtime control; delegation remains behind Control API intake.
-- Background proactive notifications/subscriptions.
-- Voice or computer control.
-- Full production authentication/session identity for the JARVIS HTTP surface.
-- Automated irreversible actions without explicit governance/approval.
+## Remaining / intentionally gated
 
-## Next implementation step
+### Durable memory
+- The Memory Access runtime currently exposes in-memory stores through its default factory. JARVIS therefore keeps durable cross-process memory unclaimed until a persistent Memory Store + Vector Store adapter is available.
+- The architecture seam is already present through `MemoryAccessService`; no parallel memory implementation should be introduced.
 
-1. durable Memory Access integration when a persistent store is available
-2. proactive notification/subscription policy for CEO Attention
-3. richer correlation-aware timeline and cross-entity evidence views
-4. voice interface
-5. computer-control capabilities with explicit approval gates
-6. production authentication and session identity hardening
+### Voice
+- Typed JARVIS is complete as the current interaction surface.
+- Voice requires a real STT/TTS provider and runtime/device integration. No fake microphone, wake-word or synthesized audio path is being claimed.
+
+### Computer control
+- Computer control remains approval-gated and requires an actual sandbox/automation runtime. JARVIS must not claim screen control, clicks, filesystem mutation or destructive operations until those capabilities are wired through the existing Trust/Control Plane boundaries.
+
+### Production authentication/session identity
+- The HTTP API currently supports CORS and an optional Authorization header at the transport layer but does not yet resolve a production identity/principal or enforce production authentication policy.
+- This must be integrated with the repository's existing trust/identity model rather than adding a parallel auth system.
+
+## Verification note
+
+The implementation has been updated on `feature/jarvis-ai-assistant`. CI is configured to run typecheck, lint, tests and build on pull requests. Local/CI results are not claimed until an actual run is observed.
+
+## Next safe integration step
+
+1. Open/validate the feature branch through CI and fix any compile/test failures.
+2. Integrate a persistent Memory Access adapter when its approved storage contract is available.
+3. Integrate production identity/session resolution through the existing Trust model.
+4. Add a real STT/TTS provider behind explicit interfaces and authorization.
+5. Add a sandboxed computer-control runtime behind explicit approval gates.
 
 JARVIS remains a human-facing intelligence layer over Umer AI OS and must preserve Trust, Registry, Control Plane, Work Package, and Agent Runtime boundaries. Current execution state comes from authoritative read models; missing data must be reported honestly rather than fabricated.
