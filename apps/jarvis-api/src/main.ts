@@ -7,14 +7,16 @@ import { createLLMProviderFromEnv } from '@umer/model-routing';
 
 const env = loadEnv();
 const port = Number(process.env.JARVIS_PORT ?? 3010);
+const controlApiBaseUrl = process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
 const provider = createLLMProviderFromEnv({ env });
-const tools = createJarvisControlTools({
-  controlApiBaseUrl: process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002',
-});
+const tools = createJarvisControlTools({ controlApiBaseUrl });
 const jarvis = new JarvisCore({ provider, tools, maxIterations: 12 });
 
 const sessions = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
 const MAX_HISTORY = 20;
+const ATTENTION_POLL_MS = Math.max(Number(process.env.JARVIS_ATTENTION_POLL_MS ?? 15000), 5000);
+const attentionClients = new Set<ServerResponse>();
+let lastAttentionFingerprint = '';
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -37,6 +39,35 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return parsed as Record<string, unknown>;
 }
 
+async function readAttention(): Promise<unknown> {
+  const response = await fetch(`${controlApiBaseUrl.replace(/\/$/, '')}/v1/ceo/attention`, { headers: { accept: 'application/json' } });
+  const text = await response.text();
+  const body = text ? JSON.parse(text) : null;
+  if (!response.ok) throw new Error(`Control API returned HTTP ${response.status}`);
+  return body;
+}
+
+function publishAttention(body: unknown): void {
+  const payload = `event: attention\\ndata: ${JSON.stringify(body)}\\n\\n`;
+  for (const client of attentionClients) {
+    try { client.write(payload); } catch { attentionClients.delete(client); }
+  }
+}
+
+async function attentionTick(): Promise<void> {
+  try {
+    const attention = await readAttention();
+    const fingerprint = JSON.stringify(attention);
+    if (fingerprint !== lastAttentionFingerprint) {
+      lastAttentionFingerprint = fingerprint;
+      publishAttention({ receivedAt: new Date().toISOString(), attention });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    publishAttention({ receivedAt: new Date().toISOString(), error: message });
+  }
+}
+
 const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, {});
   if (req.method === 'GET' && req.url === '/health') {
@@ -45,7 +76,26 @@ const server = createServer(async (req, res) => {
       service: 'jarvis-api',
       provider: provider.providerId,
       tools: tools.map((tool) => tool.name),
+      proactiveAttention: true,
+      attentionPollMs: ATTENTION_POLL_MS,
     });
+  }
+  if (req.method === 'GET' && req.url === '/v1/jarvis/attention') {
+    try { return send(res, 200, await readAttention()); }
+    catch (error) { return send(res, 502, { error: 'attention_unavailable', message: error instanceof Error ? error.message : String(error) }); }
+  }
+  if (req.method === 'GET' && req.url === '/v1/jarvis/attention/stream') {
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'access-control-allow-origin': '*',
+    });
+    res.write(': connected\\n\\n');
+    attentionClients.add(res);
+    try { res.write(`event: attention\\ndata: ${JSON.stringify({ receivedAt: new Date().toISOString(), attention: await readAttention() })}\\n\\n`); } catch { /* next poll will retry */ }
+    req.on('close', () => attentionClients.delete(res));
+    return;
   }
   if (req.method !== 'POST' || req.url !== '/v1/jarvis/chat') {
     return send(res, 404, { error: 'not_found' });
@@ -76,4 +126,9 @@ const server = createServer(async (req, res) => {
 server.listen(port, () => {
   console.log(`JARVIS API listening on port ${port}`);
   console.log(`Control-plane tools: ${tools.map((tool) => tool.name).join(', ')}`);
+  console.log(`Proactive attention stream enabled; polling every ${ATTENTION_POLL_MS}ms`);
 });
+
+void attentionTick();
+const attentionTimer = setInterval(() => void attentionTick(), ATTENTION_POLL_MS);
+server.on('close', () => clearInterval(attentionTimer));
