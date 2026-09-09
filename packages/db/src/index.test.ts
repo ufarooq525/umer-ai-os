@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMySqlExecutor } from './index.js';
+import { createMySqlExecutor, ALL_MYSQL_MIGRATIONS } from './index.js';
 import { OPPORTUNITY_MIGRATIONS } from './migrations.js';
 
 describe('@umer/db MySQL integration boundary', () => {
@@ -31,5 +31,16 @@ describe('@umer/db MySQL integration boundary', () => {
     expect(OPPORTUNITY_MIGRATIONS[2]?.checksum).toHaveLength(64);
     expect(OPPORTUNITY_MIGRATIONS[2]?.statements).toHaveLength(1);
     expect(OPPORTUNITY_MIGRATIONS[2]?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS opportunity_outreach_drafts');
+  });
+
+  it('registers the durable commercial pipeline migration in the canonical migration list', () => {
+    const migration = ALL_MYSQL_MIGRATIONS.find((item) => item.id === '016_commercial_pipeline');
+    expect(migration).toBeDefined();
+    expect(migration?.checksum).toHaveLength(64);
+    expect(migration?.statements).toHaveLength(8);
+    expect(migration?.statements[0]).toContain('CREATE TABLE IF NOT EXISTS commercial_contacts');
+    expect(migration?.statements[2]).toContain('CREATE TABLE IF NOT EXISTS commercial_deals');
+    expect(migration?.statements[6]).toContain('CREATE TABLE IF NOT EXISTS commercial_proposals');
+    expect(migration?.statements[7]).toContain('CREATE TABLE IF NOT EXISTS commercial_revenue_attributions');
   });
 });
