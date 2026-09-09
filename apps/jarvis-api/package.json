@@ -12,6 +12,7 @@
   "dependencies": {
     "@umer/config": "workspace:*",
     "@umer/jarvis-core": "workspace:*",
+    "@umer/jarvis-tools": "workspace:*",
     "@umer/model-routing": "workspace:*"
   },
   "devDependencies": {
