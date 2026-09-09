@@ -24,31 +24,37 @@ Branch: `feature/jarvis-ai-assistant`
 - Durable persistence is not simulated.
 
 ### Phase 4 — CEO workforce briefing
-- Added `ceo_briefing`, gathering dashboard, workforce and opportunity read models in parallel.
-- Supports CEO questions about active work, workforce status, blockers, attention and pipeline from authoritative data.
+- Added `ceo_briefing`, gathering dashboard, workforce, opportunity, failed-run and audit read models.
+- Supports CEO questions about active work, workforce status, blockers, attention, failures and pipeline from authoritative data.
 
-### Phase 5 foundation — Execution intelligence
-- Added `list_agent_runs` for real runtime observability records, optionally filtered by running/completed/failed.
-- Added `get_agent_run` for detailed inspection by Work Package ID.
-- Added `list_work_packages` for specialist, stage, project, status, artifact and error state.
-- Added `list_tasks` with project, agent and status filters so JARVIS can map an agent to concrete work.
-- Opportunity results are bounded client-side because the current Control API route returns the full filtered read model.
+### Phase 5 — Execution, audit and artifact intelligence
+- Added `inspect_agent_runs` and `inspect_agent_run` for runtime observability.
+- Added `list_work_packages` and `list_tasks` so JARVIS can map specialists to concrete work.
+- Added `inspect_audit_trail` over the existing append-only `/v1/audit/recent` read model.
+- Added `list_artifacts` and `inspect_artifact` over the existing Artifact Store read model.
+- Audit and artifact tools remain read-only; they do not mutate execution state.
+
+### Phase 5/6 foundation — CEO Attention evaluation
+- Added `ceo_attention` as a deterministic read-only evaluation over watchdog findings, pending gates, failed runs and recent audit evidence.
+- Each attention item includes an evidence source and, where appropriate, a recommended next step.
+- No background notification service is claimed yet; this is an on-demand evaluation surface.
 
 ## Intentionally not claimed yet
 
 - Durable cross-process JARVIS memory.
 - Unrestricted direct Agent Runtime control; delegation remains behind Control API intake.
-- Proactive monitoring/notifications.
+- Background proactive notifications/subscriptions.
 - Voice or computer control.
-- Audit timeline and artifact evidence inspection are not yet exposed as dedicated JARVIS tools.
+- Full production authentication/session identity for the JARVIS HTTP surface.
+- Automated irreversible actions without explicit governance/approval.
 
 ## Next implementation step
 
-1. expose audit/trace timeline so JARVIS can explain why a state changed and correlate workflow events
-2. expose artifact evidence inspection from the existing Artifact Store
-3. build proactive CEO Attention evaluation and notification policy, remaining fail-closed and approval-aware
-4. durable Memory Access integration when a persistent store is available
-5. voice interface
-6. computer-control capabilities with explicit approval gates
+1. durable Memory Access integration when a persistent store is available
+2. proactive notification/subscription policy for CEO Attention
+3. richer correlation-aware timeline and cross-entity evidence views
+4. voice interface
+5. computer-control capabilities with explicit approval gates
+6. production authentication and session identity hardening
 
 JARVIS remains a human-facing intelligence layer over Umer AI OS and must preserve Trust, Registry, Control Plane, Work Package, and Agent Runtime boundaries. Current execution state comes from authoritative read models; missing data must be reported honestly rather than fabricated.
