@@ -3,8 +3,8 @@ import type { MySqlMigration } from './migrations.js';
 /** Durable Memory Access tables used by JARVIS and other governed memory clients. */
 export const JARVIS_MEMORY_MIGRATIONS: readonly MySqlMigration[] = [
   {
-    id: '019_jarvis_memory_access',
-    checksum: '8d2c1f7a4b6e9c3d5f0a2b4c6e8f1d3a5b7c9e0f2a4c6d8e1f3b5a7c9d0e2f4',
+    id: 'jarvis_memory_access_v1',
+    checksum: '9e4b7c2d6f8a1b3c5d7e9f0a2c4e6b8d1f3a5c7e9b0d2f4a6c8e1b3d5f7a9c2',
     statements: [
       `CREATE TABLE IF NOT EXISTS memory_access_memories (
         memory_id VARCHAR(191) PRIMARY KEY,
