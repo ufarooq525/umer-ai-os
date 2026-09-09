@@ -44,12 +44,45 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       const body = objectInput(input);
       const n = Number(body.opportunityLimit ?? 10);
       const limit = Number.isInteger(n) && n >= 1 && n <= 20 ? n : 10;
-      const [dashboard, agents, opportunities] = await Promise.all([
+      const [dashboard, agents, opportunities, failedRuns, audit] = await Promise.all([
         requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
         requestJson(baseUrl, '/v1/agents', { method: 'GET' }, fetchImpl),
         requestJson(baseUrl, `/v1/opportunities?limit=${limit}`, { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/agent-runs?status=failed', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/audit/recent', { method: 'GET' }, fetchImpl),
       ]);
-      return { generatedAt: new Date().toISOString(), source: 'control-api-read-models', dashboard, agents, opportunities };
+      return { generatedAt: new Date().toISOString(), source: 'control-api-read-models', dashboard, agents, opportunities, failedRuns, audit };
+    },
+  };
+
+  const ceoAttention: JarvisTool = {
+    name: 'ceo_attention',
+    description: 'Evaluate what currently deserves CEO attention using authoritative dashboard, failed agent runs, pending gates and recent audit evidence. Return evidence and severity; never invent incidents or activity.',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    execute: async () => {
+      const [dashboard, failedRuns, audit] = await Promise.all([
+        requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/agent-runs?status=failed', { method: 'GET' }, fetchImpl),
+        requestJson(baseUrl, '/v1/audit/recent', { method: 'GET' }, fetchImpl),
+      ]);
+      const d = objectInput(dashboard);
+      const failed = objectInput(failedRuns);
+      const findings = Array.isArray(d.watchdogFindings) ? d.watchdogFindings : [];
+      const gates = Array.isArray(d.pendingGates) ? d.pendingGates : [];
+      const runs = Array.isArray(failed.agentRuns) ? failed.agentRuns : [];
+      const records = Array.isArray(objectInput(audit).records) ? objectInput(audit).records as unknown[] : [];
+      const attention: Array<Record<string, unknown>> = [];
+      for (const finding of findings) attention.push({ severity: 'high', source: 'watchdog', evidence: finding });
+      for (const gate of gates) attention.push({ severity: 'high', source: 'pending_gate', evidence: gate, recommendedNextStep: 'Review the gate and explicitly Pass or Fail it.' });
+      for (const run of runs) attention.push({ severity: 'high', source: 'failed_agent_run', evidence: run, recommendedNextStep: 'Inspect the failed run and its error evidence before retrying or delegating new work.' });
+      return {
+        generatedAt: new Date().toISOString(),
+        source: 'control-api-read-models',
+        attention,
+        counts: { watchdogFindings: findings.length, pendingGates: gates.length, failedRuns: runs.length },
+        recentAudit: records.slice(-20),
+        dashboard,
+      };
     },
   };
 
@@ -115,6 +148,46 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
+  const listAudit: JarvisTool = {
+    name: 'inspect_audit_trail',
+    description: 'Read the append-only audit trail. Use for what changed, who acted, correlation tracing and explaining lifecycle events. Audit is evidence, not a substitute for current read models.',
+    parameters: { type: 'object', properties: { correlationId: { type: 'string' }, actor: { type: 'string' }, action: { type: 'string' } }, additionalProperties: false },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const params = new URLSearchParams();
+      for (const key of ['correlationId', 'actor', 'action']) if (typeof body[key] === 'string' && body[key].trim()) params.set(key, body[key].trim());
+      const result = await requestJson(baseUrl, `/v1/audit/recent${params.toString() ? `?${params}` : ''}`, { method: 'GET' }, fetchImpl) as Record<string, unknown>;
+      if (!params.toString()) return result;
+      const records = Array.isArray(result.records) ? result.records : [];
+      return { records: records.filter((record) => {
+        const r = objectInput(record);
+        return (!body.correlationId || r.correlationId === body.correlationId) && (!body.actor || r.actor === body.actor) && (!body.action || r.action === body.action);
+      }) };
+    },
+  };
+
+  const listArtifacts: JarvisTool = {
+    name: 'list_artifacts',
+    description: 'Read artifacts known to the control API, optionally filtered by execution ID. Never imply an artifact exists unless the Artifact Runtime read model returns it.',
+    parameters: { type: 'object', properties: { execId: { type: 'string' } }, additionalProperties: false },
+    execute: async (input) => {
+      const body = objectInput(input);
+      const execId = typeof body.execId === 'string' && body.execId.trim() ? `?execId=${encodeURIComponent(body.execId.trim())}` : '';
+      return requestJson(baseUrl, `/v1/artifacts${execId}`, { method: 'GET' }, fetchImpl);
+    },
+  };
+
+  const inspectArtifact: JarvisTool = {
+    name: 'inspect_artifact',
+    description: 'Inspect one artifact by ID, including its authoritative contract and sealing metadata when available.',
+    parameters: { type: 'object', properties: { artifactId: { type: 'string' } }, required: ['artifactId'], additionalProperties: false },
+    execute: async (input) => {
+      const body = objectInput(input);
+      if (typeof body.artifactId !== 'string' || !body.artifactId.trim()) throw new Error('artifactId is required');
+      return requestJson(baseUrl, `/v1/artifacts/${encodeURIComponent(body.artifactId.trim())}`, { method: 'GET' }, fetchImpl);
+    },
+  };
+
   const retrieveMemory: JarvisTool = {
     name: 'retrieve_memory',
     description: 'Retrieve relevant governed JARVIS memory. Use for prior decisions, lessons, research, patterns and working context. Treat returned citations as memory evidence, not current system state.',
@@ -138,5 +211,5 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, ceoBriefing, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, retrieveMemory, delegateWork];
+  return [systemSnapshot, ceoBriefing, ceoAttention, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, listArtifacts, inspectArtifact, retrieveMemory, delegateWork];
 }
