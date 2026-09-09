@@ -17,28 +17,34 @@ Branch: `feature/jarvis-ai-assistant`
 
 ### Phase 1 — HTTP entry point
 - Added `@umer/jarvis-api`.
-- `GET /health` reports the configured model provider.
+- `GET /health` reports the configured model provider and registered JARVIS tools.
 - `POST /v1/jarvis/chat` accepts `{ sessionId?, message }`.
 - Session history is bounded to the latest 20 messages.
 - Default local port: `3010` (`JARVIS_PORT` can override it).
 
+### Phase 2 — Live Umer AI OS control-plane bridge
+- Added `@umer/jarvis-tools`.
+- `control_plane_snapshot` reads the authoritative `/v1/dashboard` state instead of inventing agent activity.
+- `list_agents` reads registered workforce state.
+- `list_opportunities` reads the opportunity API with a bounded limit.
+- `delegate_work` submits normal control-plane intake and therefore preserves the existing planning, Work Package and human-gate lifecycle.
+- JARVIS defaults to the configured `CONTROL_API_PORT` and supports `CONTROL_API_BASE_URL` for local deployment overrides.
+- No direct database writes or bypass of Trust/Control Plane were introduced.
+
 ## Intentionally not claimed yet
 
-- Agent delegation is not wired directly into JARVIS yet; the next step is to adapt the existing Agent Runtime rather than create a second orchestration path.
-- Mission Control/read-model tools are not duplicated here.
 - Persistent memory is not simulated with an in-memory fake; the next phase will use `@umer/memory-access`.
+- Full direct Agent Runtime run control is not exposed as an unrestricted JARVIS action; delegation stays behind the existing control-plane intake path.
+- Proactive monitoring is not implemented yet.
 - Voice and computer control are not implemented yet.
-- No autonomous destructive/external action is exposed by the initial API.
 
 ## Next implementation step
 
-Create a governed JARVIS tool adapter over existing Umer AI OS capabilities:
+1. memory retrieval and conversation continuity through `@umer/memory-access`
+2. richer agent/run/artifact inspection
+3. audit/trace correlation in JARVIS responses
+4. proactive CEO attention events
+5. voice interface
+6. computer-control capabilities with explicit approval gates
 
-1. system/CEO snapshot from existing read models
-2. agent/run inspection
-3. opportunity inspection
-4. Work Package delegation through Agent Runtime
-5. memory retrieval
-6. audit/trace correlation
-
-The adapter must preserve Trust, Registry, Control Plane, Work Package, and Agent Runtime boundaries.
+The adapter must continue to preserve Trust, Registry, Control Plane, Work Package, and Agent Runtime boundaries.
