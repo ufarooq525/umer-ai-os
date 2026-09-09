@@ -898,3 +898,90 @@ export async function executeCommand(input: {
     body: JSON.stringify(input),
   });
 }
+
+export type CompanyOverview = {
+  whatCompanyIsDoing: {
+    activeProjectsCount: number;
+    activeWorkPackagesCount: number;
+    activeLoopCyclesCount: number;
+    summary: string;
+  };
+  opportunitiesPursued: Array<{
+    id: string;
+    title: string;
+    status: string;
+    overallScore: number;
+    estimatedValue?: number;
+    recommendation: string;
+  }>;
+  prospectsThatMatter: Array<{
+    prospectId: string;
+    dealId?: string;
+    companyName: string;
+    stage?: string;
+    estimatedValue?: number;
+  }>;
+  agentsWorking: Array<{
+    agentId: string;
+    name?: string;
+    department: string;
+    specialistId: string;
+    status: string;
+    currentProjectId?: string;
+    currentTaskId?: string;
+  }>;
+  projectsByAgent: Record<
+    string,
+    {
+      agentId: string;
+      projectId: string;
+      taskId?: string;
+    }
+  >;
+  evidenceSummary: {
+    totalSealedArtifacts: number;
+    testPlanResultsCount: number;
+    securityReportsCount: number;
+    signedDeliveryOutcomesCount: number;
+  };
+  blockedItems: Array<{
+    type: 'work_graph_node' | 'gate' | 'support_case' | 'deal';
+    id: string;
+    reason: string;
+    blockedSince: string;
+  }>;
+  decisionsNeeded: Array<{
+    type: 'deal_approval' | 'deployment_approval' | 'gate_review' | 'incident_review';
+    id: string;
+    title: string;
+    urgency: 'low' | 'medium' | 'high' | 'critical';
+    requiredApprovers: string[];
+  }>;
+  nextActions: Array<{
+    action: string;
+    targetType: string;
+    targetId: string;
+    priority: 'low' | 'medium' | 'high';
+  }>;
+  revenueAndOutcomes: {
+    totalWonRevenue: number;
+    recognizedRevenue: number;
+    pipelineValue: number;
+    averageMarginPercent: number;
+    averageCustomerHealthScore: number;
+    activeCustomersCount: number;
+    completedDeliveriesCount: number;
+    recommendedPriceMultiplier: number;
+  };
+  generatedAt: string;
+};
+
+export async function getCompanyOverview(): Promise<CompanyOverview | null> {
+  try {
+    const res = await fetchJson<{ overview: CompanyOverview }>('/v1/company/overview');
+    return res.overview;
+  } catch {
+    return null;
+  }
+}
+

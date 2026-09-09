@@ -7,6 +7,7 @@ import {
   SUBJECTS,
   type MessageFabricClient,
   type SubscriptionHandle,
+  type DeliverPolicy,
 } from '@umer/message-fabric';
 import { WORK_PACKAGE_DISPATCH_COMMAND } from './constants.js';
 import type { AgentRuntime } from './runtime.js';
@@ -33,6 +34,7 @@ export type AgentWorkerOptions = {
    * (status, current work, timestamps) — these three fields just stay unset.
    */
   resolveAgentDisplay?: (specialistId: string) => AgentDisplayInfo | undefined;
+  deliverPolicy?: DeliverPolicy;
 };
 
 export class AgentWorker {
@@ -43,6 +45,7 @@ export class AgentWorker {
   private readonly artifactEngine?: ArtifactEngine;
   private readonly auditService?: AuditService;
   private readonly resolveAgentDisplay?: (specialistId: string) => AgentDisplayInfo | undefined;
+  private readonly deliverPolicy?: DeliverPolicy;
   private subscription: SubscriptionHandle | undefined;
 
   constructor(options: AgentWorkerOptions) {
@@ -53,6 +56,7 @@ export class AgentWorker {
     this.artifactEngine = options.artifactEngine;
     this.auditService = options.auditService;
     this.resolveAgentDisplay = options.resolveAgentDisplay;
+    this.deliverPolicy = options.deliverPolicy;
   }
 
   async start(): Promise<void> {
@@ -61,6 +65,7 @@ export class AgentWorker {
         stream: STREAMS.COMMANDS,
         durable: `${this.durablePrefix}-dispatch`,
         filterSubject: SUBJECTS.CMD_AGENT_DISPATCH,
+        ...(this.deliverPolicy ? { deliverPolicy: this.deliverPolicy } : {}),
       },
       async (command, ctx) => {
         if (command.name !== WORK_PACKAGE_DISPATCH_COMMAND) {

@@ -310,6 +310,16 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
       count: async () => {
         return state.artifactStore ? (await state.artifactStore.list()).length : 0;
       },
+      list: async () => {
+        if (!state.artifactStore) return [];
+        const items = await state.artifactStore.list();
+        return items.map((a) => ({ id: a.artifactId, type: a.artifactType, artifactType: a.artifactType }));
+      },
+      countByType: async (type: string) => {
+        if (!state.artifactStore) return 0;
+        const items = await state.artifactStore.list();
+        return items.filter((a) => a.artifactType === type).length;
+      },
     },
     specialists: {
       executeProductDefinition: async (input) => ({

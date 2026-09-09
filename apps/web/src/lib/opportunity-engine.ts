@@ -134,6 +134,15 @@ export function startOpportunityRun(market?: Parameters<typeof normalizeMarket>[
 }
 
 async function execute(runId: string, live: boolean) {
+  if (!live && process.env.AUTONOMY_REQUIRE_DURABLE_STATE === 'true') {
+    const errorMsg =
+      'Market discovery blocked: GOOGLE_MAPS_API_KEY is not configured for live Google Places discovery. Synthetic candidates are prohibited when AUTONOMY_REQUIRE_DURABLE_STATE=true.';
+    event('Orchestrator', errorMsg, 'discovery', 'error');
+    state.running = false;
+    state.error = errorMsg;
+    state.stage = 'Blocked';
+    return;
+  }
   const taskIds: Record<string, string> = {};
   const taskLeases: Record<string, { token: string }> = {};
   try {

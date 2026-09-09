@@ -12,6 +12,29 @@ The complete autonomous company loop is now governed, connected, and proven end-
 
 Through `AutonomousCompanyLoop` (`@umer/opportunity-intelligence`), the CEO Command Center overview endpoint (`/v1/company/overview`), and continuous closed-loop feedback, post-delivery learnings calibrate opportunity pricing, win rate, and execution margins for subsequent market discovery without fabricated state.
 
+## LIVE VERIFICATION STATUS (2026-09-09)
+
+Independent live verification executed directly against running infrastructure on `main` (HEAD `76be8f162c37bf4ce175b48a8f3e691b5392fa9c` + verification commits):
+
+| Component / Subsystem | Status | Verification Type | Evidence & Proof |
+| :--- | :--- | :--- | :--- |
+| **MySQL (Port 3306)** | **PASS** | Live Process Durability | Tested against live MySQL 8. Migrations 001-017 applied. Proved process-restart durability across separate store instances for customer accounts and delivery outcomes in `tests/e2e/live-runtime-smoke.test.ts`. |
+| **NATS JetStream (Port 4222)** | **PASS** | Live JetStream Streams & Consumers | Tested against live NATS server. Streams `UMER_COMMANDS`, `UMER_EVENTS`, and `UMER_DLQ` created and validated. Real command dispatch on `cmd.agent.dispatch` consumed via durable JetStream consumer in `tests/e2e/live-runtime-smoke.test.ts`. |
+| **LLM Provider (LM Studio / Qwen 3 8B)** | **PASS** | Live Model Execution | Tested against live LM Studio on `http://127.0.0.1:1234/v1` with model `qwen/qwen3-8b`. Executed real specialist prompt against `Product Definition Specialist` mandate; generated genuine ProductBrief with user stories and acceptance criteria. Truncation fail-closed protection verified. |
+| **Control API (Port 4000)** | **PASS** | Live Routes & Health | Express control plane verified; `/v1/company/overview` answers all 10 CEO questions from real domain state. Fail-closed MySQL linking verified when `AUTONOMY_REQUIRE_DURABLE_STATE=true`. |
+| **Agent Worker** | **PASS** | Live JetStream Execution | `AgentWorker` consumed live `workpackage.dispatch` command from NATS, executed `AgentRuntime`, invoked local Qwen LLM, sealed artifact via `ArtifactEngine`, and published `agent.run.completed` event. |
+| **Orchestration Worker** | **PASS** | Integration & Fail-Closed Guard | `ReadyWorkPackagePlanner` dispatches through Message Fabric. Fail-closed store protection implemented for WorkPackages and WorkGraph when `AUTONOMY_REQUIRE_DURABLE_STATE=true`. |
+| **Work Graph** | **PASS** | DAG State Machine & DB Durability | Dependency-aware decomposition (`Requirements → Product → {Architecture, UX} → Implementation → {QA, Security} → Release → Operations`), fail-closed specialist resolution, and MySQL persistence via migration `015_requirements`. |
+| **Commercial Pipeline** | **PASS** | Live MySQL Schema & Durability | Migration `016_commercial_pipeline` tested on live MySQL. Preserves stage history, requires contact provenance, enforces proposal persistence, and blocks Won transitions without signed customer acceptance. |
+| **Engineering Specialist** | **UNIT TESTED ONLY** | Sandbox Code Generation | `packages/agent-runtime` code producer, path traversal protection, diff generation, and test runners verified via unit tests (`code-producer.test.ts`). Live autonomous git commit/file mutation in staging workspace pending active project trigger. |
+| **QA Specialist** | **UNIT TESTED ONLY** | Automated Test Execution | `specialists/qa/testing.md` and QA gate review mechanics verified via unit tests; test failure truthfully transitions stage to Failed/Blocked. |
+| **Security Specialist** | **UNIT TESTED ONLY** | Security Audit & SAST | `specialists/security/audit.md` and security review gates verified via unit tests; high-severity findings truthfully block release. |
+| **Deployment Engine** | **PARTIAL / BLOCKED** | Rollback Logic Tested; CLI Missing | `packages/contracts/src/deployments` and `DeploymentEngine` logic fully unit-tested with canary and rollback plans. Live deployment execution on this Windows host is BLOCKED because Docker and Helm CLIs are not installed in system PATH (`helm`/`docker: CommandNotFoundException`). |
+| **Customer Success** | **PASS** | Live MySQL Durability | Migration `017_customer_success` tested on live MySQL. Customer accounts, delivery outcomes, satisfaction scores, and client feedback reloaded across fresh store instances in `tests/e2e/live-runtime-smoke.test.ts`. |
+| **Revenue Accounting** | **PASS** | Attribution & Zero Fabrication | Revenue recognition requires signed delivery outcome. Truthfully reports $0 recognized revenue until contracts are signed and delivered. Zero fabrication verified. |
+| **Closed-Loop Learning** | **PASS** | Feedback Calibration | Post-delivery learnings persist in MySQL and feedback loop calibrates pricing multiplier and opportunity score weights in `AutonomousCompanyLoop`. |
+| **CEO Command Center (Web)** | **PASS** | Live UI / Control API Integration | `apps/web` integrates `getCompanyOverview()` querying `/v1/company/overview`. `CeoCompanyOperatingConsole` directly answers all 10 CEO questions with zero synthetic records. Synthetic discovery fallback blocked in autonomous mode. |
+
 ## What is already real
 
 ### Runtime and execution
@@ -497,7 +520,8 @@ Verified via:
 - `apps/control-api/src/commercial-link.test.ts` (2/2 passed) & `apps/control-api/src/customer-success-link.test.ts` (2/2 passed): verifies dynamic MySQL commercial and customer success store linking and fail-closed refusal when durable state is required but MySQL is unreachable.
 - `apps/control-api/src/company-loop-routes.test.ts` (3/3 passed): verifies HTTP endpoints (`GET /v1/company/overview`, `POST /v1/company/loop/run`, `GET /v1/company/loop/cycles`, `GET /v1/company/loop/cycles/:cycleId`) and asserts truthful halt when prospect is unverified.
 - `tests/e2e/autonomous-company-loop.e2e.test.ts` (1/1 passed): full end-to-end verification running a complete loop cycle with genuine fixture entities, verifying real state persistence across `ProjectStore`, `RequirementStore`, `CustomerSuccessEngine`, `DeploymentEngine`, verifying closed-loop calibration where post-delivery outcomes calibrate future opportunity scoring and pricing multipliers, and verifying the updated CEO Command Center overview with zero synthetic records.
-- Full workspace verification: `pnpm run build` (33/33 successful), `pnpm run typecheck` (54/54 successful), `pnpm run lint` (53/53 successful). Not yet verified: live LLM provider smoke run against real MySQL/NATS.
+- Full workspace verification: `pnpm run build` (33/33 successful), `pnpm run typecheck` (54/54 successful), `pnpm run lint` (53/53 successful).
+- Live runtime infrastructure verification: `tests/e2e/live-runtime-smoke.test.ts` (3/3 passed) proves live NATS command dispatch/event publication, live LM Studio Qwen 3 8B specialist execution, artifact generation and SHA-256 seal record persistence, and live MySQL durability across process restart.
 
 ---
 

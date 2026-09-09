@@ -43,6 +43,7 @@ export type SubscribeOptions = {
   maxDeliver?: number;
   ackWaitMs?: number;
   idempotencyStore?: IdempotencyStore;
+  deliverPolicy?: DeliverPolicy;
 };
 
 export type MessageFabricClientOptions = {
@@ -173,7 +174,7 @@ export class MessageFabricClient {
     await this.ensureConsumer(options.stream, options.durable, {
       filter_subject: options.filterSubject,
       ack_policy: AckPolicy.Explicit,
-      deliver_policy: DeliverPolicy.All,
+      deliver_policy: options.deliverPolicy ?? DeliverPolicy.All,
       max_deliver: maxDeliver,
       ack_wait: (options.ackWaitMs ?? DEFAULT_ACK_WAIT_MS) * 1_000_000,
     });

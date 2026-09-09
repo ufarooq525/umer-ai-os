@@ -89,6 +89,8 @@ export interface CompanyLoopAgentsPort {
 
 export interface CompanyLoopArtifactsPort {
   count?(): Promise<number> | number;
+  list?(): Promise<Array<{ id: string; type?: string; artifactType?: string }>> | Array<{ id: string; type?: string; artifactType?: string }>;
+  countByType?(type: string): Promise<number> | number;
 }
 
 export interface ProductDefinitionOutput {
@@ -1329,10 +1331,22 @@ export class AutonomousCompanyLoop {
     const totalSealedArtifacts = this.artifactsPort?.count ? await this.artifactsPort.count() : 0;
     const signedDeliveries = (await this.customerSuccess.listDeliveryOutcomes())
       .filter((d) => d.clientSignoff && Boolean(d.clientSignoff.signedBy));
+
+    let testPlanResultsCount = 0;
+    let securityReportsCount = 0;
+    if (this.artifactsPort?.countByType) {
+      testPlanResultsCount = await this.artifactsPort.countByType('TestPlanResults');
+      securityReportsCount = await this.artifactsPort.countByType('SecurityReport');
+    } else if (this.artifactsPort?.list) {
+      const allArtifacts = await this.artifactsPort.list();
+      testPlanResultsCount = allArtifacts.filter((a) => (a.type ?? a.artifactType) === 'TestPlanResults').length;
+      securityReportsCount = allArtifacts.filter((a) => (a.type ?? a.artifactType) === 'SecurityReport').length;
+    }
+
     const evidenceSummary = {
       totalSealedArtifacts,
-      testPlanResultsCount: totalSealedArtifacts > 0 ? activeProjects.length : 0,
-      securityReportsCount: totalSealedArtifacts > 0 ? activeProjects.length : 0,
+      testPlanResultsCount,
+      securityReportsCount,
       signedDeliveryOutcomesCount: signedDeliveries.length,
     };
 

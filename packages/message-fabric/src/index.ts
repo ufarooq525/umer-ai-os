@@ -27,3 +27,4 @@ export {
   type JetStreamManager,
 } from './client.js';
 export { createMessageFabric, closeMessageFabric, resetMessageFabricSingleton, type CreateMessageFabricOptions } from './connection.js';
+export { DeliverPolicy, AckPolicy } from 'nats';
