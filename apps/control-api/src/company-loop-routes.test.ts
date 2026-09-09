@@ -74,9 +74,68 @@ describe('Company Loop & CEO Overview HTTP Routes', () => {
       method: 'POST',
       body: JSON.stringify({
         title: 'Enterprise Autonomous Loop Cycle #1',
+        opportunity: {
+          id: 'opp-vertex-1',
+          type: 'service',
+          title: 'Vertex Global Financial Suite',
+          score: {
+            problemSeverity: 80,
+            demandEvidence: 85,
+            abilityToPay: 90,
+            reachability: 80,
+            solutionFit: 85,
+            competitiveGap: 75,
+            deliveryFeasibility: 85,
+            evidenceConfidence: 90,
+            overall: 85,
+            recommendation: 'outreach_ready',
+          },
+          estimatedValueMin: 75000,
+          estimatedValueMax: 90000,
+          currency: 'USD',
+          timeToRevenueDays: 30,
+          evidenceRefs: ['ev-vertex-1'],
+          status: 'qualified',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
         companyName: 'Vertex Global Financial',
         contactName: 'Elena Rostova',
         contactEmail: 'erostova@vertex.example',
+        contactProvenance: {
+          sourceUrl: 'https://vertex.example/leadership',
+          observedAt: new Date().toISOString(),
+          method: 'website_scrape',
+        },
+        outreachDetails: {
+          channel: 'email',
+          subject: 'Financial Core Modernization',
+          body: 'We noticed workflow opportunities...',
+          senderAgentId: 'commercial.sales-representative',
+        },
+        outreachResponseDetails: {
+          sentiment: 'positive',
+          content: 'Interested, please provide proposal.',
+        },
+        qualificationDetails: {
+          budgetConfirmed: true,
+          budgetAmount: 75000,
+          authorityConfirmed: true,
+          needValidated: true,
+          urgency: 'immediate',
+          qualificationScore: 88,
+        },
+        ceoApprovalId: 'ceo-dec-auth-vertex',
+        customerAcceptance: {
+          signedBy: 'Elena Rostova',
+          agreementRef: 'AGREEMENT-VERTEX-2026',
+          clientSatisfactionScore: 5,
+        },
+        deliverySignoff: {
+          signedBy: 'Elena Rostova',
+          signedAt: new Date().toISOString(),
+          clientSatisfactionScore: 5,
+        },
         budget: 75000,
         actualCost: 28000,
       }),
@@ -117,5 +176,31 @@ describe('Company Loop & CEO Overview HTTP Routes', () => {
     expect(overview.revenueAndOutcomes.completedDeliveriesCount).toBeGreaterThanOrEqual(1);
     expect(overview.revenueAndOutcomes.totalWonRevenue).toBeGreaterThanOrEqual(75000);
     expect(overview.prospectsThatMatter.some((p) => p.companyName.includes('Vertex Global Financial'))).toBe(true);
+  });
+
+  it('truthfully halts commercial sales when no verified prospect is available', async () => {
+    const runRes = await request(server, '/v1/company/loop/run', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Unverified Prospect Cycle',
+        opportunity: {
+          id: 'opp-unverified-1',
+          type: 'service',
+          title: 'Unverified Opportunity',
+          score: { overall: 85, recommendation: 'pursue' },
+          status: 'qualified',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+    });
+
+    expect(runRes.status).toBe(201);
+    const data = runRes.json as { cycle: CompanyLoopCycle };
+    expect(data.cycle.status).toBe('paused');
+    expect(data.cycle.currentStage).toBe('commercial_sales');
+    const salesStage = data.cycle.stages.find((s) => s.stage === 'commercial_sales');
+    expect(salesStage?.status).toBe('pending');
+    expect(salesStage?.details.reason).toBe('No verified prospect available; commercial loop did not advance.');
   });
 });

@@ -3,17 +3,48 @@ import { AutonomousCompanyLoop } from './autonomous-company-loop.js';
 import { CommercialPipelineEngine } from './commercial-pipeline.js';
 import { CustomerSuccessEngine } from './customer-success.js';
 import { InMemoryOpportunityPersistence } from './persistence.js';
-import { CompanyOverviewSchema } from '@umer/contracts';
+import { CompanyOverviewSchema, type Opportunity } from '@umer/contracts';
 
 describe('AutonomousCompanyLoop', () => {
-  it('executes the complete 12-stage autonomous company loop from Market Discovery to Learning Calibration', async () => {
+  const sampleOpportunity: Opportunity = {
+    id: 'opp-apex-101',
+    type: 'service',
+    title: 'Apex Banking Cloud Modernization',
+    geography: 'Global',
+    market: 'Fintech',
+    problemIds: ['prob-1'],
+    score: {
+      problemSeverity: 85,
+      demandEvidence: 90,
+      abilityToPay: 95,
+      reachability: 85,
+      solutionFit: 90,
+      competitiveGap: 75,
+      deliveryFeasibility: 85,
+      evidenceConfidence: 90,
+      overall: 88,
+      recommendation: 'outreach_ready',
+    },
+    estimatedValueMin: 50000,
+    estimatedValueMax: 70000,
+    currency: 'USD',
+    timeToRevenueDays: 30,
+    evidenceRefs: ['ev-apex-1'],
+    status: 'qualified',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  it('executes the complete 12-stage autonomous company loop with genuine evidence and customer signoff', async () => {
     const oppStore = new InMemoryOpportunityPersistence();
+    await oppStore.saveOpportunity(sampleOpportunity);
+
     const commercial = new CommercialPipelineEngine();
     const cs = new CustomerSuccessEngine();
 
-    const createdProjects: any[] = [];
-    const workNodes: any[] = [];
-    const deployments: any[] = [];
+    const createdProjects: Array<{ id: string; projectId: string; name: string; status: string }> = [];
+    const workNodes: Array<{ id: string; type: string; title: string; status: string }> = [];
+    const deployments: Array<{ id: string; deploymentId: string; status: string; projectId: string }> = [];
 
     const loop = new AutonomousCompanyLoop({
       opportunityPersistence: oppStore,
@@ -67,9 +98,46 @@ describe('AutonomousCompanyLoop', () => {
 
     const cycle = await loop.runCycle({
       title: 'Q3 Enterprise Fintech Cycle',
+      opportunityId: sampleOpportunity.id,
       companyName: 'Apex Banking Solutions',
       contactName: 'Sarah Jenkins',
       contactEmail: 'sjenkins@apexbanking.example',
+      contactProvenance: {
+        sourceUrl: 'https://apexbanking.example/leadership',
+        observedAt: new Date().toISOString(),
+        method: 'website_scrape',
+        businessIdentity: 'Apex Banking',
+        contactIdentity: 'Sarah Jenkins',
+      },
+      outreachDetails: {
+        channel: 'email',
+        subject: 'Modernizing Apex Core Banking',
+        body: 'Noticed legacy bottlenecks in transaction routing...',
+        senderAgentId: 'commercial.sales-representative',
+      },
+      outreachResponseDetails: {
+        sentiment: 'positive',
+        content: 'We are very interested. Please send an authorized proposal.',
+      },
+      qualificationDetails: {
+        budgetConfirmed: true,
+        budgetAmount: 60000,
+        authorityConfirmed: true,
+        needValidated: true,
+        urgency: 'immediate',
+        qualificationScore: 92,
+      },
+      ceoApprovalId: 'ceo-dec-auth-99',
+      customerAcceptance: {
+        signedBy: 'Sarah Jenkins',
+        agreementRef: 'AGREEMENT-APEX-2026-001',
+        clientSatisfactionScore: 5,
+      },
+      deliverySignoff: {
+        signedBy: 'Sarah Jenkins',
+        signedAt: new Date().toISOString(),
+        clientSatisfactionScore: 5,
+      },
       budget: 60000,
       actualCost: 24000,
     });
@@ -91,7 +159,7 @@ describe('AutonomousCompanyLoop', () => {
 
     // Verify Market Discovery calibrated pricing was used
     const discoveryStage = cycle.stages.find((s) => s.stage === 'market_discovery');
-    expect(discoveryStage?.details.opportunityId).toBeDefined();
+    expect(discoveryStage?.details.opportunityId).toBe(sampleOpportunity.id);
     expect(discoveryStage?.details.calibratedPriceMultiplier).toBeGreaterThan(0);
 
     // Verify Commercial Sales created deal and proposal
@@ -119,11 +187,12 @@ describe('AutonomousCompanyLoop', () => {
     expect(loop.listCycles()).toContain(cycle);
   });
 
-  it('runs partial cycles to a target stage', async () => {
+  it('runs partial cycles to a target stage with explicit opportunity', async () => {
     const loop = new AutonomousCompanyLoop();
     const cycle = await loop.runCycle({
       title: 'Discovery Only Cycle',
       targetStage: 'opportunity_scoring',
+      opportunity: sampleOpportunity,
     });
 
     expect(cycle.status).toBe('active');
@@ -133,8 +202,157 @@ describe('AutonomousCompanyLoop', () => {
     expect(cycle.stages.find((s) => s.stage === 'commercial_sales')?.status).toBe('pending');
   });
 
+  it('truthfully halts when no verified opportunity is available in persistence or input', async () => {
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: new InMemoryOpportunityPersistence(),
+    });
+
+    const cycle = await loop.runCycle({
+      title: 'No Opportunity Cycle',
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('market_discovery');
+    const discoveryStage = cycle.stages.find((s) => s.stage === 'market_discovery');
+    expect(discoveryStage?.status).toBe('pending');
+    expect(discoveryStage?.details.blocked).toBe(true);
+    expect(discoveryStage?.details.reason).toContain('No verified opportunity available');
+  });
+
+  it('truthfully halts when no verified prospect is available ("No verified prospect available; commercial loop did not advance")', async () => {
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: new InMemoryOpportunityPersistence(),
+    });
+
+    const cycle = await loop.runCycle({
+      title: 'No Prospect Cycle',
+      opportunity: sampleOpportunity,
+      // No companyName or prospectId provided
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('commercial_sales');
+    const salesStage = cycle.stages.find((s) => s.stage === 'commercial_sales');
+    expect(salesStage?.status).toBe('pending');
+    expect(salesStage?.details.blocked).toBe(true);
+    expect(salesStage?.details.reason).toBe('No verified prospect available; commercial loop did not advance.');
+  });
+
+  it('truthfully halts when contact verification provenance evidence is missing', async () => {
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: new InMemoryOpportunityPersistence(),
+    });
+
+    const cycle = await loop.runCycle({
+      title: 'Unverified Contact Cycle',
+      opportunity: sampleOpportunity,
+      companyName: 'Acme Unknown LLC',
+      contactName: 'Bob Smith',
+      contactEmail: 'bob@example.com',
+      // No contactProvenance with real sourceUrl provided
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('commercial_sales');
+    const salesStage = cycle.stages.find((s) => s.stage === 'commercial_sales');
+    expect(salesStage?.status).toBe('pending');
+    expect(salesStage?.details.blocked).toBe(true);
+    expect(salesStage?.details.reason).toContain('Contact verification evidence missing');
+  });
+
+  it('truthfully halts when proposal requires CEO approval and none is provided', async () => {
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: new InMemoryOpportunityPersistence(),
+    });
+
+    const cycle = await loop.runCycle({
+      title: 'Awaiting CEO Approval Cycle',
+      opportunity: sampleOpportunity,
+      companyName: 'Enterprise Corp',
+      contactName: 'Alice Green',
+      contactEmail: 'alice@enterprise.example',
+      contactProvenance: {
+        sourceUrl: 'https://enterprise.example/alice',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: {
+        channel: 'email',
+        subject: 'Enterprise Engagement',
+        body: 'Introductory note',
+        senderAgentId: 'commercial.sales-representative',
+      },
+      outreachResponseDetails: {
+        sentiment: 'positive',
+        content: 'Send proposal please',
+      },
+      qualificationDetails: {
+        budgetConfirmed: true,
+        budgetAmount: 50000,
+        authorityConfirmed: true,
+        needValidated: true,
+        qualificationScore: 85,
+      },
+      // proposal > $25k requires CEO approval, but no ceoApprovalId provided!
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('commercial_sales');
+    const salesStage = cycle.stages.find((s) => s.stage === 'commercial_sales');
+    expect(salesStage?.status).toBe('pending');
+    expect(salesStage?.details.blocked).toBe(true);
+    expect(salesStage?.details.reason).toContain('Proposal requires explicit CEO approval');
+  });
+
+  it('truthfully pauses at proposal stage when customer acceptance has not been signed', async () => {
+    const loop = new AutonomousCompanyLoop({
+      opportunityPersistence: new InMemoryOpportunityPersistence(),
+    });
+
+    const cycle = await loop.runCycle({
+      title: 'Awaiting Customer Acceptance Cycle',
+      opportunity: sampleOpportunity,
+      companyName: 'Enterprise Corp',
+      contactName: 'Alice Green',
+      contactEmail: 'alice@enterprise.example',
+      contactProvenance: {
+        sourceUrl: 'https://enterprise.example/alice',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: {
+        channel: 'email',
+        subject: 'Enterprise Engagement',
+        body: 'Introductory note',
+        senderAgentId: 'commercial.sales-representative',
+      },
+      outreachResponseDetails: {
+        sentiment: 'positive',
+        content: 'Send proposal please',
+      },
+      qualificationDetails: {
+        budgetConfirmed: true,
+        budgetAmount: 50000,
+        authorityConfirmed: true,
+        needValidated: true,
+        qualificationScore: 85,
+      },
+      ceoApprovalId: 'ceo-approval-legit-1',
+      // No customerAcceptance provided
+    });
+
+    expect(cycle.status).toBe('paused');
+    expect(cycle.currentStage).toBe('commercial_sales');
+    const salesStage = cycle.stages.find((s) => s.stage === 'commercial_sales');
+    expect(salesStage?.status).toBe('completed');
+    expect(salesStage?.details.stage).toBe('proposal');
+    expect(salesStage?.details.message).toContain('awaiting formal customer acceptance');
+    // Ensure subsequent delivery stages remain pending
+    expect(cycle.stages.find((s) => s.stage === 'requirements_intake')?.status).toBe('pending');
+  });
+
   it('generates a complete CompanyOverview directly answering the 10 CEO questions from real state', async () => {
     const oppStore = new InMemoryOpportunityPersistence();
+    await oppStore.saveOpportunity(sampleOpportunity);
+
     const commercial = new CommercialPipelineEngine();
     const cs = new CustomerSuccessEngine();
 
@@ -190,9 +408,44 @@ describe('AutonomousCompanyLoop', () => {
       },
     });
 
-    // Run one full cycle first
+    // Run one full cycle first with genuine inputs
     await loop.runCycle({
+      opportunityId: sampleOpportunity.id,
       companyName: 'Global Logistics Corp',
+      contactName: 'Elena Rostova',
+      contactEmail: 'elena@globallogistics.example',
+      contactProvenance: {
+        sourceUrl: 'https://globallogistics.example/team',
+        observedAt: new Date().toISOString(),
+      },
+      outreachDetails: {
+        channel: 'email',
+        subject: 'Logistics Modernization',
+        body: 'Detailed proposal for route automation',
+        senderAgentId: 'commercial.sales-representative',
+      },
+      outreachResponseDetails: {
+        sentiment: 'positive',
+        content: 'Ready to proceed with contract',
+      },
+      qualificationDetails: {
+        budgetConfirmed: true,
+        budgetAmount: 50000,
+        authorityConfirmed: true,
+        needValidated: true,
+        qualificationScore: 90,
+      },
+      ceoApprovalId: 'ceo-dec-auth-100',
+      customerAcceptance: {
+        signedBy: 'Elena Rostova',
+        agreementRef: 'AGREEMENT-GLC-2026-001',
+        clientSatisfactionScore: 5,
+      },
+      deliverySignoff: {
+        signedBy: 'Elena Rostova',
+        signedAt: new Date().toISOString(),
+        clientSatisfactionScore: 5,
+      },
       budget: 50000,
     });
 
