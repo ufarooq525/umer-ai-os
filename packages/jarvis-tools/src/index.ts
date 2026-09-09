@@ -1,8 +1,10 @@
 import type { JarvisTool } from '@umer/jarvis-core';
+import { createJarvisMemory, type JarvisMemory } from '@umer/jarvis-memory';
 
 export type JarvisControlToolsOptions = {
   controlApiBaseUrl?: string;
   fetchImpl?: typeof fetch;
+  memory?: JarvisMemory;
 };
 
 function objectInput(input: unknown): Record<string, unknown> {
@@ -16,7 +18,7 @@ async function requestJson(
   init: RequestInit | undefined,
   fetchImpl: typeof fetch,
 ): Promise<unknown> {
-  const response = await fetchImpl(`${baseUrl.replace(/\\/$/, '')}${path}`, {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}${path}`, {
     ...init,
     headers: { accept: 'application/json', ...(init?.headers ?? {}) },
   });
@@ -30,6 +32,7 @@ async function requestJson(
 export function createJarvisControlTools(options: JarvisControlToolsOptions = {}): JarvisTool[] {
   const baseUrl = options.controlApiBaseUrl ?? process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
   const fetchImpl = options.fetchImpl ?? fetch;
+  const memory = options.memory ?? createJarvisMemory();
 
   const systemSnapshot: JarvisTool = {
     name: 'control_plane_snapshot',
@@ -58,6 +61,35 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       const n = Number(limit);
       const suffix = Number.isInteger(n) && n >= 1 && n <= 50 ? `?limit=${n}` : '?limit=20';
       return requestJson(baseUrl, `/v1/opportunities${suffix}`, { method: 'GET' }, fetchImpl);
+    },
+  };
+
+  const retrieveMemory: JarvisTool = {
+    name: 'retrieve_memory',
+    description: 'Retrieve relevant governed JARVIS memory. Use for prior decisions, lessons, research, patterns and working context. Treat returned citations as memory evidence, not current system state.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'integer', minimum: 1, maximum: 10 },
+        memoryKinds: {
+          type: 'array',
+          items: { type: 'string', enum: ['Lesson', 'Pattern', 'BestPractice', 'Research', 'DecisionIntel', 'CaseStudy', 'WorkingNote'] },
+        },
+      },
+      required: ['query'],
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      if (typeof body.query !== 'string' || !body.query.trim()) throw new Error('query is required');
+      const memoryKinds = Array.isArray(body.memoryKinds)
+        ? body.memoryKinds.filter((v): v is 'Lesson' | 'Pattern' | 'BestPractice' | 'Research' | 'DecisionIntel' | 'CaseStudy' | 'WorkingNote' => typeof v === 'string')
+        : undefined;
+      return memory.retrieve(body.query.trim(), {
+        limit: typeof body.limit === 'number' ? body.limit : undefined,
+        memoryKinds,
+      });
     },
   };
 
@@ -95,5 +127,5 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, listAgents, listOpportunities, delegateWork];
+  return [systemSnapshot, listAgents, listOpportunities, retrieveMemory, delegateWork];
 }
