@@ -221,24 +221,24 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
       get(_target, prop) {
         const pipeline = state.commercialPipeline;
         if (!pipeline) return undefined;
-        const val = (pipeline as any)[prop];
-        return typeof val === 'function' ? val.bind(pipeline) : val;
+        const val = Reflect.get(pipeline, prop);
+        return typeof val === 'function' ? (val as (...args: unknown[]) => unknown).bind(pipeline) : val;
       },
     }),
     customerSuccess: new Proxy({} as CustomerSuccessEngine, {
       get(_target, prop) {
         const cs = state.customerSuccess;
         if (!cs) return undefined;
-        const val = (cs as any)[prop];
-        return typeof val === 'function' ? val.bind(cs) : val;
+        const val = Reflect.get(cs, prop);
+        return typeof val === 'function' ? (val as (...args: unknown[]) => unknown).bind(cs) : val;
       },
     }),
     opportunityPersistence: new Proxy({} as OpportunityPersistence, {
       get(_target, prop) {
         const store = state.opportunityReader;
         if (!store) return undefined;
-        const val = (store as any)[prop];
-        return typeof val === 'function' ? val.bind(store) : val;
+        const val = Reflect.get(store, prop);
+        return typeof val === 'function' ? (val as (...args: unknown[]) => unknown).bind(store) : val;
       },
     }),
     projects: {

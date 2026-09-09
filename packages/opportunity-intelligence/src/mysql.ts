@@ -1,5 +1,7 @@
 import { createMySqlExecutor } from '@umer/db';
 import { MySqlOpportunityPersistence, type OpportunityPersistence } from './persistence.js';
+import { MySqlCommercialStore } from './commercial-store-mysql.js';
+import type { CommercialStore } from './commercial-store.js';
 
 /**
  * Composition boundary for the production Revenue OS persistence adapter.
@@ -7,6 +9,12 @@ import { MySqlOpportunityPersistence, type OpportunityPersistence } from './pers
  */
 export function createMySqlOpportunityPersistence(): OpportunityPersistence {
   return new MySqlOpportunityPersistence({
+    db: createMySqlExecutor(),
+  });
+}
+
+export function createMySqlCommercialStore(): CommercialStore {
+  return new MySqlCommercialStore({
     db: createMySqlExecutor(),
   });
 }

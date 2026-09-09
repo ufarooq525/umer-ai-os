@@ -190,7 +190,7 @@ describe('Deployment & Operations Routes (M7)', () => {
       },
     });
     state.deploymentEngine = new DeploymentEngine(); // unconfigured, missing rollback runner
-    (state.deploymentEngine as any).deploymentsById.set(deployment.deploymentId, deployment);
+    (state.deploymentEngine as unknown as { deploymentsById: Map<string, unknown> }).deploymentsById.set(deployment.deploymentId, deployment);
     const { status, json } = await request(server, 'POST', '/v1/projects/proj-test/rollback', {
       deploymentId: deployment.deploymentId,
       reason: 'Missing runner test',
