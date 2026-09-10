@@ -40,13 +40,35 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * cmd.exe (Windows' `shell: true` interpreter below) cannot resolve a
+ * forward-slash relative path as the command to run — `'.' is not
+ * recognized...` for `./vendor/bin/phpunit`, and `'vendor' is not
+ * recognized...` for `vendor/bin/phpunit` (no leading `./`) — even though
+ * the identical command runs fine under bash/sh, where both forms work.
+ * It only resolves once the executable token uses backslashes
+ * (`vendor\bin\phpunit`). Rewrite only the leading executable token (never
+ * arguments/filters, which may legitimately contain `/`) so allowlisting/
+ * evidence/reports still show the familiar `./vendor/bin/phpunit` form the
+ * command was resolved as.
+ */
+function toSpawnableCommand(command: string): string {
+  if (process.platform !== 'win32') return command;
+  const spaceIdx = command.indexOf(' ');
+  const head = spaceIdx === -1 ? command : command.slice(0, spaceIdx);
+  const rest = spaceIdx === -1 ? '' : command.slice(spaceIdx);
+  if (!head.includes('/')) return command;
+  const rewrittenHead = head.replace(/^\.\//, '').replace(/\//g, '\\');
+  return rewrittenHead + rest;
+}
+
 function runCommand(
   command: string,
   cwd: string,
   timeoutMs: number,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(command, {
+    const child = spawn(toSpawnableCommand(command), {
       cwd,
       shell: true,
       windowsHide: true,

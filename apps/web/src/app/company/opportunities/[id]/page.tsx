@@ -13,9 +13,17 @@ export default async function OpportunityDetailPage({ params }: { params: Promis
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      <Link href={`/company/opportunities?open=${id}`} style={{ fontSize: 12, color: colors.muted, textDecoration: 'none' }}>
-        ← Back to list (dialog)
-      </Link>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        <Link href={`/company/opportunities?open=${id}`} style={{ fontSize: 12, color: colors.muted, textDecoration: 'none' }}>
+          ← Back to list (dialog)
+        </Link>
+        <Link
+          href={`/company/graph?q=${encodeURIComponent(model.opportunity.title)}`}
+          style={{ fontSize: 12, color: colors.accent, textDecoration: 'none' }}
+        >
+          ⬡ View in Company Graph
+        </Link>
+      </div>
       <OpportunityDetailBody model={model} />
     </div>
   );

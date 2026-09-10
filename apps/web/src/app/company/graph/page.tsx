@@ -42,10 +42,15 @@ async function fetchInitialGraph(): Promise<CompanyGraphData> {
   }
 }
 
-export default async function CompanyGraphPage() {
+export default async function CompanyGraphPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const initialGraph = await fetchInitialGraph();
   const nodeCount = initialGraph.nodes.length;
   const edgeCount = initialGraph.edges.length;
+  const { q } = await searchParams;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', gap: 0, minHeight: 0 }}>
@@ -94,7 +99,7 @@ export default async function CompanyGraphPage() {
       {/* Graph canvas area — fills remaining height */}
       <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <Suspense fallback={<GraphSkeleton />}>
-          <CompanyGraphClient initialGraph={initialGraph} liveMode />
+          <CompanyGraphClient initialGraph={initialGraph} liveMode initialSearch={q} />
         </Suspense>
       </div>
     </div>

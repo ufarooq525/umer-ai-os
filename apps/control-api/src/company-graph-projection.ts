@@ -99,8 +99,13 @@ export type GraphFilterOptions = {
   projectId?: string;
   opportunityId?: string;
   agentId?: string;
+  customerId?: string;
+  /** Exact match against a node's real status field. */
+  status?: string;
   search?: string;
   activeOnly?: boolean;
+  /** When true, only nodes in a real stuck/blocked status survive. */
+  blockedOnly?: boolean;
   limit?: number;
 };
 
@@ -117,6 +122,15 @@ const TERMINAL_STATUSES = new Set([
 function isActive(status: string | undefined): boolean {
   if (!status) return true;
   return !TERMINAL_STATUSES.has(status);
+}
+
+/** Real stuck/blocked statuses actually used across domain stores in this codebase. */
+const BLOCKED_STATUSES = new Set([
+  'Blocked', 'blocked', 'Failed', 'failed', 'AwaitingReview', 'awaiting_review',
+]);
+
+function isBlocked(status: string | undefined): boolean {
+  return !!status && BLOCKED_STATUSES.has(status);
 }
 
 function edgeId(source: string, target: string, type: GraphEdgeType): string {
@@ -146,8 +160,11 @@ export async function buildCompanyGraph(
     projectId,
     opportunityId,
     agentId,
+    customerId,
+    status: statusFilter,
     search,
     activeOnly = false,
+    blockedOnly = false,
     limit = 200,
   } = options;
 
@@ -160,6 +177,8 @@ export async function buildCompanyGraph(
     if (nodeIds.has(node.id)) return; // Deduplicate
     if (nodeTypes && !nodeTypes.includes(node.type)) return;
     if (activeOnly && !isActive(node.status)) return;
+    if (blockedOnly && !isBlocked(node.status)) return;
+    if (statusFilter && node.status !== statusFilter) return;
     nodeIds.add(node.id);
     nodes.push(node);
   }
@@ -661,7 +680,8 @@ export async function buildCompanyGraph(
   // -------------------------------------------------------------------------
   // 11. Customers + Learnings
   // -------------------------------------------------------------------------
-  const customers = (await state.customerSuccess?.listCustomers()) ?? [];
+  const allCustomers = (await state.customerSuccess?.listCustomers()) ?? [];
+  const customers = customerId ? allCustomers.filter((c) => c.id === customerId) : allCustomers;
   for (const customer of customers) {
     const customerNodeId = `customer:${customer.id}`;
     addNode({
@@ -842,7 +862,10 @@ export async function buildCompanyGraph(
   const totalNodesBeforeLimit = nodes.length;
   let finalNodes = nodes;
   let finalEdges = edges;
-  const filtered = !!(nodeTypes ?? projectId ?? opportunityId ?? agentId ?? search ?? activeOnly);
+  const filtered =
+    !!(nodeTypes ?? projectId ?? opportunityId ?? agentId ?? customerId ?? statusFilter ?? search) ||
+    activeOnly ||
+    blockedOnly;
 
   if (search && search.trim().length > 0) {
     const searchQuery = search.trim();

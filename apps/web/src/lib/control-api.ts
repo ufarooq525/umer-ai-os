@@ -1038,8 +1038,11 @@ export type CompanyGraphParams = {
   projectId?: string;
   opportunityId?: string;
   agentId?: string;
+  customerId?: string;
+  status?: string;
   search?: string;
   activeOnly?: boolean;
+  blockedOnly?: boolean;
   limit?: number;
 };
 
@@ -1049,8 +1052,11 @@ export async function getCompanyGraph(params: CompanyGraphParams = {}): Promise<
   if (params.projectId) query.set('projectId', params.projectId);
   if (params.opportunityId) query.set('opportunityId', params.opportunityId);
   if (params.agentId) query.set('agentId', params.agentId);
+  if (params.customerId) query.set('customerId', params.customerId);
+  if (params.status) query.set('status', params.status);
   if (params.search) query.set('search', params.search);
-  if (params.activeOnly) query.set('activeOnly', '1');
+  if (params.activeOnly) query.set('active', '1');
+  if (params.blockedOnly) query.set('blocked', '1');
   if (params.limit) query.set('limit', String(params.limit));
   const qs = query.toString();
   return fetchJson<CompanyGraphData>(`/v1/company/graph${qs ? `?${qs}` : ''}`);

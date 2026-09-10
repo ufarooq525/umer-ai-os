@@ -16,9 +16,10 @@ import { CompanyIntelligenceGraph } from '@/components/os/CompanyIntelligenceGra
 type Props = {
   initialGraph: CompanyGraphData;
   liveMode?: boolean;
+  initialSearch?: string;
 };
 
-export function CompanyGraphClient({ initialGraph, liveMode = false }: Props) {
+export function CompanyGraphClient({ initialGraph, liveMode = false, initialSearch }: Props) {
   const refresh = useCallback(async (): Promise<CompanyGraphData> => {
     return getCompanyGraph({ limit: 200 });
   }, []);
@@ -28,6 +29,7 @@ export function CompanyGraphClient({ initialGraph, liveMode = false }: Props) {
       initialGraph={initialGraph}
       onRefresh={refresh}
       liveMode={liveMode}
+      initialSearch={initialSearch}
     />
   );
 }
