@@ -133,13 +133,13 @@ export function CeoCompanyOperatingConsole({ overview }: { overview: CompanyOver
 
       {/* 3. Operational Matrix: Active Agents & Work (Questions 4 & 5) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 16 }}>
-        <Card title="Working Specialists (Question 4 & 5: Who is working and on what?)">
+        <Card title={`Working Specialists (${agentsWorking.length}) — Question 4 & 5: Who is working and on what?`}>
           {agentsWorking.length === 0 ? (
             <p style={{ margin: 0, color: colors.muted, fontSize: 12.5, lineHeight: 1.6 }}>
               0 active agents currently executing. Specialists only report active status when a live Work Package is dispatched over NATS and being executed by an Agent Worker.
             </p>
           ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'grid', gap: 10, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
               {agentsWorking.map((ag) => {
                 const projLink = ag.currentProjectId ? projectsByAgent[ag.agentId] : undefined;
                 return (
@@ -193,7 +193,7 @@ export function CeoCompanyOperatingConsole({ overview }: { overview: CompanyOver
                   ✓ No work items are currently in a hard blocked state.
                 </div>
               ) : (
-                <div style={{ display: 'grid', gap: 6 }}>
+                <div style={{ display: 'grid', gap: 6, maxHeight: 240, overflowY: 'auto', paddingRight: 4 }}>
                   {blockedItems.map((b) => (
                     <div
                       key={`${b.type}-${b.id}`}
@@ -225,7 +225,7 @@ export function CeoCompanyOperatingConsole({ overview }: { overview: CompanyOver
                   ✓ No pending approvals require CEO intervention at this time.
                 </div>
               ) : (
-                <div style={{ display: 'grid', gap: 6 }}>
+                <div style={{ display: 'grid', gap: 6, maxHeight: 240, overflowY: 'auto', paddingRight: 4 }}>
                   {decisionsNeeded.map((d) => (
                     <div
                       key={d.id}
