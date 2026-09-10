@@ -14,9 +14,11 @@ import { createArtifactStack } from '@umer/artifacts';
 import {
   createMessageFabric,
   closeMessageFabric,
+  STREAMS,
   SUBJECTS,
   createCommandEnvelope,
   DeliverPolicy,
+  type MessageFabricClient,
 } from '@umer/message-fabric';
 import {
   createAgentRuntime,
@@ -74,10 +76,21 @@ function runCommand(command: string, args: string[], cwd: string): Promise<{ cod
 describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real PHPUnit)', () => {
   let isNatsAlive = false;
   let fixtureRoot = '';
+  // createMessageFabric() is a process-wide singleton (see
+  // packages/message-fabric/src/connection.ts): the FIRST call in this file
+  // wins and every later call just returns that same cached client, silently
+  // ignoring its own options — including `ensureInfrastructure`. So this
+  // beforeAll call must BE the real fabric (letting it actually ensure
+  // JetStream infrastructure), not a throwaway `ensureInfrastructure: false`
+  // health check followed by a second call that assumes it can still create
+  // streams. Fixed here after this exact assumption caused "stream not
+  // found" against a genuinely fresh NATS instance with no pre-existing
+  // streams (a persistent dev NATS container masked this before).
+  let fabric: MessageFabricClient | undefined;
 
   beforeAll(async () => {
     try {
-      await createMessageFabric({ servers: 'nats://localhost:4222', ensureInfrastructure: false });
+      fabric = await createMessageFabric({ servers: 'nats://localhost:4222', producer: 'eng-smoke-test-fabric' });
       isNatsAlive = true;
     } catch {
       isNatsAlive = false;
@@ -98,7 +111,7 @@ describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real P
   it.skipIf(process.env.CI === 'true')(
     'delivers a real feature change through NATS -> Agent Worker -> isolated staging -> real PHPUnit -> sealed artifact, leaving the source fixture untouched pending gate approval',
     async () => {
-      if (!isNatsAlive) {
+      if (!isNatsAlive || !fabric) {
         console.warn('Skipping live engineering delivery test: NATS not responsive');
         return;
       }
@@ -165,11 +178,6 @@ describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real P
       //    (deterministic) engineering handler — same shape as
       //    live-runtime-smoke.test.ts's LLM path, minus the `llm` option
       //    (eng.app-delivery never reaches AgentRuntime's LLM branch).
-      const testFabric = await createMessageFabric({
-        servers: 'nats://localhost:4222',
-        producer: 'eng-smoke-test-fabric',
-      });
-
       const specPath = join(repoRoot, 'specialists', 'engineering', 'application-delivery.md');
       const loadedSpec = await loadSpecFromFile(specPath);
       const registry = new InMemoryRegistryAdapter();
@@ -177,8 +185,9 @@ describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real P
 
       const { engine: artifactEngine, store: artifactStore } = createArtifactStack();
       const runStore = new InMemoryAgentRunReadModelStore();
-      const sub = await subscribeAgentRunReadModel(testFabric, runStore, {
-        durable: `eng-smoke-run-sub-${Date.now()}`,
+      const runSubDurable = `eng-smoke-run-sub-${Date.now()}`;
+      const sub = await subscribeAgentRunReadModel(fabric, runStore, {
+        durable: runSubDurable,
       });
 
       const workerServiceName = `eng-smoke-worker-${Date.now()}`;
@@ -186,10 +195,10 @@ describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real P
         runtime: createAgentRuntime({
           resolveMandate: async (id) =>
             id === loadedSpec.binding.specialistId ? { mandate: loadedSpec.mandate, binding: loadedSpec.binding } : undefined,
-          events: createMessageFabricAgentEventPublisher(testFabric, workerServiceName),
+          events: createMessageFabricAgentEventPublisher(fabric, workerServiceName),
           codeProducer,
         }),
-        fabric: testFabric,
+        fabric,
         producer: workerServiceName,
         durablePrefix: workerServiceName,
         artifactEngine,
@@ -240,7 +249,7 @@ describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real P
         payload: { workPackage, projectId: 'proj-eng-smoke-fixture' },
       });
 
-      await testFabric.publishCommand(SUBJECTS.CMD_AGENT_DISPATCH, dispatchCmd);
+      await fabric.publishCommand(SUBJECTS.CMD_AGENT_DISPATCH, dispatchCmd);
 
       // 4. Wait for the real sealed artifact.
       let sealedArtifact: any = null;
@@ -258,6 +267,8 @@ describe('Live Engineering Delivery Smoke Test (NATS + isolated staging + real P
 
       await agentWorker.stop();
       await sub.stop();
+      await fabric.jsm.consumers.delete(STREAMS.COMMANDS, `${workerServiceName}-dispatch`).catch(() => {});
+      await fabric.jsm.consumers.delete(STREAMS.EVENTS, runSubDurable).catch(() => {});
 
       // 5. Real evidence assertions — a real diff, real PHPUnit execution, real seal.
       expect(sealedArtifact, 'A Code artifact should have been sealed by the live delivery run').toBeDefined();
