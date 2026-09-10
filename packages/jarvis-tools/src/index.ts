@@ -1,6 +1,8 @@
 import type { JarvisTool } from '@umer/jarvis-core';
 import { createJarvisMemory, type JarvisMemory } from '@umer/jarvis-memory';
 
+export { authorizeJarvisTool, createAuthorizedJarvisTools, type AuthorizedJarvisToolsOptions } from './authorization.js';
+
 export type JarvisControlToolsOptions = {
   controlApiBaseUrl?: string;
   fetchImpl?: typeof fetch;
@@ -206,13 +208,17 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
         requestJson(baseUrl, `/v1/opportunities?limit=50`, { method: 'GET' }, fetchImpl),
       ]);
       const events: Array<Record<string, unknown>> = [];
-      const records = Array.isArray(objectInput(audit).records) ? objectInput(audit).records : [];
+      const auditObj = objectInput(audit);
+      const runsObj = objectInput(runs);
+      const tasksObj = objectInput(tasks);
+      const opportunitiesObj = objectInput(opportunities);
+      const records = Array.isArray(auditObj.records) ? auditObj.records : [];
       for (const record of records) if (withinWindow(record, since)) events.push({ kind: 'audit', timestamp: objectInput(record).occurredAt ?? objectInput(record).createdAt ?? objectInput(record).timestamp, data: record });
-      const runItems = Array.isArray(objectInput(runs).agentRuns) ? objectInput(runs).agentRuns : [];
+      const runItems = Array.isArray(runsObj.agentRuns) ? runsObj.agentRuns : [];
       for (const run of runItems) if (withinWindow(run, since)) events.push({ kind: 'agent_run', timestamp: objectInput(run).updatedAt ?? objectInput(run).completedAt ?? objectInput(run).startedAt, data: run });
-      const taskItems = Array.isArray(objectInput(tasks).tasks) ? objectInput(tasks).tasks : [];
+      const taskItems = Array.isArray(tasksObj.tasks) ? tasksObj.tasks : [];
       for (const task of taskItems) if (withinWindow(task, since)) events.push({ kind: 'task', timestamp: objectInput(task).updatedAt ?? objectInput(task).createdAt, data: task });
-      const opportunityItems = Array.isArray(objectInput(opportunities).opportunities) ? objectInput(opportunities).opportunities : [];
+      const opportunityItems = Array.isArray(opportunitiesObj.opportunities) ? opportunitiesObj.opportunities : [];
       for (const opportunity of opportunityItems) if (withinWindow(opportunity, since)) events.push({ kind: 'opportunity', timestamp: objectInput(opportunity).updatedAt ?? objectInput(opportunity).createdAt, data: opportunity });
       events.sort((a, b) => isoTime(b.timestamp) - isoTime(a.timestamp));
       return { generatedAt: new Date().toISOString(), since: new Date(since).toISOString(), hours, count: Math.min(events.length, limit), timeline: events.slice(0, limit), sources: ['audit', 'agent-runs', 'tasks', 'opportunities'] };
@@ -297,15 +303,21 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       ]);
 
       const d = objectInput(dashboard);
+      const agentsObj = objectInput(agents);
+      const tasksObj = objectInput(tasks);
+      const runsObj = objectInput(runs);
+      const artifactsObj = objectInput(artifacts);
+      const opportunitiesObj = objectInput(opportunities);
+      const auditObj = objectInput(audit);
       const collections = {
-        agents: Array.isArray(objectInput(agents).agents) ? objectInput(agents).agents : [],
+        agents: Array.isArray(agentsObj.agents) ? agentsObj.agents : [],
         projects: Array.isArray(d.projects) ? d.projects : Array.isArray(d.workProjects) ? d.workProjects : [],
-        tasks: Array.isArray(objectInput(tasks).tasks) ? objectInput(tasks).tasks : [],
+        tasks: Array.isArray(tasksObj.tasks) ? tasksObj.tasks : [],
         workPackages: Array.isArray(d.workPackages) ? d.workPackages : [],
-        runs: Array.isArray(objectInput(runs).agentRuns) ? objectInput(runs).agentRuns : [],
-        artifacts: Array.isArray(objectInput(artifacts).artifacts) ? objectInput(artifacts).artifacts : [],
-        opportunities: Array.isArray(objectInput(opportunities).opportunities) ? objectInput(opportunities).opportunities : [],
-        audit: Array.isArray(objectInput(audit).records) ? objectInput(audit).records : [],
+        runs: Array.isArray(runsObj.agentRuns) ? runsObj.agentRuns : [],
+        artifacts: Array.isArray(artifactsObj.artifacts) ? artifactsObj.artifacts : [],
+        opportunities: Array.isArray(opportunitiesObj.opportunities) ? opportunitiesObj.opportunities : [],
+        audit: Array.isArray(auditObj.records) ? auditObj.records : [],
       };
 
       const filtered = Object.fromEntries(Object.entries(collections).map(([kind, records]) => [kind, records.filter((record) => matchesFocus(record, focus)).slice(0, limit)]));

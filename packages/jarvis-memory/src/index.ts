@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { MemoryKind } from '@umer/contracts';
+import type { MemoryId, MemoryKind } from '@umer/contracts';
 import { createMySqlClient, createMySqlExecutor, migrate } from '@umer/db';
 import { createMemoryStack, createPersistentMemoryService, MySqlMemoryStore, MySqlVectorStore, type MemoryAccessPrincipal, type MemoryAccessService, type RetrievalBundle } from '@umer/memory-access';
 
@@ -21,8 +21,8 @@ export function createJarvisMemory(options: JarvisMemoryOptions = {}): JarvisMem
     async retrieve(query, retrievalOptions = {}) { return service.retrieve({ query, limit: Math.min(Math.max(retrievalOptions.limit ?? 5, 1), 10), memoryKinds: retrievalOptions.memoryKinds }, principal, `jarvis:memory:${principal.principalId}`); },
     async rememberTurn(sessionId, userMessage, assistantMessage, correlationId) {
       if (!principal.grantedScopes.includes('write') && !principal.grantedScopes.includes('read_write')) return;
-      const memoryId = randomUUID();
-      await service.writeback({ memory: { kind: 'memory', memoryId, memoryKind: 'WorkingNote', scope: 'read_write', title: `JARVIS conversation ${sessionId}`, contentRef: `jarvis://sessions/${sessionId}/memories/${memoryId}`, tags: ['jarvis', 'conversation'], retentionClass: 'durable' }, content: `User: ${userMessage}\nJARVIS: ${assistantMessage}`, principal }, correlationId);
+      const memoryId = randomUUID() as MemoryId;
+      await service.writeback({ memory: { kind: 'memory', memoryId, memoryKind: 'WorkingNote', scope: 'read_write', title: `JARVIS conversation ${sessionId}`, contentRef: `jarvis://sessions/${sessionId}/memories/${memoryId}`, tags: ['jarvis', 'conversation'], retentionClass: 'durable', metadata: { labels: {}, annotations: {} } }, content: `User: ${userMessage}\nJARVIS: ${assistantMessage}`, principal }, correlationId);
     },
     async delete(memoryId, correlationId) { return service.delete(memoryId, principal, correlationId); },
   };

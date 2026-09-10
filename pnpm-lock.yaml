@@ -244,6 +244,9 @@ importers:
       '@umer/jarvis-core':
         specifier: workspace:*
         version: link:../../packages/jarvis-core
+      '@umer/jarvis-memory':
+        specifier: workspace:*
+        version: link:../../packages/jarvis-memory
       '@umer/jarvis-tools':
         specifier: workspace:*
         version: link:../../packages/jarvis-tools

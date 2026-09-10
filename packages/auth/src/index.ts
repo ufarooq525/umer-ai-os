@@ -41,7 +41,7 @@ export class AuthenticationError extends Error {
 
 function bearerToken(header: string | undefined): string | null {
   if (!header) return null;
-  const match = /^Bearer\\s+(.+)$/i.exec(header.trim());
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1]?.trim() || null;
 }
 

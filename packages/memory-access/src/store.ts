@@ -58,6 +58,7 @@ function jsonValue(value: unknown): unknown {
 function toContract(row: MemoryRow): MemoryContract {
   return {
     kind: 'memory',
+    id: row.memory_id as MemoryContract['id'],
     schemaVersion: row.schema_version as MemoryContract['schemaVersion'],
     memoryId: row.memory_id as MemoryContract['memoryId'],
     memoryKind: row.memory_kind as MemoryContract['memoryKind'],
@@ -68,6 +69,7 @@ function toContract(row: MemoryRow): MemoryContract {
     embeddingRef: row.embedding_ref ?? undefined,
     tags: (jsonValue(row.tags_json) as string[] | undefined) ?? [],
     retentionClass: row.retention_class as MemoryContract['retentionClass'],
+    metadata: { labels: {}, annotations: {} },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

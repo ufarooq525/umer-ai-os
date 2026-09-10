@@ -13,6 +13,7 @@
     "@umer/auth": "workspace:*",
     "@umer/config": "workspace:*",
     "@umer/jarvis-core": "workspace:*",
+    "@umer/jarvis-memory": "workspace:*",
     "@umer/jarvis-tools": "workspace:*",
     "@umer/model-routing": "workspace:*",
     "@umer/trust": "workspace:*"
