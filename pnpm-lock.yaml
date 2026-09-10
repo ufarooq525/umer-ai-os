@@ -241,6 +241,9 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@umer/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@umer/jarvis-core':
         specifier: workspace:*
         version: link:../../packages/jarvis-core
@@ -430,6 +433,9 @@ importers:
       '@umer/config':
         specifier: workspace:*
         version: link:../config
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
     devDependencies:
       typescript:
         specifier: ^5.7.2
@@ -2433,6 +2439,9 @@ packages:
 
   jackspeak@3.4.3:
     resolution: {integrity: sha512-OGlZQpz2yfahA/Rd1Y8Cd9SIEsqvXkLVoSw/cgwhnhFMDbsQFeZYoJJ7bIZBS9BcamUW96asq/npPWugM+RQBw==}
+
+  jose@5.10.0:
+    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
 
   js-yaml@4.3.0:
     resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
@@ -4535,6 +4544,8 @@ snapshots:
       '@isaacs/cliui': 8.0.2
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
+
+  jose@5.10.0: {}
 
   js-yaml@4.3.0:
     dependencies:

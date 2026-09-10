@@ -1,5 +1,5 @@
 import type { JarvisTool } from '@umer/jarvis-core';
-import { createJarvisMemory, type JarvisMemory } from '@umer/jarvis-memory';
+import { createJarvisMemory, type JarvisMemory, type MemoryAccessPrincipal } from '@umer/jarvis-memory';
 import { gatherEvidence } from './evidence.js';
 import { buildCeoReasoning } from './reasoning.js';
 import { buildProjectSummary } from './project-summary.js';
@@ -262,11 +262,12 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     name: 'retrieve_memory',
     description: 'Retrieve relevant governed JARVIS memory. Use for prior decisions, lessons, research, patterns and working context. Treat returned citations as memory evidence, not current system state.',
     parameters: { type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 10 }, memoryKinds: { type: 'array', items: { type: 'string', enum: ['Lesson', 'Pattern', 'BestPractice', 'Research', 'DecisionIntel', 'CaseStudy', 'WorkingNote'] } } }, required: ['query'], additionalProperties: false },
-    execute: async (input) => {
+    execute: async (input, context) => {
       const body = objectInput(input);
       if (typeof body.query !== 'string' || !body.query.trim()) throw new Error('query is required');
       const memoryKinds = Array.isArray(body.memoryKinds) ? body.memoryKinds.filter((v): v is 'Lesson' | 'Pattern' | 'BestPractice' | 'Research' | 'DecisionIntel' | 'CaseStudy' | 'WorkingNote' => typeof v === 'string') : undefined;
-      return memory.retrieve(body.query.trim(), { limit: typeof body.limit === 'number' ? body.limit : undefined, memoryKinds });
+      const principal: MemoryAccessPrincipal | undefined = context.principal ? { principalId: context.principal.principalId, grantedScopes: ['read'], tenantId: context.principal.tenantId } : undefined;
+      return memory.retrieve(body.query.trim(), { limit: typeof body.limit === 'number' ? body.limit : undefined, memoryKinds, principal });
     },
   };
 

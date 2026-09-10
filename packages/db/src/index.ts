@@ -21,6 +21,8 @@ import { REQUIREMENTS_MIGRATIONS } from './requirements-migration.js';
 import { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
 import { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
 import { JARVIS_MEMORY_MIGRATIONS } from './jarvis-memory-migration.js';
+import { TRUST_GRANTS_MIGRATIONS } from './trust-grants-migration.js';
+import { JARVIS_SESSION_HISTORY_MIGRATIONS } from './jarvis-session-history-migration.js';
 
 export { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
 export { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
@@ -45,6 +47,8 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...COMMERCIAL_PIPELINE_MIGRATIONS,
   ...CUSTOMER_SUCCESS_MIGRATIONS,
   ...JARVIS_MEMORY_MIGRATIONS,
+  ...TRUST_GRANTS_MIGRATIONS,
+  ...JARVIS_SESSION_HISTORY_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;

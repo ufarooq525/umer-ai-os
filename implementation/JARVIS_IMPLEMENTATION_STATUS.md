@@ -1,6 +1,6 @@
 # JARVIS Implementation Status
 
-Branch: `feature/jarvis-ai-assistant`
+Branch: `feature/jarvis-ai-assistant` — merged to `main` via PR #2. Reconciliation with `main`, full CI/typecheck/lint/test/build verification, and removal of the temporary lockfile-sync workflow are complete; work below Phase 7 continues directly on `main`.
 
 ## Implemented
 
@@ -78,13 +78,19 @@ Branch: `feature/jarvis-ai-assistant`
 - Added deterministic tests: known failure chain, missing relationship, no fabricated root cause, explicit vs. inferred business impact, recommendation/tool mapping, no automatic execution, suspended/unregistered agent, insufficient authority, missing approval/acceptance criteria, and correlation ID preservation.
 - Added `ceo_project_summary` (`project-summary.ts`), a project-scoped summary over the same evidence: current state, active agents, active tasks, active Work Packages, failed runs, pending gates, recent artifacts, opportunities, blockers, business impact and recommended next action — each populated only where matching evidence exists; an unknown project returns no summary rather than an empty-but-shaped one.
 
+### Phase 9 — Production identity provider and durable authorization grants
+- Added `createOidcSessionResolver` (`packages/auth/src/oidc.ts`): a standards-based OIDC/JWT + JWKS `SessionResolver` that works with any real OIDC-compliant identity provider (Auth0, Okta, Azure AD/Entra ID, Google Identity, Keycloak, ...) without hardcoding a vendor. Verifies signature, issuer, audience and expiry against the IdP's JWKS; every verified token maps to its own principal (and tenant, if the IdP issues one) from its claims — this is what makes multiple real users/tenants distinguishable, unlike the single-operator static-token resolver. Fails closed (returns no principal, never a guessed/partial one) on any verification failure. Configured via `JARVIS_OIDC_ISSUER`, `JARVIS_OIDC_AUDIENCE`, and optionally `JARVIS_OIDC_JWKS_URI`, `JARVIS_OIDC_PRINCIPAL_CLAIM` (default `sub`), `JARVIS_OIDC_TENANT_CLAIM`, `JARVIS_OIDC_KIND_CLAIM`; takes priority over the static-token resolver when configured, which remains available for controlled single-operator deployments.
+- Added `MySqlGrantStore` (`packages/trust/src/mysql-store.ts`) and a `trust_grants` migration. `apps/jarvis-api` now sources Trust grants from this durable store instead of re-asserting them from `JARVIS_TRUST_ACTIONS` on every restart: the env var only seeds grants the first time the configured principal has none, so grants administered directly against the store afterward are not overwritten on the next restart. Falls back to `InMemoryGrantStore` when running without durable persistence (`JARVIS_MEMORY_PERSISTENCE` != `mysql`).
+- Fixed tenant propagation into Memory Access: `rememberTurn`/`retrieve`/`delete` on `JarvisMemory` now accept an optional per-call principal that overrides the principal bound at construction. `apps/jarvis-api` passes the actual authenticated session's principal (with its real tenantId) on every request instead of the single hardcoded startup principal that every prior request silently shared — durable memory is now genuinely tenant-isolated per authenticated caller, enforced by Memory Access's existing scope guard.
+- Added durable JARVIS conversation history: `MySqlSessionHistoryStore` (`apps/jarvis-api/src/session-history-store.ts`) backed by a new `jarvis_session_turns` migration, replacing the anonymous in-memory session `Map` that lost every conversation on restart. Falls back to `InMemorySessionHistoryStore` (same bounded-history behavior) when running without durable persistence.
+- All three durable stores share the one MySQL pool/executor `initializePersistentJarvisMemory` already established, gated on the same `JARVIS_MEMORY_PERSISTENCE=mysql` toggle as durable memory, so there is exactly one "durable persistence" mode for the whole app rather than several independent env vars.
+- Added tests: `oidc.test.ts` (valid claims mapping, custom claim names, wrong audience/issuer/signature, expired token, missing principal claim, garbage token — all fail closed), `mysql-store.test.ts` for grants, `session-history-store.test.ts` for both history store implementations, and `jarvis-memory/index.test.ts` proving per-call tenant isolation on write, retrieve and delete.
+
 ## Remaining / intentionally gated
 
-### Production identity provider and durable authorization grants
-- Connect `SessionResolver` to the organization's real identity/session provider.
-- Source Trust grants from the authoritative Trust/grant store instead of startup environment grants.
-- Propagate authenticated tenant identity into Memory Access and any tenant-scoped control-plane adapters.
-- Replace anonymous in-memory conversation history with a durable session/read model appropriate for production.
+### Further identity work
+- Wire real per-tenant Trust grant administration (currently: the durable store exists and is authoritative, but provisioning grants for a newly-authenticated OIDC principal beyond the one bootstrap principal is a direct write to the store, not yet an admin tool/UI).
+- Replace the bounded-history read model with a proper paginated conversation view if/when conversations need to exceed the current MAX_HISTORY window.
 
 ### Further CEO reasoning
 - Add budget/quota and system-health attention policies where authoritative read models exist.
@@ -97,11 +103,6 @@ Branch: `feature/jarvis-ai-assistant`
 ### Computer control
 - Real sandboxed browser/desktop runtime with allowlists and explicit approval gates for destructive, financial, account-changing or irreversible operations.
 - Screenshot/visual-state evidence and action audit trail.
-
-### Final integration
-- Reconcile the feature branch with the latest `main` safely before merge.
-- Complete CI/typecheck/lint/test/build verification on the final head.
-- Remove temporary lockfile synchronization scaffolding after the lockfile is synchronized.
 
 ## Verification note
 

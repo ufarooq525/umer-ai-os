@@ -2,9 +2,13 @@
  * @umer/auth — identity/session boundary used by human-facing services.
  *
  * This package deliberately does not implement a proprietary identity provider.
- * A production deployment supplies a SessionResolver; the included static-token
- * resolver is intended for controlled single-operator deployments and local use.
+ * A production deployment supplies a SessionResolver; the standards-based OIDC
+ * resolver (oidc.ts) connects to any real OIDC-compliant identity provider,
+ * and the static-token resolver remains available for controlled
+ * single-operator deployments and local use.
  */
+
+import { createOidcSessionResolver } from './oidc.js';
 
 export const packageName = '@umer/auth' as const;
 
@@ -61,9 +65,16 @@ export function createJarvisAuth(options: JarvisAuthOptions = {}) {
     kind: 'human',
     ...(process.env.JARVIS_TENANT_ID ? { tenantId: process.env.JARVIS_TENANT_ID } : {}),
   };
-  const resolver = options.resolver ?? (process.env.JARVIS_BEARER_TOKEN
-    ? createStaticTokenResolver(process.env.JARVIS_BEARER_TOKEN, principal)
-    : undefined);
+  const resolver = options.resolver ?? (process.env.JARVIS_OIDC_ISSUER && process.env.JARVIS_OIDC_AUDIENCE
+    ? createOidcSessionResolver({
+        issuer: process.env.JARVIS_OIDC_ISSUER,
+        audience: process.env.JARVIS_OIDC_AUDIENCE,
+        jwksUri: process.env.JARVIS_OIDC_JWKS_URI,
+        principalIdClaim: process.env.JARVIS_OIDC_PRINCIPAL_CLAIM,
+        tenantClaim: process.env.JARVIS_OIDC_TENANT_CLAIM,
+        kindClaim: process.env.JARVIS_OIDC_KIND_CLAIM,
+      })
+    : (process.env.JARVIS_BEARER_TOKEN ? createStaticTokenResolver(process.env.JARVIS_BEARER_TOKEN, principal) : undefined));
   const developmentToken = options.developmentToken ?? process.env.JARVIS_DEV_TOKEN;
 
   return {
@@ -84,3 +95,5 @@ export function createJarvisAuth(options: JarvisAuthOptions = {}) {
     },
   };
 }
+
+export { createOidcSessionResolver, type OidcSessionResolverOptions } from './oidc.js';

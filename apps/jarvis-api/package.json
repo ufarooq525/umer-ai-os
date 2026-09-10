@@ -12,6 +12,7 @@
   "dependencies": {
     "@umer/auth": "workspace:*",
     "@umer/config": "workspace:*",
+    "@umer/db": "workspace:*",
     "@umer/jarvis-core": "workspace:*",
     "@umer/jarvis-memory": "workspace:*",
     "@umer/jarvis-tools": "workspace:*",

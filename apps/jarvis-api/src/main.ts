@@ -4,9 +4,11 @@ import { loadEnv } from '@umer/config';
 import { createJarvisAuth, AuthenticationError, type AuthenticatedPrincipal } from '@umer/auth';
 import { JarvisCore, type JarvisPrincipal } from '@umer/jarvis-core';
 import { createJarvisControlTools, createAuthorizedJarvisTools } from '@umer/jarvis-tools';
-import { initializePersistentJarvisMemory } from '@umer/jarvis-memory';
+import { initializePersistentJarvisMemory, type MemoryAccessPrincipal } from '@umer/jarvis-memory';
 import { createLLMProviderFromEnv } from '@umer/model-routing';
-import { TrustRuntime } from '@umer/trust';
+import { TrustRuntime, InMemoryGrantStore, MySqlGrantStore } from '@umer/trust';
+import { createMySqlClient, createMySqlExecutor } from '@umer/db';
+import { InMemorySessionHistoryStore, MySqlSessionHistoryStore, type SessionHistoryStore } from './session-history-store.js';
 
 const env = loadEnv();
 const port = Number(process.env.JARVIS_PORT ?? 3010);
@@ -16,6 +18,10 @@ const memoryMode = (process.env.JARVIS_MEMORY_PERSISTENCE ?? 'mysql').toLowerCas
 const memory = memoryMode === 'mysql'
   ? await initializePersistentJarvisMemory({ principal: { principalId: 'jarvis-ceo', grantedScopes: ['read_write'] } })
   : undefined;
+// Migrations for Trust grants and session history run as part of the same
+// migrate() call above; reuse the same singleton MySQL pool for both, so
+// durable Trust/session persistence is on exactly when durable memory is.
+const mysqlExecutor = memoryMode === 'mysql' ? createMySqlExecutor(createMySqlClient()) : undefined;
 
 const auth = createJarvisAuth();
 const configuredPrincipal: AuthenticatedPrincipal = {
@@ -23,26 +29,34 @@ const configuredPrincipal: AuthenticatedPrincipal = {
   kind: 'human',
   ...(process.env.JARVIS_TENANT_ID ? { tenantId: process.env.JARVIS_TENANT_ID } : {}),
 };
-const trust = new TrustRuntime();
+const trustStore = mysqlExecutor ? new MySqlGrantStore(mysqlExecutor) : new InMemoryGrantStore();
+const trust = new TrustRuntime({ store: trustStore });
 const configuredActions = (process.env.JARVIS_TRUST_ACTIONS ?? (auth.mode === 'development' ? 'read,execute' : 'read'))
   .split(',').map((value) => value.trim()).filter(Boolean);
-for (const action of configuredActions) {
-  await trust.registerGrant({
-    grantId: `jarvis-${configuredPrincipal.principalId}-${action}`,
-    principalId: configuredPrincipal.principalId,
-    action,
-    resourceType: action === 'execute' ? 'command' : 'jarvis',
-    effect: 'allow',
-    ...(configuredPrincipal.tenantId ? { tenantId: configuredPrincipal.tenantId } : {}),
-  });
+// Grants are now sourced from the durable Trust store, not re-asserted from
+// this env var on every restart: only seed them the first time this
+// principal has no grants at all. An operator who later revokes/edits
+// grants directly in the store is not overwritten by the next restart.
+const existingGrants = await trustStore.listForPrincipal(configuredPrincipal.principalId);
+if (existingGrants.length === 0) {
+  for (const action of configuredActions) {
+    await trust.registerGrant({
+      grantId: `jarvis-${configuredPrincipal.principalId}-${action}`,
+      principalId: configuredPrincipal.principalId,
+      action,
+      resourceType: action === 'execute' ? 'command' : 'jarvis',
+      effect: 'allow',
+      ...(configuredPrincipal.tenantId ? { tenantId: configuredPrincipal.tenantId } : {}),
+    });
+  }
 }
 
 const baseTools = createJarvisControlTools({ controlApiBaseUrl, memory });
 const tools = createAuthorizedJarvisTools(baseTools, { trust, principal: configuredPrincipal });
 const jarvis = new JarvisCore({ provider, tools, maxIterations: 12 });
 
-const sessions = new Map<string, Array<{ role: 'user' | 'assistant'; content: string }>>();
 const MAX_HISTORY = 20;
+const historyStore: SessionHistoryStore = mysqlExecutor ? new MySqlSessionHistoryStore(mysqlExecutor, MAX_HISTORY) : new InMemorySessionHistoryStore(MAX_HISTORY);
 const ATTENTION_POLL_MS = Math.max(Number(process.env.JARVIS_ATTENTION_POLL_MS ?? 15000), 5000);
 const attentionClients = new Set<ServerResponse>();
 let lastAttentionFingerprint = '';
@@ -141,7 +155,7 @@ const server = createServer(async (req, res) => {
     if (!message) return send(res, 400, { error: 'message_required' });
 
     const session = await authenticateRequest(req, sessionId);
-    const history = sessions.get(sessionId) ?? [];
+    const history = await historyStore.get(sessionId);
     const correlationId = randomUUID();
     const result = await jarvis.respond(sessionId, message, {
       history,
@@ -149,9 +163,10 @@ const server = createServer(async (req, res) => {
       principal: principalForJarvis(session.principal),
       authorize: (action, resourceType, resourceId) => trust.authorize({ principal: session.principal, action, resourceType, resourceId }, correlationId),
     });
-    sessions.set(sessionId, [...history, { role: 'user' as const, content: message }, { role: 'assistant' as const, content: result.assistantMessage }].slice(-MAX_HISTORY));
+    await historyStore.append(sessionId, [{ role: 'user', content: message }, { role: 'assistant', content: result.assistantMessage }]);
     if (memory) {
-      try { await memory.rememberTurn(sessionId, message, result.assistantMessage, correlationId); }
+      const memoryPrincipal: MemoryAccessPrincipal = { principalId: session.principal.principalId, grantedScopes: ['read_write'], tenantId: session.principal.tenantId };
+      try { await memory.rememberTurn(sessionId, message, result.assistantMessage, correlationId, memoryPrincipal); }
       catch (error) { console.warn('[jarvis-api] durable memory write failed; response remains successful', error); }
     }
     return send(res, 200, { ...result, correlationId, principalId: session.principal.principalId, memoryPersistence: memoryMode });

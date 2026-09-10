@@ -13,6 +13,7 @@ export type {
 } from './types.js';
 export { TrustError, type TrustErrorCode } from './errors.js';
 export { type GrantStore, InMemoryGrantStore } from './store.js';
+export { MySqlGrantStore, type TrustSqlExecutor } from './mysql-store.js';
 export { type TrustEventPublisher, createNoopTrustEventPublisher } from './events.js';
 export {
   TrustRuntime,
