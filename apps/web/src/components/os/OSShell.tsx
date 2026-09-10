@@ -1,41 +1,61 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { colors, fonts } from '@umer/ui';
 import { GridBackground } from './GridBackground';
 import { PageEnter } from './PageEnter';
 import { Sidebar } from './Sidebar';
+import { GlobalHeader } from './GlobalHeader';
+import { CommandPalette } from './CommandPalette';
 import { JarvisChat } from './JarvisChat';
 
 export function OSShell({ children }: { children: ReactNode }) {
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Global shortcut: Cmd/Ctrl + K
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <div style={{ color: colors.text, fontFamily: fonts.sans }}>
       <style>{`
         :root { color-scheme: dark; }
         * { box-sizing: border-box; }
-        html, body { background: #0b0d12; overflow-x: hidden; }
+        html, body { background: #090b10; overflow-x: hidden; margin: 0; padding: 0; }
         button, a { -webkit-tap-highlight-color: transparent; }
-        .os-main { position:relative; z-index:1; flex:1; min-width:0; padding:30px clamp(16px,3vw,42px) 72px; }
-        .os-content { width:100%; max-width:1400px; margin:0 auto; }
-        @media (max-width:900px) { .os-main { padding:78px 14px 48px; } }
-        @media (max-width:600px) { .os-main { padding:70px 12px 40px; } }
-        @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+        .os-layout { min-height: 100vh; display: flex; background: radial-gradient(1000px 550px at 10% -10%, rgba(232, 160, 84, 0.09), transparent 60%), radial-gradient(800px 500px at 95% 5%, rgba(98, 89, 255, 0.06), transparent 65%), linear-gradient(180deg, #0f121a 0%, #090b10 100%); }
+        .os-main-container { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; z-index: 1; }
+        .os-main { flex: 1; padding: 24px clamp(16px, 2.5vw, 36px) 64px; }
+        .os-content { width: 100%; max-width: 1480px; margin: 0 auto; }
+        @media (max-width: 900px) {
+          .os-main { padding: 18px 12px 48px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+        }
       `}</style>
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          background: `radial-gradient(900px 500px at 8% -8%, ${colors.accentSoft}, transparent 60%), radial-gradient(700px 500px at 92% 8%, rgba(98,89,255,.07), transparent 62%), linear-gradient(180deg, #12151d 0%, ${colors.bg} 48%, #0b0d12 100%)`,
-        }}
-      >
+      <div className="os-layout">
         <GridBackground />
         <Sidebar />
         <JarvisChat />
-        <main className="os-main">
-          <div className="os-content">
-            <PageEnter>{children}</PageEnter>
-          </div>
-        </main>
+        <CommandPalette open={commandPaletteOpen} onClose={() => setCommandPaletteOpen(false)} />
+
+        <div className="os-main-container">
+          <GlobalHeader onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
+          <main className="os-main">
+            <div className="os-content">
+              <PageEnter>{children}</PageEnter>
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );

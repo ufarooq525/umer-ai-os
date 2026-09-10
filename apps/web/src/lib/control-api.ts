@@ -1061,3 +1061,29 @@ export async function getCompanyGraph(params: CompanyGraphParams = {}): Promise<
   const qs = query.toString();
   return fetchJson<CompanyGraphData>(`/v1/company/graph${qs ? `?${qs}` : ''}`);
 }
+
+export type CustomerRecord = {
+  id: string;
+  prospectId?: string;
+  dealId?: string;
+  companyName: string;
+  status: 'onboarding' | 'active' | 'at_risk' | 'churned';
+  healthScore: number;
+  healthTier?: 'healthy' | 'neutral' | 'critical';
+  primaryContactId?: string;
+  activeProjectIds?: string[];
+  mrr?: number;
+  lifetimeValue?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getCustomers(): Promise<CustomerRecord[]> {
+  try {
+    const res = await fetchJson<{ customers: CustomerRecord[] }>('/v1/customers');
+    return res.customers;
+  } catch {
+    return [];
+  }
+}
+

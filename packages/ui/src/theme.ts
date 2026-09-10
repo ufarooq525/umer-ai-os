@@ -16,6 +16,8 @@ export const colors = {
   success: '#5dcea0',
   warning: '#e8b84a',
   danger: '#f07178',
+  info: '#60a5fa',
+  agent: '#a78bfa',
   focus: '#e8a054',
 } as const;
 

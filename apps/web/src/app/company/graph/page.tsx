@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { colors, fonts } from '@umer/ui';
 import { getCompanyGraph, type CompanyGraphData } from '@/lib/control-api';
 import { CompanyGraphClient } from './client';
+import { CompanySubNav } from '@/components/os/CompanySubNav';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,7 @@ async function fetchInitialGraph(): Promise<CompanyGraphData> {
 
 export default async function CompanyGraphPage({
   searchParams,
+
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
@@ -54,10 +56,15 @@ export default async function CompanyGraphPage({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', gap: 0, minHeight: 0 }}>
+      <div style={{ padding: '8px 20px 0' }}>
+        <CompanySubNav />
+      </div>
+
       {/* Page header */}
       <header style={{
-        padding: '16px clamp(16px, 2.5vw, 28px)',
+        padding: '12px clamp(16px, 2.5vw, 28px)',
         borderBottom: '1px solid rgba(255,255,255,.07)',
+
         background: 'radial-gradient(500px 180px at 100% 0%, rgba(118,91,255,.1), transparent 70%), rgba(255,255,255,.018)',
         flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
