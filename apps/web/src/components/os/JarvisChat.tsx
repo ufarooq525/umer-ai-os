@@ -1,12 +1,20 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { colors, fonts, radii } from '@umer/ui';
+import { voiceReducer, type VoiceState } from '@/lib/jarvis-voice/state-machine';
+import { JarvisSpeechRecognizer } from '@/lib/jarvis-voice/speech-recognition';
+import { createVoiceOutput, type JarvisVoiceOutput } from '@/lib/jarvis-voice/voice-output';
+import { SpokenTracker } from '@/lib/jarvis-voice/dedupe';
 
 type ToolCall = { name: string; arguments?: unknown };
-type Turn = { role: 'user' | 'assistant'; content: string; toolCalls?: ToolCall[] };
+type Turn = { id: string; role: 'user' | 'assistant'; content: string; toolCalls?: ToolCall[] };
 
 const SESSION_KEY = 'umer.jarvis.sessionId';
+
+function newId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+}
 
 function useNarrow(maxWidth = 720) {
   const [narrow, setNarrow] = useState(false);
@@ -37,29 +45,51 @@ function useViewportHeight() {
   return height;
 }
 
+function statusText(state: VoiceState, interimText: string, errorMessage: string | null): string {
+  switch (state) {
+    case 'listening':
+      return interimText ? `Listening… “${interimText}”` : 'Listening…';
+    case 'processing':
+      return 'JARVIS is thinking…';
+    case 'speaking':
+      return 'JARVIS is speaking…';
+    case 'error':
+      return errorMessage ?? 'Something went wrong.';
+    default:
+      return 'Ask about agents, work, opportunities, or why something failed. It reads the real control plane.';
+  }
+}
+
 export function JarvisChat() {
   const narrow = useNarrow();
   const viewportHeight = useViewportHeight();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+  const [voiceState, voiceDispatch] = useReducer(voiceReducer, 'idle' as VoiceState);
+  const [interimText, setInterimText] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [micSupported, setMicSupported] = useState(false);
+  const [ttsSupported, setTtsSupported] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const sessionIdRef = useRef<string | undefined>(undefined);
+  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const recognizerRef = useRef<JarvisSpeechRecognizer | null>(null);
+  const voiceOutputRef = useRef<JarvisVoiceOutput | null>(null);
+  const spokenTrackerRef = useRef(new SpokenTracker());
+  const pendingVoiceErrorRef = useRef(false);
 
   useEffect(() => {
     try {
       const stored = window.sessionStorage.getItem(SESSION_KEY);
-      if (stored) setSessionId(stored);
+      if (stored) sessionIdRef.current = stored;
     } catch {}
   }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [turns, open, busy]);
+  }, [turns, open, voiceState]);
 
   useEffect(() => {
     if (!open || !narrow) return;
@@ -74,64 +104,105 @@ export function JarvisChat() {
     if (open) fieldRef.current?.focus();
   }, [open]);
 
-  async function send(text: string) {
+  const send = useCallback(async (text: string) => {
     const content = text.trim();
-    if (!content || busy) return;
-    const next: Turn[] = [...turns, { role: 'user', content }];
-    setTurns(next);
+    if (!content) return;
+    setTurns((prev) => [...prev, { id: newId(), role: 'user', content }]);
     setInput('');
-    setBusy(true);
-    setError(null);
+    setErrorMessage(null);
     try {
       const response = await fetch('/api/jarvis/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ sessionId, message: content }),
+        body: JSON.stringify({ sessionId: sessionIdRef.current, message: content }),
       });
       const payload = (await response.json()) as {
         assistantMessage?: string;
         sessionId?: string;
         toolCalls?: ToolCall[];
+        correlationId?: string;
         error?: string;
       };
       if (!response.ok || !payload.assistantMessage) throw new Error(payload.error ?? 'No answer');
-      if (payload.sessionId && payload.sessionId !== sessionId) {
-        setSessionId(payload.sessionId);
+      if (payload.sessionId && payload.sessionId !== sessionIdRef.current) {
+        sessionIdRef.current = payload.sessionId;
         try {
           window.sessionStorage.setItem(SESSION_KEY, payload.sessionId);
         } catch {}
       }
-      setTurns([...next, { role: 'assistant', content: payload.assistantMessage, toolCalls: payload.toolCalls }]);
+      const assistantId = payload.correlationId ?? newId();
+      const assistantMessage = payload.assistantMessage;
+      setTurns((prev) => [...prev, { id: assistantId, role: 'assistant', content: assistantMessage, toolCalls: payload.toolCalls }]);
+
+      const output = voiceOutputRef.current;
+      const willSpeak = Boolean(output?.isSupported()) && spokenTrackerRef.current.shouldSpeak(assistantId);
+      voiceDispatch({ type: 'RESPONSE_READY', willSpeak });
+      if (willSpeak && output) {
+        spokenTrackerRef.current.markSpoken(assistantId);
+        output.speak(assistantMessage, () => voiceDispatch({ type: 'SPEECH_DONE' }));
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'JARVIS failed to respond');
-    } finally {
-      setBusy(false);
+      setErrorMessage(err instanceof Error ? err.message : 'JARVIS failed to respond');
+      voiceDispatch({ type: 'ERROR' });
     }
+  }, []);
+
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
+
+  useEffect(() => {
+    const recognizer = new JarvisSpeechRecognizer({
+      onStart: () => voiceDispatch({ type: 'START_LISTENING' }),
+      onInterim: (text) => setInterimText(text),
+      onStop: (finalTranscript) => {
+        setInterimText('');
+        const hadError = pendingVoiceErrorRef.current;
+        pendingVoiceErrorRef.current = false;
+        if (hadError) return; // stay in 'error' so the message is actually seen
+        if (!finalTranscript.trim()) {
+          voiceDispatch({ type: 'RESET' });
+          return;
+        }
+        voiceDispatch({ type: 'START_PROCESSING' });
+        void sendRef.current(finalTranscript);
+      },
+      onError: (_reason, message) => {
+        pendingVoiceErrorRef.current = true;
+        setInterimText('');
+        setErrorMessage(message);
+        voiceDispatch({ type: 'ERROR' });
+      },
+    });
+    recognizerRef.current = recognizer;
+    setMicSupported(recognizer.isSupported());
+
+    const output = createVoiceOutput(0.95);
+    voiceOutputRef.current = output;
+    setTtsSupported(output.isSupported());
+
+    return () => {
+      recognizer.abort();
+      output.stop();
+    };
+  }, []);
+
+  function handleMicClick() {
+    if (voiceState !== 'idle' && voiceState !== 'error') return;
+    setErrorMessage(null);
+    recognizerRef.current?.start();
   }
 
-  function speak() {
-    const Speech =
-      (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ??
-      (window as Window & { SpeechRecognition?: new () => SpeechRecognition }).SpeechRecognition;
-    if (!Speech) {
-      setError('This browser cannot take voice. Type instead.');
-      return;
-    }
-    const rec = new Speech();
-    rec.lang = 'en-US';
-    rec.interimResults = false;
-    rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
-    rec.onerror = () => {
-      setListening(false);
-      setError('Voice capture failed. Type instead.');
-    };
-    rec.onresult = (event: SpeechRecognitionEvent) => {
-      const said = event.results[0]?.[0]?.transcript ?? '';
-      if (said) void send(said);
-    };
-    rec.start();
+  function handleStopListening() {
+    recognizerRef.current?.stop();
   }
+
+  function handleStopSpeaking() {
+    voiceOutputRef.current?.stop();
+    voiceDispatch({ type: 'STOP_SPEAKING' });
+  }
+
+  const inputLocked = voiceState === 'listening' || voiceState === 'processing' || voiceState === 'speaking';
 
   const sheetStyle = narrow
     ? {
@@ -157,6 +228,15 @@ export function JarvisChat() {
 
   return (
     <>
+      <style>{`
+        @keyframes jarvis-pulse { 0%,100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.35); opacity: .45; } }
+        @keyframes jarvis-bar { 0%,100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+        .jarvis-mic-dot { animation: jarvis-pulse 1.1s ease-in-out infinite; }
+        .jarvis-bars span { display: inline-block; width: 3px; height: 12px; margin: 0 1px; border-radius: 2px; background: currentColor; animation: jarvis-bar .9s ease-in-out infinite; }
+        .jarvis-bars span:nth-child(2) { animation-delay: .15s; }
+        .jarvis-bars span:nth-child(3) { animation-delay: .3s; }
+      `}</style>
+
       {!open || !narrow ? (
         <button
           type="button"
@@ -215,9 +295,30 @@ export function JarvisChat() {
             }}
           >
             <div>
-              <strong style={{ fontSize: 15 }}>JARVIS</strong>
-              <div style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
-                Ask about agents, work, opportunities, or why something failed. It reads the real control plane.
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <strong style={{ fontSize: 15 }}>JARVIS</strong>
+                {voiceState === 'listening' ? (
+                  <span className="jarvis-mic-dot" aria-hidden style={{ width: 7, height: 7, borderRadius: 999, background: colors.danger }} />
+                ) : null}
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: voiceState === 'error' ? colors.danger : colors.muted,
+                  marginTop: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                {voiceState === 'speaking' ? (
+                  <span className="jarvis-bars" aria-hidden style={{ color: colors.accent }}>
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                ) : null}
+                <span>{statusText(voiceState, interimText, errorMessage)}</span>
               </div>
             </div>
             <button
@@ -257,8 +358,8 @@ export function JarvisChat() {
                 Try: “what needs my attention right now?” or “why is that work package stuck — run root cause analysis.”
               </p>
             ) : null}
-            {turns.map((turn, i) => (
-              <div key={`${turn.role}-${i}`} style={{ justifySelf: turn.role === 'user' ? 'end' : 'start', maxWidth: '92%' }}>
+            {turns.map((turn) => (
+              <div key={turn.id} style={{ justifySelf: turn.role === 'user' ? 'end' : 'start', maxWidth: '92%' }}>
                 <div
                   style={{
                     padding: '10px 12px',
@@ -294,10 +395,47 @@ export function JarvisChat() {
                 ) : null}
               </div>
             ))}
-            {busy ? <div style={{ fontSize: 12, color: colors.muted, fontFamily: fonts.mono }}>Thinking…</div> : null}
-            {error ? <div style={{ fontSize: 13, color: colors.danger, lineHeight: 1.45 }}>{error}</div> : null}
+            {voiceState === 'processing' ? (
+              <div style={{ fontSize: 12, color: colors.muted, fontFamily: fonts.mono }}>JARVIS is thinking…</div>
+            ) : null}
+            {voiceState === 'error' && errorMessage ? (
+              <div style={{ fontSize: 13, color: colors.danger, lineHeight: 1.45 }}>{errorMessage}</div>
+            ) : null}
+            {!micSupported ? (
+              <div style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
+                Voice input isn&apos;t supported by this browser. You can still type to JARVIS.
+              </div>
+            ) : null}
+            {!ttsSupported ? (
+              <div style={{ fontSize: 11.5, color: colors.muted, lineHeight: 1.5 }}>
+                Voice responses aren&apos;t supported by this browser. JARVIS will continue responding with text.
+              </div>
+            ) : null}
             <div ref={endRef} />
           </div>
+
+          {voiceState === 'speaking' ? (
+            <div style={{ padding: '0 12px 8px', flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={handleStopSpeaking}
+                style={{
+                  width: '100%',
+                  border: `1px solid ${colors.borderStrong}`,
+                  background: colors.surfaceRaised,
+                  color: colors.text,
+                  borderRadius: radii.sm,
+                  padding: '10px 12px',
+                  minHeight: 40,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                ⏹ Stop Speaking
+              </button>
+            </div>
+          ) : null}
 
           <form
             onSubmit={(e) => {
@@ -319,6 +457,7 @@ export function JarvisChat() {
               value={input}
               rows={2}
               enterKeyHint="send"
+              disabled={inputLocked}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -326,7 +465,7 @@ export function JarvisChat() {
                   void send(input);
                 }
               }}
-              placeholder="Ask JARVIS anything about the company…"
+              placeholder="Ask JARVIS anything…"
               style={{
                 flex: '1 1 180px',
                 minWidth: 0,
@@ -340,30 +479,57 @@ export function JarvisChat() {
                 fontFamily: fonts.sans,
                 lineHeight: 1.4,
                 resize: 'none',
+                opacity: inputLocked ? 0.6 : 1,
               }}
             />
             <div style={{ display: 'flex', gap: 8, flex: '0 0 auto' }}>
-              <button
-                type="button"
-                onClick={speak}
-                aria-label="Speak"
-                style={{
-                  border: `1px solid ${colors.border}`,
-                  background: listening ? colors.accentSoft : 'transparent',
-                  color: colors.text,
-                  borderRadius: radii.sm,
-                  padding: '0 14px',
-                  minHeight: 44,
-                  minWidth: 52,
-                  cursor: 'pointer',
-                  fontSize: 13,
-                }}
-              >
-                {listening ? 'Listening' : 'Mic'}
-              </button>
+              {micSupported ? (
+                voiceState === 'listening' ? (
+                  <button
+                    type="button"
+                    onClick={handleStopListening}
+                    aria-label="Stop recording"
+                    style={{
+                      border: `1px solid ${colors.danger}`,
+                      background: 'rgba(240,113,120,0.12)',
+                      color: colors.danger,
+                      borderRadius: radii.sm,
+                      padding: '0 14px',
+                      minHeight: 44,
+                      minWidth: 64,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleMicClick}
+                    disabled={voiceState === 'processing' || voiceState === 'speaking'}
+                    aria-label="Start voice input"
+                    style={{
+                      border: `1px solid ${colors.border}`,
+                      background: 'transparent',
+                      color: colors.text,
+                      borderRadius: radii.sm,
+                      padding: '0 14px',
+                      minHeight: 44,
+                      minWidth: 52,
+                      cursor: voiceState === 'processing' || voiceState === 'speaking' ? 'default' : 'pointer',
+                      opacity: voiceState === 'processing' || voiceState === 'speaking' ? 0.5 : 1,
+                      fontSize: 13,
+                    }}
+                  >
+                    Mic
+                  </button>
+                )
+              ) : null}
               <button
                 type="submit"
-                disabled={busy || !input.trim()}
+                disabled={inputLocked || !input.trim()}
                 style={{
                   border: 'none',
                   background: colors.accent,
@@ -373,8 +539,8 @@ export function JarvisChat() {
                   minHeight: 44,
                   fontWeight: 700,
                   fontSize: 13,
-                  cursor: busy || !input.trim() ? 'default' : 'pointer',
-                  opacity: busy || !input.trim() ? 0.5 : 1,
+                  cursor: inputLocked || !input.trim() ? 'default' : 'pointer',
+                  opacity: inputLocked || !input.trim() ? 0.5 : 1,
                 }}
               >
                 Send
@@ -386,17 +552,3 @@ export function JarvisChat() {
     </>
   );
 }
-
-type SpeechRecognition = {
-  lang: string;
-  interimResults: boolean;
-  start: () => void;
-  onstart: (() => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-};
-
-type SpeechRecognitionEvent = {
-  results: ArrayLike<ArrayLike<{ transcript: string }>>;
-};
