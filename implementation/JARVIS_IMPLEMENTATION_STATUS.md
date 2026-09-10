@@ -93,10 +93,17 @@ Branch: `feature/jarvis-ai-assistant` — merged to `main` via PR #2. Reconcilia
 - Replace the bounded-history read model with a proper paginated conversation view if/when conversations need to exceed the current MAX_HISTORY window.
 - No UI for grant administration yet — `/v1/admin/grants` is a plain authenticated JSON API; an operator console would sit on top of it.
 
+### Phase 10 — Durable specialist registry for governed delegation
+- Added a specialist-*type* lifecycle control axis, orthogonal to per-agent-instance control (`AgentControlPort`): `SuspendSpecialist`/`ActivateSpecialist` CEO commands (`packages/contracts/src/commands/index.ts`) halt new delegated work of a specialist type (e.g. `eng.app-delivery`) company-wide, regardless of which agent instance would have performed it.
+- Added `SpecialistControlPort` (`packages/control-plane/src/commands/ports.ts`) with `InMemorySpecialistControlStore` and `MySqlSpecialistControlStore` (new `specialist_control` migration). Sparse by design, matching `AgentControlStore`'s own philosophy: a missing row means `active` — the table only ever holds specialists that have been explicitly suspended (or previously suspended, then reactivated); it is never seeded with a canonical list of every specialist that could exist.
+- `apps/control-api` wires this in with the same best-effort MySQL swap pattern as every other durable store (`specialist-control-link.ts`) and exposes it read-only via `GET /v1/specialists` / `GET /v1/specialists/:specialistId`; writes happen exclusively through `POST /v1/commands` (`SuspendSpecialist`/`ActivateSpecialist`), consistent with every other CEO Command Plane entity.
+- `ceo_root_cause_analysis`'s governed delegation now fails closed on specialist-type suspension as well as agent-instance pause: `evaluateGovernedDelegation` resolves the candidate agent's `specialistId`, looks up its (sparse) specialist fact in the same shared evidence graph (`gatherEvidence` now also fetches `/v1/specialists`), and adds a `suspended_specialist: ...` reason distinct from `suspended_agent: ...` when the type itself is suspended — even for an agent instance that is not itself paused.
+- Added tests at every layer: `service.test.ts` (SuspendSpecialist/ActivateSpecialist round-trip, double-suspend rejection, `specialist.control.changed` events, per-specialist isolation), `mysql-store.test.ts` (upsert/read-back/list for the new store), and `reasoning.test.ts` (fails closed on specialist suspension distinct from agent pause; eligible when the specialist type has never been suspended).
+
 ### Further CEO reasoning
 - Add budget/quota and system-health attention policies where authoritative read models exist.
 - Add richer project-level summaries and decision-quality scoring without fabricating missing evidence.
-- Wire a durable specialist registry (with lifecycle status) into control-api so governed-delegation eligibility can check registered/suspended specialists directly instead of inferring registration from the live agent snapshot.
+- No admin UI yet for `SuspendSpecialist`/`ActivateSpecialist` — issuing them today means a direct `POST /v1/commands` call.
 
 ### Voice
 - Real STT → JARVIS → TTS provider/runtime integration with the same authorization, correlation and audit boundaries.

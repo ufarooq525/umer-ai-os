@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createAuditService } from '@umer/audit';
-import { createControlPlaneService } from '@umer/control-plane';
+import { createControlPlaneService, InMemorySpecialistControlStore } from '@umer/control-plane';
 import { createProjectRegistry } from '@umer/registry';
 import { createEventBus } from '@umer/event-bus';
 import { createTrustRuntime } from '@umer/trust';
@@ -127,6 +127,7 @@ async function createFixture(): Promise<{ state: ControlApiState; server: Server
         updateStatus: (taskId, status, correlationId) => taskStore.updateStatus(taskId, status, correlationId),
       },
       agentControl: agentControlStore,
+      specialistControl: new InMemorySpecialistControlStore(),
     },
     { trust: trustRuntime, auditService },
   );

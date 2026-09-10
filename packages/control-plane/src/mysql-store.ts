@@ -1,5 +1,6 @@
 import type { GateWaitRecord, GateWaitStatus } from './types.js';
 import type { GateWaitStore } from './store.js';
+import type { SpecialistControlPort, SpecialistControlRecord } from './commands/ports.js';
 
 /**
  * MySQL adapter contract — intentionally injected (structural, not a driver
@@ -124,5 +125,62 @@ export class MySqlGateWaitStore implements GateWaitStore {
       "SELECT * FROM control_plane_gate_waits WHERE status = 'waiting' ORDER BY requested_at ASC",
     );
     return rows.map(rowToRecord);
+  }
+}
+
+type SpecialistControlRow = {
+  specialist_id: string;
+  control_state: SpecialistControlRecord['controlState'];
+  reason: string | null;
+  updated_at: string;
+};
+
+function specialistRowToRecord(row: SpecialistControlRow): SpecialistControlRecord {
+  return { specialistId: row.specialist_id, controlState: row.control_state, reason: row.reason ?? undefined, updatedAt: toIso(row.updated_at) };
+}
+
+/**
+ * MySQL-backed SpecialistControlPort — see packages/db's
+ * specialist-control-migration.ts for the `specialist_control` schema.
+ * Sparse by design, matching InMemorySpecialistControlStore: a missing row
+ * means `active`, so this table only ever holds specialists that have been
+ * explicitly suspended (or previously suspended, then reactivated).
+ */
+export class MySqlSpecialistControlStore implements SpecialistControlPort {
+  constructor(private readonly options: MySqlGateWaitStoreOptions) {}
+
+  async get(specialistId: string): Promise<SpecialistControlRecord | undefined> {
+    const rows = await this.options.db.execute<SpecialistControlRow[]>(
+      'SELECT specialist_id, control_state, reason, updated_at FROM specialist_control WHERE specialist_id = ? LIMIT 1',
+      [specialistId],
+    );
+    return rows[0] ? specialistRowToRecord(rows[0]) : undefined;
+  }
+
+  async suspend(specialistId: string, reason: string | undefined): Promise<SpecialistControlRecord> {
+    await this.options.db.execute(
+      `INSERT INTO specialist_control (specialist_id, control_state, reason, updated_at)
+       VALUES (?, 'suspended', ?, UTC_TIMESTAMP(3))
+       ON DUPLICATE KEY UPDATE control_state='suspended', reason=VALUES(reason), updated_at=VALUES(updated_at)`,
+      [specialistId, reason ?? null],
+    );
+    const record = await this.get(specialistId);
+    return record!;
+  }
+
+  async activate(specialistId: string): Promise<SpecialistControlRecord> {
+    await this.options.db.execute(
+      `INSERT INTO specialist_control (specialist_id, control_state, reason, updated_at)
+       VALUES (?, 'active', NULL, UTC_TIMESTAMP(3))
+       ON DUPLICATE KEY UPDATE control_state='active', reason=NULL, updated_at=VALUES(updated_at)`,
+      [specialistId],
+    );
+    const record = await this.get(specialistId);
+    return record!;
+  }
+
+  async list(): Promise<SpecialistControlRecord[]> {
+    const rows = await this.options.db.execute<SpecialistControlRow[]>('SELECT specialist_id, control_state, reason, updated_at FROM specialist_control');
+    return rows.map(specialistRowToRecord);
   }
 }

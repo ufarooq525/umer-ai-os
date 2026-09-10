@@ -6,7 +6,7 @@ import { createTrustRuntime, type TrustRuntime } from '@umer/trust';
 import { CommandError } from './errors.js';
 import { createCeoCommandService } from './factory.js';
 import type { CeoCommandService } from './service.js';
-import type { AgentControlPort, AgentControlRecord, OpportunityWritePort, ProjectWritePort, TaskWritePort } from './ports.js';
+import type { AgentControlPort, AgentControlRecord, OpportunityWritePort, ProjectWritePort, SpecialistControlPort, SpecialistControlRecord, TaskWritePort } from './ports.js';
 
 // --- Fake ports (duck-typed the same way apps/control-api's real stores are) ---
 
@@ -182,6 +182,26 @@ class FakeAgentControlPort implements AgentControlPort {
   }
 }
 
+class FakeSpecialistControlPort implements SpecialistControlPort {
+  readonly byId = new Map<string, SpecialistControlRecord>();
+  async get(specialistId: string): Promise<SpecialistControlRecord | undefined> {
+    return this.byId.get(specialistId);
+  }
+  async suspend(specialistId: string, reason: string | undefined): Promise<SpecialistControlRecord> {
+    const record: SpecialistControlRecord = { specialistId, controlState: 'suspended', reason, updatedAt: new Date().toISOString() };
+    this.byId.set(specialistId, record);
+    return record;
+  }
+  async activate(specialistId: string): Promise<SpecialistControlRecord> {
+    const record: SpecialistControlRecord = { specialistId, controlState: 'active', updatedAt: new Date().toISOString() };
+    this.byId.set(specialistId, record);
+    return record;
+  }
+  async list(): Promise<SpecialistControlRecord[]> {
+    return [...this.byId.values()];
+  }
+}
+
 const ceoActor = { principalId: 'human.ceo', kind: 'human' as const };
 const agentActor = { principalId: 'agent-1', kind: 'specialist_run' as const };
 
@@ -203,6 +223,7 @@ describe('CeoCommandService', () => {
   let projects: FakeProjectPort;
   let tasks: FakeTaskPort;
   let agentControl: FakeAgentControlPort;
+  let specialistControl: FakeSpecialistControlPort;
   let trust: TrustRuntime;
   let auditService: AuditService;
   let service: CeoCommandService;
@@ -212,6 +233,7 @@ describe('CeoCommandService', () => {
     projects = new FakeProjectPort();
     tasks = new FakeTaskPort();
     agentControl = new FakeAgentControlPort();
+    specialistControl = new FakeSpecialistControlPort();
     trust = createTrustRuntime();
     auditService = createAuditService();
     await trust.registerGrant({
@@ -222,7 +244,7 @@ describe('CeoCommandService', () => {
       effect: 'allow',
     });
     service = createCeoCommandService(
-      { opportunities, projects, tasks, agentControl },
+      { opportunities, projects, tasks, agentControl, specialistControl },
       { trust, auditService },
     );
   });
@@ -487,6 +509,37 @@ describe('CeoCommandService', () => {
       const command = buildCommand({ name: 'CancelWork', payload: { agentId: 'agent-1', taskId: task.taskId } });
       await expect(service.execute(command)).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
       expect(await agentControl.get('agent-1')).toBeUndefined();
+    });
+  });
+
+  describe('Specialist control commands', () => {
+    it('SuspendSpecialist / ActivateSpecialist round-trip and reject double-suspend', async () => {
+      await service.execute(buildCommand({ name: 'SuspendSpecialist', payload: { specialistId: 'eng.app-delivery', reason: 'incident' } }));
+      expect((await specialistControl.get('eng.app-delivery'))?.controlState).toBe('suspended');
+
+      const again = buildCommand({ name: 'SuspendSpecialist', payload: { specialistId: 'eng.app-delivery' } });
+      await expect(service.execute(again)).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+
+      await service.execute(buildCommand({ name: 'ActivateSpecialist', payload: { specialistId: 'eng.app-delivery' } }));
+      expect((await specialistControl.get('eng.app-delivery'))?.controlState).toBe('active');
+    });
+
+    it('ActivateSpecialist rejects a specialist that is not suspended', async () => {
+      const command = buildCommand({ name: 'ActivateSpecialist', payload: { specialistId: 'eng.app-delivery' } });
+      await expect(service.execute(command)).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
+    });
+
+    it('emits specialist.control.changed on suspend and on activate', async () => {
+      const suspendResult = await service.execute(buildCommand({ name: 'SuspendSpecialist', payload: { specialistId: 'qa.verify', reason: 'bad release' } }));
+      expect(suspendResult.events.map((e) => e.name)).toEqual(['specialist.control.changed']);
+
+      const activateResult = await service.execute(buildCommand({ name: 'ActivateSpecialist', payload: { specialistId: 'qa.verify' } }));
+      expect(activateResult.events.map((e) => e.name)).toEqual(['specialist.control.changed']);
+    });
+
+    it('leaves other specialists unaffected — this is a per-specialist-type axis, not global', async () => {
+      await service.execute(buildCommand({ name: 'SuspendSpecialist', payload: { specialistId: 'eng.app-delivery' } }));
+      expect(await specialistControl.get('qa.verify')).toBeUndefined();
     });
   });
 

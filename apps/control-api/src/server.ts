@@ -6,6 +6,7 @@ import {
   createCeoCommandService,
   createControlPlaneService,
   CommandError,
+  InMemorySpecialistControlStore,
   type ControlPlaneService,
 } from '@umer/control-plane';
 import { createAuditService } from '@umer/audit';
@@ -81,6 +82,7 @@ import {
   applyUxOnGatePass,
   applySeoOnGatePass,
   enrichAgentWithControlState,
+  getSpecialistControlState,
   enrichAgentWithProject,
   listProjects,
   listRecentAudit,
@@ -155,6 +157,7 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
     projectStore: new InMemoryProjectStore(),
     taskStore: new InMemoryTaskStore(),
     agentControlStore: new InMemoryAgentControlStore(),
+    specialistControlStore: new InMemorySpecialistControlStore(),
     opportunityReader: new InMemoryOpportunityPersistence(),
     artifactStore: new InMemoryArtifactStore(),
     workGraphStore: new InMemoryWorkGraphStore(),
@@ -195,6 +198,16 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
         updateStatus: (taskId, status, correlationId) => state.taskStore!.updateStatus(taskId, status, correlationId),
       },
       agentControl: state.agentControlStore!,
+      // Same delegation reasoning as `opportunities`/`projects`/`tasks` above:
+      // connectSpecialistControlStore() (main.ts) best-effort-swaps
+      // state.specialistControlStore to the MySQL-backed store after this
+      // function returns.
+      specialistControl: {
+        get: (specialistId) => state.specialistControlStore!.get(specialistId),
+        suspend: (specialistId, reason, correlationId) => state.specialistControlStore!.suspend(specialistId, reason, correlationId),
+        activate: (specialistId, correlationId) => state.specialistControlStore!.activate(specialistId, correlationId),
+        list: () => state.specialistControlStore!.list(),
+      },
     },
     { trust: trustRuntime, auditService },
   );
@@ -1079,6 +1092,24 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       sendJson(res, 200, await enrichAgentWithControlState(state, await enrichAgentWithProject(state, agent)));
+      return;
+    }
+
+    // Specialist-type lifecycle control (SuspendSpecialist/ActivateSpecialist,
+    // via POST /v1/commands below) — an orthogonal axis to per-agent-instance
+    // control above: this governs a specialist *type* (e.g. eng.app-delivery)
+    // company-wide. Sparse by design: a specialist never suspended has no
+    // record and reads back as controlState "active".
+    if (path === '/v1/specialists' && req.method === 'GET') {
+      const records = (await state.specialistControlStore?.list()) ?? [];
+      sendJson(res, 200, { specialists: records });
+      return;
+    }
+
+    const specialistMatch = path.match(/^\/v1\/specialists\/([^/]+)$/);
+    if (specialistMatch && req.method === 'GET') {
+      const specialistId = decodeURIComponent(specialistMatch[1]!);
+      sendJson(res, 200, await getSpecialistControlState(state, specialistId));
       return;
     }
 

@@ -1,12 +1,13 @@
 import type { EventEnvelope, RuntimeEventName } from '@umer/contracts';
 import type { Clock } from '../service.js';
-import type { AgentControlPort, OpportunityWritePort, ProjectWritePort, TaskWritePort } from './ports.js';
+import type { AgentControlPort, OpportunityWritePort, ProjectWritePort, SpecialistControlPort, TaskWritePort } from './ports.js';
 
 export type CommandDeps = {
   opportunities: OpportunityWritePort;
   projects: ProjectWritePort;
   tasks: TaskWritePort;
   agentControl: AgentControlPort;
+  specialistControl: SpecialistControlPort;
   clock: Clock;
 };
 

@@ -23,6 +23,7 @@ import { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
 import { JARVIS_MEMORY_MIGRATIONS } from './jarvis-memory-migration.js';
 import { TRUST_GRANTS_MIGRATIONS } from './trust-grants-migration.js';
 import { JARVIS_SESSION_HISTORY_MIGRATIONS } from './jarvis-session-history-migration.js';
+import { SPECIALIST_CONTROL_MIGRATIONS } from './specialist-control-migration.js';
 
 export { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
 export { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
@@ -49,6 +50,7 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...JARVIS_MEMORY_MIGRATIONS,
   ...TRUST_GRANTS_MIGRATIONS,
   ...JARVIS_SESSION_HISTORY_MIGRATIONS,
+  ...SPECIALIST_CONTROL_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;

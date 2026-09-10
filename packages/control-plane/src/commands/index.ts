@@ -8,6 +8,9 @@ export {
   type AgentControlState,
   type OpportunityWritePort,
   type ProjectWritePort,
+  type SpecialistControlPort,
+  type SpecialistControlRecord,
+  type SpecialistControlState,
   type TaskWritePort,
 } from './ports.js';
 export { type CommandEventPublisher, createNoopCommandEventPublisher } from './events.js';

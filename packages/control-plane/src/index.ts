@@ -11,9 +11,10 @@ export type {
   DashboardSummary,
 } from './types.js';
 export { ControlPlaneError, type ControlPlaneErrorCode } from './errors.js';
-export { type GateWaitStore, InMemoryGateWaitStore } from './store.js';
+export { type GateWaitStore, InMemoryGateWaitStore, InMemorySpecialistControlStore } from './store.js';
 export {
   MySqlGateWaitStore,
+  MySqlSpecialistControlStore,
   type MySqlExecutor,
   type MySqlGateWaitStoreOptions,
 } from './mysql-store.js';

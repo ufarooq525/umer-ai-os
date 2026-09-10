@@ -9,6 +9,7 @@ const fixtures: Record<string, unknown> = {
   '/v1/audit/recent': { records: [{ id: 'AU1', correlationId: 'corr-1', actor: 'system' }] },
   '/v1/artifacts': { artifacts: [{ artifactId: 'ART1', workPackageId: 'WP1' }] },
   '/v1/opportunities?limit=50': { opportunities: [{ id: 'OPP1', projectId: 'P1', estimatedValueMin: 100 }] },
+  '/v1/specialists': { specialists: [{ specialistId: 'security.review', controlState: 'suspended', reason: 'incident' }] },
 };
 
 async function fakeRequestJson(path: string): Promise<unknown> {
@@ -19,14 +20,18 @@ async function fakeRequestJson(path: string): Promise<unknown> {
 describe('gatherEvidence', () => {
   it('normalizes every read model into a flat, relation-annotated fact list', async () => {
     const evidence = await gatherEvidence(fakeRequestJson, undefined, 50);
-    expect(evidence.counts).toEqual({ agents: 1, projects: 1, tasks: 1, workPackages: 1, runs: 1, artifacts: 1, opportunities: 1, audit: 1 });
-    expect(evidence.facts).toHaveLength(8);
+    expect(evidence.counts).toEqual({ agents: 1, projects: 1, tasks: 1, workPackages: 1, runs: 1, artifacts: 1, opportunities: 1, audit: 1, specialists: 1 });
+    expect(evidence.facts).toHaveLength(9);
 
     const run = evidence.facts.find((f) => f.type === 'agent_run');
     expect(run?.relations).toEqual({ workPackageId: 'WP1', agentId: undefined, projectId: 'P1', artifactId: undefined });
 
     const opportunity = evidence.facts.find((f) => f.type === 'opportunity');
     expect(opportunity?.relations.projectId).toBe('P1');
+
+    const specialist = evidence.facts.find((f) => f.type === 'specialist');
+    expect(specialist?.id).toBe('security.review');
+    expect((specialist?.evidence as { controlState: string }).controlState).toBe('suspended');
 
     expect(evidence.pendingGates).toEqual([{ gateId: 'gate-1', workPackageId: 'WP1' }]);
   });

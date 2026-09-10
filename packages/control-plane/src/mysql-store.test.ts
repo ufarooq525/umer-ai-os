@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MySqlGateWaitStore, type MySqlExecutor } from './mysql-store.js';
+import { MySqlGateWaitStore, MySqlSpecialistControlStore, type MySqlExecutor } from './mysql-store.js';
 import type { GateWaitRecord } from './types.js';
 
 const SAMPLE_RECORD: GateWaitRecord = {
@@ -125,5 +125,57 @@ describe('MySqlGateWaitStore', () => {
     const [sql] = execute.mock.calls[0]!;
     expect(sql).toContain("status = 'waiting'");
     expect(sql).toContain('ORDER BY requested_at ASC');
+  });
+});
+
+describe('MySqlSpecialistControlStore', () => {
+  it('returns undefined for a specialist with no row — sparse by design, absence means active', async () => {
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => [] as never);
+    const store = new MySqlSpecialistControlStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
+    expect(await store.get('eng.app-delivery')).toBeUndefined();
+  });
+
+  it('suspend upserts a row with control_state=suspended and reads it back', async () => {
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => undefined as never);
+    execute.mockResolvedValueOnce(undefined as never); // the INSERT ... ON DUPLICATE KEY UPDATE
+    execute.mockResolvedValueOnce([
+      { specialist_id: 'eng.app-delivery', control_state: 'suspended', reason: 'incident', updated_at: '2026-09-06T00:00:00.000Z' },
+    ] as never); // the get() read-back
+
+    const store = new MySqlSpecialistControlStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
+    const record = await store.suspend('eng.app-delivery', 'incident');
+
+    expect(record).toEqual({ specialistId: 'eng.app-delivery', controlState: 'suspended', reason: 'incident', updatedAt: '2026-09-06T00:00:00.000Z' });
+    const [sql, params] = execute.mock.calls[0]!;
+    expect(sql).toContain('INSERT INTO specialist_control');
+    expect(sql).toContain("VALUES (?, 'suspended', ?, UTC_TIMESTAMP(3))");
+    expect(params).toEqual(['eng.app-delivery', 'incident']);
+  });
+
+  it('activate upserts a row with control_state=active and clears the reason', async () => {
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => undefined as never);
+    execute.mockResolvedValueOnce(undefined as never);
+    execute.mockResolvedValueOnce([
+      { specialist_id: 'eng.app-delivery', control_state: 'active', reason: null, updated_at: '2026-09-06T01:00:00.000Z' },
+    ] as never);
+
+    const store = new MySqlSpecialistControlStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
+    const record = await store.activate('eng.app-delivery');
+
+    expect(record).toEqual({ specialistId: 'eng.app-delivery', controlState: 'active', reason: undefined, updatedAt: '2026-09-06T01:00:00.000Z' });
+    const [sql, params] = execute.mock.calls[0]!;
+    expect(sql).toContain("VALUES (?, 'active', NULL, UTC_TIMESTAMP(3))");
+    expect(params).toEqual(['eng.app-delivery']);
+  });
+
+  it('lists every specialist control row', async () => {
+    const execute = vi.fn<MySqlExecutor['execute']>(async () => [
+      { specialist_id: 'eng.app-delivery', control_state: 'suspended', reason: null, updated_at: '2026-09-06T00:00:00.000Z' },
+      { specialist_id: 'qa.verify', control_state: 'active', reason: null, updated_at: '2026-09-06T00:00:00.000Z' },
+    ] as never);
+    const store = new MySqlSpecialistControlStore({ db: { execute: execute as unknown as MySqlExecutor['execute'] } });
+
+    const records = await store.list();
+    expect(records.map((r) => r.specialistId)).toEqual(['eng.app-delivery', 'qa.verify']);
   });
 });

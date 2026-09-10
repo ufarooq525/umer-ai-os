@@ -29,7 +29,7 @@ export const ActorSchema = z
   })
   .strict();
 
-export const CommandTargetEntityTypeSchema = z.enum(['opportunity', 'project', 'task', 'agent']);
+export const CommandTargetEntityTypeSchema = z.enum(['opportunity', 'project', 'task', 'agent', 'specialist']);
 
 export const CommandTargetSchema = z
   .object({
@@ -52,6 +52,8 @@ export const CeoCommandNameSchema = z.enum([
   'PauseAgent',
   'ResumeAgent',
   'CancelWork',
+  'SuspendSpecialist',
+  'ActivateSpecialist',
 ]);
 
 /** CEO command envelope — narrows CommandEnvelopeSchema's `name` and adds actor/target. */
@@ -127,6 +129,20 @@ export const PauseAgentPayloadSchema = z
 
 export const ResumeAgentPayloadSchema = z.object({ agentId: z.string().min(1) }).strict();
 
+/**
+ * SuspendSpecialist/ActivateSpecialist govern a specialist *type*
+ * (specialistId, e.g. `eng.app-delivery`), not one live agent instance —
+ * this is a distinct, orthogonal axis from PauseAgent/ResumeAgent (which
+ * governs one running AgentSnapshot). Suspending a specialist halts new
+ * delegated work of that type company-wide, regardless of which agent
+ * instance would have picked it up.
+ */
+export const SuspendSpecialistPayloadSchema = z
+  .object({ specialistId: z.string().min(1), reason: z.string().min(1).optional() })
+  .strict();
+
+export const ActivateSpecialistPayloadSchema = z.object({ specialistId: z.string().min(1) }).strict();
+
 export const CancelWorkPayloadSchema = z
   .object({
     agentId: z.string().min(1),
@@ -150,6 +166,8 @@ export const CEO_COMMAND_PAYLOAD_SCHEMAS = {
   PauseAgent: PauseAgentPayloadSchema,
   ResumeAgent: ResumeAgentPayloadSchema,
   CancelWork: CancelWorkPayloadSchema,
+  SuspendSpecialist: SuspendSpecialistPayloadSchema,
+  ActivateSpecialist: ActivateSpecialistPayloadSchema,
 } as const satisfies Record<CeoCommandName, z.ZodTypeAny>;
 
 export type ActorKind = z.infer<typeof ActorKindSchema>;
@@ -174,6 +192,8 @@ export type ReassignTaskPayload = z.infer<typeof ReassignTaskPayloadSchema>;
 export type PauseAgentPayload = z.infer<typeof PauseAgentPayloadSchema>;
 export type ResumeAgentPayload = z.infer<typeof ResumeAgentPayloadSchema>;
 export type CancelWorkPayload = z.infer<typeof CancelWorkPayloadSchema>;
+export type SuspendSpecialistPayload = z.infer<typeof SuspendSpecialistPayloadSchema>;
+export type ActivateSpecialistPayload = z.infer<typeof ActivateSpecialistPayloadSchema>;
 
 export type CeoCommandPayloadByName = {
   SelectOpportunity: SelectOpportunityPayload;
@@ -189,6 +209,8 @@ export type CeoCommandPayloadByName = {
   PauseAgent: PauseAgentPayload;
   ResumeAgent: ResumeAgentPayload;
   CancelWork: CancelWorkPayload;
+  SuspendSpecialist: SuspendSpecialistPayload;
+  ActivateSpecialist: ActivateSpecialistPayload;
 };
 
 /** Parses a command's untyped payload against the schema for its `name`. Throws ZodError on mismatch. */

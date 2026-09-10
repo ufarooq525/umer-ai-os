@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AuditContract } from '@umer/contracts';
-import type { CeoCommandService, ControlPlaneService } from '@umer/control-plane';
+import type { CeoCommandService, ControlPlaneService, SpecialistControlPort } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
 import type { TrustRuntime } from '@umer/trust';
 import type { AgentRegistryStore, AgentRunReadModelStore, AgentSnapshot } from '@umer/observability';
@@ -36,6 +36,7 @@ export type ControlApiState = {
   taskStore?: TaskStore;
   requirementStore?: RequirementStore;
   agentControlStore?: AgentControlStore;
+  specialistControlStore?: SpecialistControlPort;
   opportunityReader?: OpportunityPersistence;
   commercialPipeline?: CommercialPipelineEngine;
   customerSuccess?: CustomerSuccessEngine;
@@ -56,6 +57,7 @@ export async function seedDemoState(state: ControlApiState): Promise<void> { sta
 export function listProjects(state: ControlApiState): ResolvedProject[] { return state.projectRegistry.list(); }
 export async function enrichAgentWithProject(state: ControlApiState, agent: AgentSnapshot): Promise<AgentSnapshot & { currentProjectId?: string }> { const taskId = agent.currentTaskIds?.[0]; if (!taskId || !state.taskStore) return agent; const task = await state.taskStore.get(taskId); return task ? { ...agent, currentProjectId: task.projectId } : agent; }
 export async function enrichAgentWithControlState(state: ControlApiState, agent: AgentSnapshot): Promise<AgentSnapshot & { controlState: 'active' | 'paused'; controlReason?: string }> { const record = await state.agentControlStore?.get(agent.agentId); return { ...agent, controlState: record?.controlState ?? 'active', controlReason: record?.reason }; }
+export async function getSpecialistControlState(state: ControlApiState, specialistId: string): Promise<{ specialistId: string; controlState: 'active' | 'suspended'; reason?: string; updatedAt?: string }> { const record = await state.specialistControlStore?.get(specialistId); return record ?? { specialistId, controlState: 'active' }; }
 export function registerQaBusShim(state: ControlApiState): void { if (state.qaBusShimRegistered) return; state.bus.subscribe('specialist.qa.requested', async (event) => ({ intakeRecord: await executeQaIntake(state, event as BusEvent<'specialist.qa.requested'>) })); state.qaBusShimRegistered = true; }
 
 async function persistRequirementFromIntake(state: ControlApiState, instruction: IntakeInstruction): Promise<void> {

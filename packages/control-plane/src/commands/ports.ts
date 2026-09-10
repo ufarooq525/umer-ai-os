@@ -85,3 +85,25 @@ export type AgentControlPort = {
     correlationId: string,
   ): Promise<AgentControlRecord>;
 };
+
+export type SpecialistControlState = 'active' | 'suspended';
+
+export type SpecialistControlRecord = {
+  specialistId: string;
+  controlState: SpecialistControlState;
+  reason?: string;
+  updatedAt: string;
+};
+
+/**
+ * Governs a specialist *type* (e.g. `eng.app-delivery`) company-wide — an
+ * orthogonal axis to `AgentControlPort`, which governs one live agent
+ * instance. Matches @umer/control-plane's `InMemorySpecialistControlStore` /
+ * `MySqlSpecialistControlStore`.
+ */
+export type SpecialistControlPort = {
+  get(specialistId: string): Promise<SpecialistControlRecord | undefined>;
+  suspend(specialistId: string, reason: string | undefined, correlationId: string): Promise<SpecialistControlRecord>;
+  activate(specialistId: string, correlationId: string): Promise<SpecialistControlRecord>;
+  list(): Promise<SpecialistControlRecord[]>;
+};

@@ -63,7 +63,10 @@ export type Recommendation = {
 
 export type DelegationEligibility = {
   registered: boolean;
+  /** True if EITHER the candidate agent instance is paused OR its specialist type is suspended. */
   suspended: boolean;
+  /** True specifically when the specialist *type* (not just this agent instance) is suspended company-wide. */
+  specialistSuspended: boolean;
   toolAvailable: boolean;
   authorized: boolean;
   hasApproval: boolean;
@@ -297,9 +300,19 @@ export async function evaluateGovernedDelegation(
   const projectId = rootCause.chain.find((step) => step.factType === 'project')?.factId;
   const candidateAgent = evidence.facts.find((fact) => fact.type === 'agent' && (!projectId || fact.relations.projectId === projectId));
   const agentEvidence = candidateAgent ? objectInput(candidateAgent.evidence) : {};
+  const specialistId = typeof agentEvidence.specialistId === 'string' ? agentEvidence.specialistId : undefined;
+  // Specialist-type suspension (SuspendSpecialist) is an orthogonal axis to
+  // per-agent-instance pause: it halts new delegated work of this type
+  // company-wide, regardless of which agent instance would have performed
+  // it. The specialist fact set is sparse (see evidence.ts) — no fact for
+  // this specialistId simply means it has never been suspended.
+  const specialistFact = specialistId ? evidence.facts.find((fact) => fact.type === 'specialist' && fact.id === specialistId) : undefined;
+  const specialistEvidence = specialistFact ? objectInput(specialistFact.evidence) : {};
 
   const registered = Boolean(candidateAgent);
-  const suspended = candidateAgent ? agentEvidence.controlState === 'paused' : false;
+  const agentSuspended = candidateAgent ? agentEvidence.controlState === 'paused' : false;
+  const specialistSuspended = specialistFact ? specialistEvidence.controlState === 'suspended' : false;
+  const suspended = agentSuspended || specialistSuspended;
   const toolAvailable = options.registeredToolNames.has('delegate_work');
   const hasApproval = options.approvalGranted === true;
   const hasAcceptanceCriteria = typeof options.doneWhen === 'string' && options.doneWhen.trim().length > 0;
@@ -312,7 +325,8 @@ export async function evaluateGovernedDelegation(
 
   const failClosedReasons: string[] = [];
   if (!registered) failClosedReasons.push('unregistered_agent: no agent fact linked to the affected project was found in current evidence.');
-  if (registered && suspended) failClosedReasons.push(`suspended_agent: agent ${candidateAgent?.id} has controlState "paused" and cannot accept new delegated work.`);
+  if (registered && agentSuspended) failClosedReasons.push(`suspended_agent: agent ${candidateAgent?.id} has controlState "paused" and cannot accept new delegated work.`);
+  if (specialistSuspended) failClosedReasons.push(`suspended_specialist: specialist ${specialistId} is suspended company-wide${typeof specialistEvidence.reason === 'string' ? ` (${specialistEvidence.reason})` : ''} and cannot accept new delegated work regardless of which agent instance would perform it.`);
   if (!toolAvailable) failClosedReasons.push('unavailable_tool: delegate_work is not among the currently registered JARVIS tools.');
   if (!authorized) failClosedReasons.push('insufficient_authority: no Trust "execute" grant on "command" was confirmed for the calling principal.');
   if (!hasApproval) failClosedReasons.push('missing_approval: no explicit CEO approval was supplied for this specific delegation.');
@@ -321,10 +335,10 @@ export async function evaluateGovernedDelegation(
   return {
     kind: 'RECOMMENDATION',
     why: rootCause.summary,
-    who: candidateAgent ? { agentId: candidateAgent.id ?? 'unknown', specialistId: typeof agentEvidence.specialistId === 'string' ? agentEvidence.specialistId : undefined } : null,
+    who: candidateAgent ? { agentId: candidateAgent.id ?? 'unknown', specialistId } : null,
     what: options.goal ? { type: options.delegationType ?? 'bug', goal: options.goal, doneWhen: options.doneWhen } : null,
     risk: 'This is a recommendation only. delegate_work still creates a normal gated intake/Work Package — it does not bypass human gates. Explicit approval and acceptance criteria are required before it is invoked.',
-    eligibility: { registered, suspended, toolAvailable, authorized, hasApproval, hasAcceptanceCriteria, failClosedReasons },
+    eligibility: { registered, suspended, specialistSuspended, toolAvailable, authorized, hasApproval, hasAcceptanceCriteria, failClosedReasons },
     eligible: failClosedReasons.length === 0,
   };
 }

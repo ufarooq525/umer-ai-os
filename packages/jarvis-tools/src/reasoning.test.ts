@@ -189,6 +189,30 @@ describe('ceo_root_cause_analysis — governed delegation fails closed', () => {
     expect(delegation!.eligibility.failClosedReasons.join(' ')).toMatch(/suspended_agent/);
   });
 
+  it('fails closed when the specialist type (not the agent instance) is suspended company-wide', async () => {
+    const suspendedSpecialist = fact('specialist', 'eng.app-delivery', undefined, {}, { controlState: 'suspended', reason: 'bad release' });
+    const evidence = graph([failedRun, workPackage, project, activeAgent, suspendedSpecialist]);
+    const rootCause = analyzeRootCause(evidence);
+    const recs = recommendActions(rootCause, evidence);
+    const delegation = await evaluateGovernedDelegation(rootCause, evidence, recs, fullDelegationOptions);
+
+    // The agent instance itself is not paused — only its specialist TYPE is suspended.
+    expect(delegation!.eligibility.registered).toBe(true);
+    expect(delegation!.eligibility.specialistSuspended).toBe(true);
+    expect(delegation!.eligibility.suspended).toBe(true);
+    expect(delegation!.eligible).toBe(false);
+    expect(delegation!.eligibility.failClosedReasons.join(' ')).toMatch(/suspended_specialist: specialist eng\.app-delivery is suspended company-wide \(bad release\)/);
+  });
+
+  it('is eligible when the specialist type has never been suspended (no specialist fact at all)', async () => {
+    const evidence = graph([failedRun, workPackage, project, activeAgent]);
+    const rootCause = analyzeRootCause(evidence);
+    const recs = recommendActions(rootCause, evidence);
+    const delegation = await evaluateGovernedDelegation(rootCause, evidence, recs, fullDelegationOptions);
+    expect(delegation!.eligibility.specialistSuspended).toBe(false);
+    expect(delegation!.eligible).toBe(true);
+  });
+
   it('fails closed for an unregistered agent (no agent linked to the affected project)', async () => {
     const evidence = graph([failedRun, workPackage, project]);
     const rootCause = analyzeRootCause(evidence);

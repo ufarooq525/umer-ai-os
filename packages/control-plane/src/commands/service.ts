@@ -3,6 +3,7 @@ import {
   CeoCommandEnvelopeSchema,
   parseCeoCommandPayload,
   SCHEMA_VERSION,
+  type ActivateSpecialistPayload,
   type AssignTaskPayload,
   type CancelProjectPayload,
   type CancelWorkPayload,
@@ -19,6 +20,7 @@ import {
   type ResumeAgentPayload,
   type ResumeProjectPayload,
   type SelectOpportunityPayload,
+  type SuspendSpecialistPayload,
 } from '@umer/contracts';
 import type { AuditService } from '@umer/audit';
 import type { TrustRuntime } from '@umer/trust';
@@ -26,9 +28,10 @@ import { systemClock, type Clock } from '../service.js';
 import { CommandError } from './errors.js';
 import { createNoopCommandEventPublisher, type CommandEventPublisher } from './events.js';
 import { InMemoryCommandIdempotencyStore, type CommandIdempotencyStore } from './idempotency.js';
-import type { AgentControlPort, OpportunityWritePort, ProjectWritePort, TaskWritePort } from './ports.js';
+import type { AgentControlPort, OpportunityWritePort, ProjectWritePort, SpecialistControlPort, TaskWritePort } from './ports.js';
 import type { CommandDeps, CommandResult, HandlerOutcome } from './types.js';
 import { pauseAgent, resumeAgent, cancelWork } from './handlers/agent.js';
+import { activateSpecialist, suspendSpecialist } from './handlers/specialist.js';
 import { createProjectFromOpportunity, rejectOpportunity, selectOpportunity } from './handlers/opportunity.js';
 import { cancelProject, createProject, pauseProject, resumeProject } from './handlers/project.js';
 import { assignTask, createTask, reassignTask } from './handlers/task.js';
@@ -38,6 +41,7 @@ export type CeoCommandServicePorts = {
   projects: ProjectWritePort;
   tasks: TaskWritePort;
   agentControl: AgentControlPort;
+  specialistControl: SpecialistControlPort;
 };
 
 export type CeoCommandServiceOptions = {
@@ -232,6 +236,10 @@ export class CeoCommandService {
         return resumeAgent(deps, payload as ResumeAgentPayload, correlationId);
       case 'CancelWork':
         return cancelWork(deps, payload as CancelWorkPayload, correlationId);
+      case 'SuspendSpecialist':
+        return suspendSpecialist(deps, payload as SuspendSpecialistPayload, correlationId);
+      case 'ActivateSpecialist':
+        return activateSpecialist(deps, payload as ActivateSpecialistPayload, correlationId);
       default: {
         const exhaustive: never = name;
         throw new CommandError('MALFORMED_PAYLOAD', `Unknown command name: ${String(exhaustive)}`);
