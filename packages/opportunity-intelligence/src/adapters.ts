@@ -172,7 +172,13 @@ export class CompositeDiscoveryAdapter implements DiscoveryAdapter {
 
 export type EvidenceSource = {
   readonly name: string;
-  collect(candidate: DiscoveryCandidate, niche?: NicheDefinition): Promise<EvidenceRecord[]>;
+  /**
+   * `priorEvidence` is everything already collected earlier in this same
+   * research pass (sources run in array order). It lets a later, more
+   * expensive/rate-limited source (e.g. SocialSearchEvidenceSource) decide
+   * to skip work an earlier source already covered — see its own docstring.
+   */
+  collect(candidate: DiscoveryCandidate, niche?: NicheDefinition, priorEvidence?: EvidenceRecord[]): Promise<EvidenceRecord[]>;
 };
 
 export class EvidenceResearchAdapter implements ResearchAdapter {
@@ -180,7 +186,7 @@ export class EvidenceResearchAdapter implements ResearchAdapter {
 
   async research(candidate: DiscoveryCandidate): Promise<EvidenceRecord[]> {
     const evidence: EvidenceRecord[] = [];
-    for (const source of this.sources) evidence.push(...await source.collect(candidate, this.niche));
+    for (const source of this.sources) evidence.push(...await source.collect(candidate, this.niche, evidence));
     const unique = new Map<string, EvidenceRecord>();
     for (const item of evidence) unique.set(item.id, item);
     return [...unique.values()];
@@ -384,9 +390,9 @@ export class WebsiteEvidenceSource implements EvidenceSource {
   }
 }
 
-type SocialPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
+export type SocialPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
 
-const SOCIAL_LABEL: Record<SocialPlatform, string> = {
+export const SOCIAL_LABEL: Record<SocialPlatform, string> = {
   facebook: 'Facebook',
   instagram: 'Instagram',
   twitter: 'X/Twitter',
@@ -409,6 +415,29 @@ const SOCIAL_PATTERNS: Array<{ platform: SocialPlatform; regex: RegExp; excludeP
 ];
 
 /**
+ * Classifies a single URL as a real social profile/page link, or null if it
+ * isn't one of the supported platforms or is a share/login/policy link
+ * rather than an actual page. Shared by the HTML scanner below and by the
+ * search-based fallback (social-search.ts) so both apply the identical
+ * "what counts as a real profile link" rule.
+ */
+export function classifySocialUrl(rawUrl: string): { platform: SocialPlatform; url: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.pathname === '/' || parsed.pathname === '') return null;
+  for (const { platform, regex, excludePath } of SOCIAL_PATTERNS) {
+    if (!new RegExp(regex.source, 'i').test(parsed.toString())) continue;
+    if (excludePath.test(parsed.pathname)) return null;
+    return { platform, url: parsed.toString() };
+  }
+  return null;
+}
+
+/**
  * Extracts social profile links from raw HTML the business itself published
  * on its own website — see the guardrail comment at the call site. Returns
  * at most one URL per platform (the first found), trimmed of trailing HTML
@@ -416,19 +445,14 @@ const SOCIAL_PATTERNS: Array<{ platform: SocialPlatform; regex: RegExp; excludeP
  */
 export function extractSocialLinks(html: string): Array<[SocialPlatform, string]> {
   const found = new Map<SocialPlatform, string>();
-  for (const { platform, regex, excludePath } of SOCIAL_PATTERNS) {
+  for (const { platform, regex } of SOCIAL_PATTERNS) {
     if (found.has(platform)) continue;
+    regex.lastIndex = 0;
     for (const match of html.matchAll(regex)) {
       const raw = match[0].replace(/[),.;]+$/, '');
-      let parsed: URL;
-      try {
-        parsed = new URL(raw);
-      } catch {
-        continue;
-      }
-      if (excludePath.test(parsed.pathname)) continue;
-      if (parsed.pathname === '/' || parsed.pathname === '') continue;
-      found.set(platform, parsed.toString());
+      const classified = classifySocialUrl(raw);
+      if (!classified || classified.platform !== platform) continue;
+      found.set(platform, classified.url);
       break;
     }
   }

@@ -1,22 +1,42 @@
 import { randomUUID } from 'node:crypto';
 import type { EvidenceRecord, NicheDefinition } from '@umer/contracts';
-import type { BusinessCandidate } from '@umer/opportunity-intelligence';
+import type { BusinessCandidate, EvidenceSource } from '@umer/opportunity-intelligence';
+import { createRedisClient } from '@umer/db';
 import { persistWorkforceState } from './workforce-runtime';
 import { claimNextKernelTask, completeKernelTask, createKernelTask, recoverExpiredKernelTasks } from './ai-kernel-runtime';
 import {
   CompositeDiscoveryAdapter,
   createMySqlOpportunityPersistence,
+  DailySearchBudget,
   DefaultOpportunityBuilder,
   EvidenceBasedProblemDetector,
   EvidenceResearchAdapter,
   GooglePlacesDiscoverySource,
   OpportunityRunService,
+  SocialSearchEvidenceSource,
   SourceDiscoveryProvider,
   StaticDiscoverySource,
   StaticEvidenceSource,
   WebsiteEvidenceSource,
 } from '@umer/opportunity-intelligence';
 import { MARKET_PRESETS, normalizeMarket, type MarketPreset } from './market-scan';
+
+/**
+ * Social-search fallback is entirely optional: it only activates once
+ * GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX are set. Until then
+ * SocialSearchEvidenceSource silently no-ops, so this function is always
+ * safe to call. GOOGLE_CSE_DAILY_CAP overrides the default 60/day budget —
+ * see DailySearchBudget's guardrail comment before raising it.
+ */
+function buildResearchSources(): EvidenceSource[] {
+  const sources: EvidenceSource[] = [new WebsiteEvidenceSource()];
+  if (process.env.GOOGLE_CSE_API_KEY && process.env.GOOGLE_CSE_CX) {
+    const cap = Number(process.env.GOOGLE_CSE_DAILY_CAP ?? 60);
+    const budget = new DailySearchBudget(createRedisClient(), cap);
+    sources.push(new SocialSearchEvidenceSource(undefined, undefined, budget));
+  }
+  return sources;
+}
 
 export type OpportunityEvent = { at: string; agent: string; message: string; stage?: string; level?: string };
 export type OpportunityAgent = { name: string; status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED'; task: string };
@@ -192,7 +212,7 @@ async function execute(runId: string, live: boolean) {
     };
 
     const discoverySource = live ? new GooglePlacesDiscoverySource() : new StaticDiscoverySource(candidates);
-    const researchSources = live ? [new WebsiteEvidenceSource()] : [new StaticEvidenceSource(evidence)];
+    const researchSources = live ? buildResearchSources() : [new StaticEvidenceSource(evidence)];
     const discovery = new CompositeDiscoveryAdapter(new SourceDiscoveryProvider([discoverySource]));
     const research = new EvidenceResearchAdapter(researchSources, niche);
 
