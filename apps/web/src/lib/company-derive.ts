@@ -178,7 +178,7 @@ export function deriveAttentionCases(
     if (relatedProject) source.unshift(relatedProject);
 
     cases.push({
-      id: `repeated-failure:${run.workPackageId}`,
+      id: `repeated-failure:${run.runId ?? run.execId ?? `${run.workPackageId}:${run.startedAt}`}`,
       category: 'repeated_failure',
       severity: 'critical',
       severityReason:
@@ -249,7 +249,7 @@ export function deriveAttentionCases(
     const agent = run.agentId ? agentById.get(run.agentId) : undefined;
     const label = agentLabel(agent, run.agentId ?? run.workPackageId);
     cases.push({
-      id: `waiting-too-long:run:${run.workPackageId}`,
+      id: `waiting-too-long:run:${run.runId ?? run.execId ?? `${run.workPackageId}:${run.startedAt}`}`,
       category: 'waiting_too_long',
       severity: ageMs > STALE_RUN_MS * 2 ? 'high' : 'medium',
       severityReason: `Running for ${formatDuration(ageMs)} without completing or failing.`,

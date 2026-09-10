@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { colors } from '@umer/ui';
 
@@ -31,9 +32,9 @@ export function EntityDrawer({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -127,6 +128,7 @@ export function EntityDrawer({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -89,6 +89,10 @@ export function GlobalHeader({ onOpenCommandPalette }: { onOpenCommandPalette: (
     let currentPath = '';
     for (const part of parts) {
       currentPath += `/${part}`;
+      // Skip segments that resolve to a route already represented by the
+      // previous crumb (e.g. "/command-center" itself) — otherwise the OS
+      // root crumb and this segment collide on both href and React key.
+      if (currentPath === crumbs[crumbs.length - 1]!.href) continue;
       const name = part.charAt(0).toUpperCase() + part.slice(1).replace(/-/g, ' ');
       crumbs.push({ label: name, href: currentPath });
     }

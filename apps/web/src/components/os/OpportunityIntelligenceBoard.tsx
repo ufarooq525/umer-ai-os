@@ -6,9 +6,11 @@ import { ArrowRight, Filter } from 'lucide-react';
 import { colors, fonts, radii } from '@umer/ui';
 import type { OpportunityRecord } from '@/lib/control-api';
 import { OpportunityJourney } from './OpportunityJourney';
+import { EntityDrawer } from './EntityDrawer';
 
 export function OpportunityIntelligenceBoard({ opportunities }: { opportunities: OpportunityRecord[] }) {
   const [filter, setFilter] = useState<'all' | 'high_value' | 'promising'>('all');
+  const [selected, setSelected] = useState<OpportunityRecord | null>(null);
 
   const filtered = opportunities.filter((o) => {
     if (filter === 'high_value') return (o.estimatedValueMax ?? 0) >= 15000 || (o.score?.overall ?? 0) >= 75;
@@ -121,9 +123,24 @@ export function OpportunityIntelligenceBoard({ opportunities }: { opportunities:
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 10px', color: '#ffffff', letterSpacing: '-0.02em', lineHeight: 1.3 }}>
-                  {opp.title}
-                </h3>
+                <button
+                  type="button"
+                  onClick={() => setSelected(opp)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    margin: '0 0 10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: '#ffffff', letterSpacing: '-0.02em', lineHeight: 1.3, overflowWrap: 'break-word' }}>
+                    {opp.title}
+                  </h3>
+                </button>
 
                 {/* Metrics Bar */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, margin: '12px 0' }}>
@@ -208,6 +225,78 @@ export function OpportunityIntelligenceBoard({ opportunities }: { opportunities:
           );
         })}
       </div>
+
+      {/* Slide-over quick inspection drawer */}
+      <EntityDrawer
+        open={!!selected}
+        title={selected?.title ?? 'Opportunity'}
+        subtitle={selected ? `${selected.market} · ${selected.geography}` : undefined}
+        onClose={() => setSelected(null)}
+        footer={
+          selected && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Link
+                href={`/company/opportunities/${selected.id}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  background: colors.accent,
+                  color: '#1a1208',
+                  fontWeight: 700,
+                  fontSize: 12.5,
+                  textDecoration: 'none',
+                }}
+              >
+                Open Full Profile <ArrowRight size={14} />
+              </Link>
+              <Link
+                href={`/company/graph?opportunityId=${encodeURIComponent(selected.id)}`}
+                style={{ fontSize: 12, color: colors.accent, textDecoration: 'none' }}
+              >
+                Inspect in Graph ⬡
+              </Link>
+            </div>
+          )
+        }
+      >
+        {selected && (
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+              <div style={{ padding: 12, borderRadius: radii.sm, background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.07)' }}>
+                <div style={{ fontSize: 10, color: colors.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Estimated Value</div>
+                <div style={{ fontFamily: fonts.mono, fontSize: 18, fontWeight: 700, color: colors.accent, marginTop: 4 }}>
+                  {selected.estimatedValueMax ? `$${selected.estimatedValueMax.toLocaleString()}` : 'Unpriced'}
+                </div>
+              </div>
+              <div style={{ padding: 12, borderRadius: radii.sm, background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.07)' }}>
+                <div style={{ fontSize: 10, color: colors.muted, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Opportunity Score</div>
+                <div style={{ fontFamily: fonts.mono, fontSize: 18, fontWeight: 700, color: colors.success, marginTop: 4 }}>
+                  {selected.score?.overall ?? '—'}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: colors.accent, letterSpacing: '0.08em', marginBottom: 6 }}>
+                Evidence &amp; Confidence
+              </div>
+              <div style={{ fontSize: 13, color: colors.text, lineHeight: 1.6, padding: 12, borderRadius: radii.sm, background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                {selected.evidenceRefs?.length ?? 0} evidence signals · {selected.score?.evidenceConfidence ?? 80}% confidence
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: colors.accent, letterSpacing: '0.08em', marginBottom: 6 }}>
+                Journey Stage
+              </div>
+              <OpportunityJourney status={selected.status} />
+            </div>
+          </div>
+        )}
+      </EntityDrawer>
     </div>
   );
 }
