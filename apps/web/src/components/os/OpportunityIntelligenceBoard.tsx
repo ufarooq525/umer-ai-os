@@ -7,6 +7,7 @@ import { colors, fonts, radii } from '@umer/ui';
 import type { OpportunityRecord } from '@/lib/control-api';
 import { OpportunityJourney } from './OpportunityJourney';
 import { EntityDrawer } from './EntityDrawer';
+import { OutreachIntelPanel } from './OutreachIntelPanel';
 
 export function OpportunityIntelligenceBoard({ opportunities }: { opportunities: OpportunityRecord[] }) {
   const [filter, setFilter] = useState<'all' | 'high_value' | 'promising'>('all');
@@ -293,6 +294,10 @@ export function OpportunityIntelligenceBoard({ opportunities }: { opportunities:
                 Journey Stage
               </div>
               <OpportunityJourney status={selected.status} />
+            </div>
+
+            <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.07)', paddingTop: 16 }}>
+              <OutreachIntelPanel opportunityId={selected.id} />
             </div>
           </div>
         )}

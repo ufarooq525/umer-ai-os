@@ -7,6 +7,7 @@ import { colors, fonts, radii } from '@umer/ui';
 import type { OpportunityRecord } from '@/lib/control-api';
 import { formatRelativeTime } from './format';
 import { EntityDrawer } from './EntityDrawer';
+import { OutreachIntelPanel } from './OutreachIntelPanel';
 
 export type PipelineStage =
   | 'Discovery'
@@ -353,6 +354,10 @@ export function SalesPipelineKanban({ opportunities }: { opportunities: Opportun
               <div style={{ fontSize: 13, color: colors.text }}>
                 Currently in <strong>{mapOpportunityToCrmStage(selectedOpp.status)}</strong>.
               </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.07)', paddingTop: 16 }}>
+              <OutreachIntelPanel opportunityId={selectedOpp.id} />
             </div>
           </div>
         )}
