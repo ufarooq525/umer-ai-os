@@ -19,15 +19,30 @@ export type AgentCardProps = {
 };
 
 export function AgentCard({ agent, run, currentTaskTitle, projectName, compact }: AgentCardProps) {
-  const tone = run && run.status === 'running' ? runActionTone(run.status, run.currentAction) : agentTone(agent.status, agent.controlState);
-  const isWorking = agent.status === 'active' && agent.controlState === 'active';
+  const blocker = run && run.failures.length > 0 ? run.failures[run.failures.length - 1]!.message : null;
+  // An agent stuck retrying the same failure isn't meaningfully "working" from
+  // the CEO's point of view, even if its current run is technically still
+  // executing — a blocked agent must never read as a clean green success.
+  const tone = blocker
+    ? 'blocked'
+    : run && run.status === 'running'
+      ? runActionTone(run.status, run.currentAction)
+      : agentTone(agent.status, agent.controlState);
+  const isWorking = agent.status === 'active' && agent.controlState === 'active' && !blocker;
   const role = agent.department ?? humanizeSpecialistId(agent.specialistId);
   const name = agent.name ?? humanizeSpecialistId(agent.specialistId) ?? agent.agentId;
 
-  const currentTask = currentTaskTitle || (run?.currentTool ? `Using ${run.currentTool}` : agent.currentWorkPackageId ? `Package ${agent.currentWorkPackageId}` : 'Standby for work');
+  // Never surface a raw Work Package ID as the primary, human-facing text —
+  // it belongs in technical details, not the headline objective.
+  const currentTask = currentTaskTitle || (run?.currentTool ? `Using ${run.currentTool}` : agent.currentWorkPackageId ? `Executing ${role} work package` : 'Standby for work');
   const latestOutput = run?.summary || (run?.artifactId ? `Artifact ${run.artifactId}` : 'Standard specialist telemetry');
-  const blocker = run && run.failures.length > 0 ? run.failures[run.failures.length - 1]!.message : null;
-  const nextAction = isWorking ? 'Produce verified stage artifact' : agent.controlState === 'paused' ? 'Awaiting CEO resume' : 'Waiting for task dispatch';
+  const nextAction = blocker
+    ? 'Resolve blocker, then resume'
+    : isWorking
+      ? 'Produce verified stage artifact'
+      : agent.controlState === 'paused'
+        ? 'Awaiting CEO resume'
+        : 'Waiting for task dispatch';
   const reduce = useReducedMotion();
 
   return (

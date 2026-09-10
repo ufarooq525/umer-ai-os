@@ -17,7 +17,16 @@ export default async function AgentsPage() {
     getAgentRuns(),
   ]);
 
-  const workingAgents = agents.filter((a) => a.status === 'active' && a.controlState === 'active');
+  // An agent whose current run keeps failing (e.g. no mandate registered)
+  // isn't meaningfully "working" even though it's technically active —
+  // surface it as blocked instead of a misleading clean WORKING count.
+  const isBlocked = (agent: (typeof agents)[number]) => {
+    const run = agentCurrentRun(agent, agentRuns);
+    return !!(run && run.failures.length > 0);
+  };
+  const activeAgents = agents.filter((a) => a.status === 'active' && a.controlState === 'active');
+  const blockedAgents = activeAgents.filter(isBlocked);
+  const workingAgents = activeAgents.filter((a) => !isBlocked(a));
   const idleAgents = agents.filter((a) => a.status !== 'active' || a.controlState !== 'active');
 
   return (
@@ -48,6 +57,22 @@ export default async function AgentsPage() {
             >
               {workingAgents.length} WORKING
             </span>
+            {blockedAgents.length > 0 && (
+              <span
+                style={{
+                  fontFamily: fonts.mono,
+                  fontSize: 12,
+                  fontWeight: 650,
+                  padding: '4px 10px',
+                  borderRadius: 8,
+                  background: 'rgba(240, 113, 120, 0.12)',
+                  color: colors.danger,
+                  border: '1px solid rgba(240, 113, 120, 0.3)',
+                }}
+              >
+                {blockedAgents.length} BLOCKED
+              </span>
+            )}
             <span
               style={{
                 fontFamily: fonts.mono,
@@ -144,7 +169,8 @@ export default async function AgentsPage() {
         <div style={{ display: 'grid', gap: 20 }}>
           <PagedChildren pageSize={12} minItemWidth={300}>
             {/* Working agents first, then idle agents */}
-            {[...workingAgents, ...idleAgents].map((agent) => (
+            {/* Blocked agents need CEO attention first, then active work, then standby. */}
+            {[...blockedAgents, ...workingAgents, ...idleAgents].map((agent) => (
               <AgentCard
                 key={agent.agentId}
                 agent={agent}

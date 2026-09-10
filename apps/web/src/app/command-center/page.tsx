@@ -19,6 +19,7 @@ import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
 import { deriveMorningBrief } from '@/lib/morning-brief';
 import { probeRuntimeTruth } from '@/lib/runtime-truth';
 import { PulseDot } from '@/components/os/PulseDot';
+import { agentCurrentRun } from '@/components/os/joins';
 import { CompanyNowHero } from '@/components/os/CompanyNowHero';
 import { ExecutiveThreeCol } from '@/components/os/ExecutiveThreeCol';
 import { HorizontalCompanyFlow } from '@/components/os/HorizontalCompanyFlow';
@@ -83,7 +84,14 @@ export default async function CommandCenterPage() {
   });
 
   const watchdogFindings = dashboard?.watchdogFindings ?? [];
-  const workingAgents = agents.filter((a) => a.status === 'active' && a.controlState === 'active');
+  // An agent whose current run keeps failing (e.g. no mandate registered)
+  // isn't meaningfully "working" — exclude it so this count can't read as
+  // healthier than it is next to the CEO Attention list flagging the same runs.
+  const workingAgents = agents.filter((a) => {
+    if (a.status !== 'active' || a.controlState !== 'active') return false;
+    const run = agentCurrentRun(a, agentRuns);
+    return !(run && run.failures.length > 0);
+  });
   const activeProjects = projects.filter((p) => p.status === 'Active');
 
   // Revenue figures strictly from real authoritative state
@@ -264,6 +272,7 @@ export default async function CommandCenterPage() {
           projects={projects}
           tasks={tasks}
           workPackages={workPackages}
+          agentRuns={agentRuns}
           decisionsWaiting={pulse.decisionsRequired}
           overview={companyOverview}
         />

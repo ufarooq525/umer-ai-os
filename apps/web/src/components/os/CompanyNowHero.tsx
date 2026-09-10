@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Bot, ArrowRight, Sparkles } from 'lucide-react';
+import { Bot, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
 import { colors, fonts, radii } from '@umer/ui';
-import type { AgentRecord, CompanyOverview, WorkPackageSummary, WorkProjectRecord, WorkTaskRecord } from '@/lib/control-api';
-import { agentCurrentTask, agentProjectName } from './joins';
+import type { AgentRecord, AgentRunRecord, CompanyOverview, WorkPackageSummary, WorkProjectRecord, WorkTaskRecord } from '@/lib/control-api';
+import { agentCurrentRun, agentCurrentTask, agentProjectName } from './joins';
 import { humanizeSpecialistId } from './format';
 import { PulseDot } from './PulseDot';
 
@@ -13,6 +13,7 @@ type CompanyNowProps = {
   projects: WorkProjectRecord[];
   tasks: WorkTaskRecord[];
   workPackages: WorkPackageSummary[];
+  agentRuns: AgentRunRecord[];
   decisionsWaiting: number;
   overview: CompanyOverview | null;
 };
@@ -22,6 +23,7 @@ export function CompanyNowHero({
   projects,
   tasks,
   workPackages,
+  agentRuns,
   decisionsWaiting,
   overview,
 }: CompanyNowProps) {
@@ -29,7 +31,15 @@ export function CompanyNowHero({
   const runningPackages = workPackages.filter((w) => w.status === 'Running' || w.status === 'Claimed');
   const blockedTasks = tasks.filter((t) => t.status === 'Blocked');
 
-  const agentsCount = overview?.agentsWorking?.length ?? workingAgents.length;
+  // Don't trust overview.agentsWorking blindly here — it doesn't know about
+  // agents stuck retrying a failed run, so it can read "380 working" on the
+  // same screen that lists those same agents as BLOCKED. Count truthfully
+  // from what this panel is actually about to render instead.
+  const trulyWorkingCount = workingAgents.filter((a) => {
+    const run = agentCurrentRun(a, agentRuns);
+    return !(run && run.failures.length > 0);
+  }).length;
+  const agentsCount = trulyWorkingCount;
   const packagesCount = overview?.whatCompanyIsDoing?.activeWorkPackagesCount ?? runningPackages.length;
   const decisionsCount = overview?.decisionsNeeded?.length ?? decisionsWaiting;
   const blockedCount = overview?.blockedItems?.length ?? blockedTasks.length;
@@ -260,6 +270,8 @@ export function CompanyNowHero({
                   const task = agentCurrentTask(agent, tasks);
                   const projectName = agentProjectName(agent, tasks, projects);
                   const specialistTitle = humanizeSpecialistId(agent.specialistId) || agent.name || agent.agentId;
+                  const run = agentCurrentRun(agent, agentRuns);
+                  const blocker = run && run.failures.length > 0 ? run.failures[run.failures.length - 1]!.message : null;
 
                   return (
                     <tr
@@ -313,28 +325,65 @@ export function CompanyNowHero({
 
                       <td style={{ padding: '14px 10px', fontSize: 13, color: task ? colors.text : colors.muted, maxWidth: 360 }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                          {task ? task.title : agent.currentWorkPackageId ? `Work Package ${agent.currentWorkPackageId}` : 'Executing specialist mandate'}
+                          {task ? task.title : run?.currentTool ? `Using ${run.currentTool}` : `Executing ${specialistTitle} mandate`}
                         </span>
+                        {blocker && (
+                          <span
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              marginTop: 3,
+                              fontSize: 10.5,
+                              color: colors.danger,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            <AlertCircle size={10} style={{ flexShrink: 0 }} /> {blocker}
+                          </span>
+                        )}
                       </td>
 
                       <td style={{ padding: '14px 10px' }}>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            fontSize: 11,
-                            fontFamily: fonts.mono,
-                            fontWeight: 600,
-                            background: 'rgba(93, 206, 160, 0.1)',
-                            border: '1px solid rgba(93, 206, 160, 0.25)',
-                            color: colors.success,
-                          }}
-                        >
-                          <PulseDot tone="live" /> WORKING
-                        </span>
+                        {blocker ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontFamily: fonts.mono,
+                              fontWeight: 600,
+                              background: 'rgba(240, 113, 120, 0.1)',
+                              border: '1px solid rgba(240, 113, 120, 0.25)',
+                              color: colors.danger,
+                            }}
+                          >
+                            <PulseDot tone="danger" /> BLOCKED
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontFamily: fonts.mono,
+                              fontWeight: 600,
+                              background: 'rgba(93, 206, 160, 0.1)',
+                              border: '1px solid rgba(93, 206, 160, 0.25)',
+                              color: colors.success,
+                            }}
+                          >
+                            <PulseDot tone="live" /> WORKING
+                          </span>
+                        )}
                       </td>
 
                       <td style={{ padding: '14px 10px', textAlign: 'right', fontSize: 12, color: colors.muted, fontFamily: fonts.mono }}>
