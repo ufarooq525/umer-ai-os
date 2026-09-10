@@ -70,6 +70,7 @@ export const RuntimeEventNameSchema = z.enum([
   'memory.writeback.queued',
   'memory.writeback.acked',
   'memory.citation.missing',
+  'memory.deleted',
   'trust.allow',
   'trust.deny',
   'trust.sandbox.violated',

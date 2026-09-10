@@ -20,6 +20,7 @@ import { OBSERVABILITY_MIGRATIONS } from './observability-migration.js';
 import { REQUIREMENTS_MIGRATIONS } from './requirements-migration.js';
 import { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
 import { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
+import { JARVIS_MEMORY_MIGRATIONS } from './jarvis-memory-migration.js';
 
 export { COMMERCIAL_PIPELINE_MIGRATIONS } from './commercial-pipeline-migration.js';
 export { CUSTOMER_SUCCESS_MIGRATIONS } from './customer-success-migration.js';
@@ -43,61 +44,21 @@ export const ALL_MYSQL_MIGRATIONS = [
   ...REQUIREMENTS_MIGRATIONS,
   ...COMMERCIAL_PIPELINE_MIGRATIONS,
   ...CUSTOMER_SUCCESS_MIGRATIONS,
+  ...JARVIS_MEMORY_MIGRATIONS,
 ];
 
 export const packageName = '@umer/db' as const;
-
 export type PostgresClient = ReturnType<typeof postgres>;
 export type MySqlClient = Pool;
-
-export type MySqlExecutor = {
-  execute<T = unknown>(sql: string, params?: readonly unknown[]): Promise<T>;
-};
-
-let pg: PostgresClient | undefined;
-let mysqlPool: MySqlClient | undefined;
-let redis: Redis | undefined;
-
-export function createPostgresClient(connectionString?: string): PostgresClient {
-  if (pg) return pg;
-  const env = loadEnv();
-  pg = postgres(connectionString ?? env.DATABASE_URL, { max: 10, idle_timeout: 20, connect_timeout: 10 });
-  return pg;
-}
-
-export async function pingPostgres(client: PostgresClient = createPostgresClient()): Promise<boolean> {
-  const rows = await client`select 1 as ok`;
-  return rows[0]?.ok === 1;
-}
-
-export async function closePostgres(): Promise<void> {
-  if (!pg) return;
-  await pg.end({ timeout: 5 });
-  pg = undefined;
-}
-
-export function createMySqlClient(connectionString?: string): MySqlClient {
-  if (mysqlPool) return mysqlPool;
-  const env = loadEnv();
-  mysqlPool = mysql.createPool({ uri: connectionString ?? env.OPPORTUNITY_DATABASE_URL, waitForConnections: true, connectionLimit: 10, maxIdle: 10, idleTimeout: 60_000, queueLimit: 0, enableKeepAlive: true, keepAliveInitialDelay: 0, dateStrings: true });
-  return mysqlPool;
-}
-
-export function createMySqlExecutor(pool: MySqlClient = createMySqlClient()): MySqlExecutor {
-  return { async execute<T = unknown>(sql: string, params: readonly unknown[] = []): Promise<T> { const [rows] = await pool.execute(sql, params as never); return rows as T; } };
-}
-
-export async function pingMySql(client: MySqlClient = createMySqlClient()): Promise<boolean> {
-  const [rows] = await client.query<RowDataPacket[]>('SELECT 1 AS ok');
-  return Number(rows[0]?.ok) === 1;
-}
-
-export async function closeMySql(): Promise<void> {
-  if (!mysqlPool) return;
-  await mysqlPool.end();
-  mysqlPool = undefined;
-}
-
+export type MySqlExecutor = { execute<T = unknown>(sql: string, params?: readonly unknown[]): Promise<T> };
+let pg: PostgresClient | undefined; let mysqlPool: MySqlClient | undefined; let redis: Redis | undefined;
+export function createPostgresClient(connectionString?: string): PostgresClient { if (pg) return pg; const env = loadEnv(); pg = postgres(connectionString ?? env.DATABASE_URL, { max: 10, idle_timeout: 20, connect_timeout: 10 }); return pg; }
+export async function pingPostgres(client: PostgresClient = createPostgresClient()): Promise<boolean> { const rows = await client`select 1 as ok`; return rows[0]?.ok === 1; }
+export async function closePostgres(): Promise<void> { if (!pg) return; await pg.end({ timeout: 5 }); pg = undefined; }
+export function createMySqlClient(connectionString?: string): MySqlClient { if (mysqlPool) return mysqlPool; const env = loadEnv(); mysqlPool = mysql.createPool({ uri: connectionString ?? env.OPPORTUNITY_DATABASE_URL, waitForConnections: true, connectionLimit: 10, maxIdle: 10, idleTimeout: 60_000, queueLimit: 0, enableKeepAlive: true, keepAliveInitialDelay: 0, dateStrings: true }); return mysqlPool; }
+export function createMySqlExecutor(pool: MySqlClient = createMySqlClient()): MySqlExecutor { return { async execute<T = unknown>(sql: string, params: readonly unknown[] = []): Promise<T> { const [rows] = await pool.execute(sql, params as never); return rows as T; } }; }
+export async function pingMySql(client: MySqlClient = createMySqlClient()): Promise<boolean> { const [rows] = await client.query<RowDataPacket[]>('SELECT 1 AS ok'); return Number(rows[0]?.ok) === 1; }
+export async function closeMySql(): Promise<void> { if (!mysqlPool) return; await mysqlPool.end(); mysqlPool = undefined; }
 export async function migrate(client: MySqlClient = createMySqlClient()): Promise<void> {
   await client.query(`CREATE TABLE IF NOT EXISTS schema_migrations (id VARCHAR(191) PRIMARY KEY, checksum VARCHAR(191) NOT NULL, applied_at DATETIME(3) NOT NULL)`);
   try { await client.query('ALTER TABLE schema_migrations MODIFY checksum VARCHAR(191) NOT NULL'); } catch { /* already compatible */ }
@@ -109,31 +70,10 @@ export async function migrate(client: MySqlClient = createMySqlClient()): Promis
       }
     }
     const [rows] = await client.query<RowDataPacket[]>('SELECT id FROM schema_migrations WHERE id = ?', [migration.id]);
-    if (rows.length === 0) {
-      await client.execute('INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, UTC_TIMESTAMP(3))', [migration.id, migration.checksum]);
-      console.info(`[@umer/db] applied MySQL migration ${migration.id}`);
-    }
+    if (rows.length === 0) { await client.execute('INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, UTC_TIMESTAMP(3))', [migration.id, migration.checksum]); console.info(`[@umer/db] applied MySQL migration ${migration.id}`); }
   }
 }
-
-export function createRedisClient(url?: string): Redis {
-  if (redis) return redis;
-  const env = loadEnv();
-  redis = new Redis(url ?? env.REDIS_URL, { maxRetriesPerRequest: 3, lazyConnect: true });
-  return redis;
-}
-
-export async function pingRedis(client: Redis = createRedisClient()): Promise<boolean> {
-  if (client.status !== 'ready') await client.connect();
-  return (await client.ping()) === 'PONG';
-}
-
-export async function closeRedis(): Promise<void> {
-  if (!redis) return;
-  await redis.quit();
-  redis = undefined;
-}
-
-export async function seed(): Promise<void> {
-  console.info('[@umer/db] seed: no seed data yet');
-}
+export function createRedisClient(url?: string): Redis { if (redis) return redis; const env = loadEnv(); redis = new Redis(url ?? env.REDIS_URL, { maxRetriesPerRequest: 3, lazyConnect: true }); return redis; }
+export async function pingRedis(client: Redis = createRedisClient()): Promise<boolean> { if (client.status !== 'ready') await client.connect(); return (await client.ping()) === 'PONG'; }
+export async function closeRedis(): Promise<void> { if (!redis) return; await redis.quit(); redis = undefined; }
+export async function seed(): Promise<void> { console.info('[@umer/db] seed: no seed data yet'); }
