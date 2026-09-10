@@ -163,7 +163,7 @@ export function deriveAttentionCases(
   const cases: AttentionCase[] = [];
 
   // --- repeated_failure ------------------------------------------------------
-  for (const run of agentRuns) {
+  for (const [runIdx, run] of agentRuns.entries()) {
     if (!run.agentId || run.failures.length < FAILURE_STREAK_THRESHOLD) continue;
     const agent = agentById.get(run.agentId);
     const label = agentLabel(agent, run.agentId);
@@ -178,7 +178,10 @@ export function deriveAttentionCases(
     if (relatedProject) source.unshift(relatedProject);
 
     cases.push({
-      id: `repeated-failure:${run.runId ?? run.execId ?? `${run.workPackageId}:${run.startedAt}`}`,
+      // runId/execId are not reliably unique in this dataset (the same
+      // execId can appear on several separate run records), so fall back to
+      // the array index as an absolute tiebreaker rather than trust them alone.
+      id: `repeated-failure:${run.runId ?? run.execId ?? run.workPackageId}:${runIdx}`,
       category: 'repeated_failure',
       severity: 'critical',
       severityReason:
@@ -242,14 +245,14 @@ export function deriveAttentionCases(
   }
 
   // --- waiting_too_long --------------------------------------------------------
-  for (const run of agentRuns) {
+  for (const [runIdx, run] of agentRuns.entries()) {
     if (run.status !== 'running') continue;
     const ageMs = now - new Date(run.startedAt).getTime();
     if (!(ageMs > STALE_RUN_MS)) continue;
     const agent = run.agentId ? agentById.get(run.agentId) : undefined;
     const label = agentLabel(agent, run.agentId ?? run.workPackageId);
     cases.push({
-      id: `waiting-too-long:run:${run.runId ?? run.execId ?? `${run.workPackageId}:${run.startedAt}`}`,
+      id: `waiting-too-long:run:${run.runId ?? run.execId ?? run.workPackageId}:${runIdx}`,
       category: 'waiting_too_long',
       severity: ageMs > STALE_RUN_MS * 2 ? 'high' : 'medium',
       severityReason: `Running for ${formatDuration(ageMs)} without completing or failing.`,

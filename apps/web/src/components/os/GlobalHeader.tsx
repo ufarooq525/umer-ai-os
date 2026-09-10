@@ -13,6 +13,7 @@ const ROUTE_INFO: Record<string, { title: string; subtitle: string; domain: stri
   '/company/agents': { title: 'AI Workforce', subtitle: 'Active autonomous specialist agents executing work', domain: 'Company' },
   '/company/projects': { title: 'Company Projects', subtitle: 'Active delivery projects and milestone health', domain: 'Company' },
   '/company/tasks': { title: 'Work Tasks', subtitle: 'Canonical task execution records across specialists', domain: 'Company' },
+  '/company/prospects': { title: 'Prospects', subtitle: 'Every business discovered across all market research runs', domain: 'Intelligence' },
   '/company/graph': { title: 'Company Intelligence Graph', subtitle: 'Relational intelligence brain connecting market to revenue', domain: 'Company' },
   '/markets': { title: 'Market Intelligence', subtitle: 'Niche discovery, city rankings, and operator scan', domain: 'Intelligence' },
   '/company/opportunities': { title: 'Opportunity Intelligence', subtitle: 'Ranked high-value commercial and product opportunities', domain: 'Intelligence' },
