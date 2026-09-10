@@ -4,6 +4,7 @@ export type GrantStore = {
   save(grant: PermissionGrant): Promise<void>;
   listForPrincipal(principalId: string): Promise<PermissionGrant[]>;
   list(): Promise<PermissionGrant[]>;
+  revoke(grantId: string): Promise<void>;
 };
 
 export class InMemoryGrantStore implements GrantStore {
@@ -19,6 +20,10 @@ export class InMemoryGrantStore implements GrantStore {
 
   async list(): Promise<PermissionGrant[]> {
     return [...this.grants.values()];
+  }
+
+  async revoke(grantId: string): Promise<void> {
+    this.grants.delete(grantId);
   }
 
   clear(): void {

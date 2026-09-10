@@ -48,4 +48,16 @@ describe('MySqlGrantStore', () => {
     expect(grants).toHaveLength(2);
     expect(grants.map((g) => g.grantId)).toEqual(['g1', 'g2']);
   });
+
+  it('revokes a grant by deleting its row', async () => {
+    const execute = vi.fn<TrustSqlExecutor['execute']>(async () => undefined as never);
+    const store = new MySqlGrantStore({ execute: execute as unknown as TrustSqlExecutor['execute'] });
+
+    await store.revoke('jarvis-ceo-read');
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const [sql, params] = execute.mock.calls[0]!;
+    expect(sql).toContain('DELETE FROM trust_grants WHERE grant_id = ?');
+    expect(params).toEqual(['jarvis-ceo-read']);
+  });
 });

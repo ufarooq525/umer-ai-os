@@ -85,12 +85,13 @@ Branch: `feature/jarvis-ai-assistant` — merged to `main` via PR #2. Reconcilia
 - Added durable JARVIS conversation history: `MySqlSessionHistoryStore` (`apps/jarvis-api/src/session-history-store.ts`) backed by a new `jarvis_session_turns` migration, replacing the anonymous in-memory session `Map` that lost every conversation on restart. Falls back to `InMemorySessionHistoryStore` (same bounded-history behavior) when running without durable persistence.
 - All three durable stores share the one MySQL pool/executor `initializePersistentJarvisMemory` already established, gated on the same `JARVIS_MEMORY_PERSISTENCE=mysql` toggle as durable memory, so there is exactly one "durable persistence" mode for the whole app rather than several independent env vars.
 - Added tests: `oidc.test.ts` (valid claims mapping, custom claim names, wrong audience/issuer/signature, expired token, missing principal claim, garbage token — all fail closed), `mysql-store.test.ts` for grants, `session-history-store.test.ts` for both history store implementations, and `jarvis-memory/index.test.ts` proving per-call tenant isolation on write, retrieve and delete.
+- Added Trust grant admin tooling (`apps/jarvis-api/src/grant-admin.ts` + `GET/POST /v1/admin/grants`, `DELETE /v1/admin/grants/:grantId`) so provisioning access for a newly-authenticated real OIDC principal beyond the one bootstrap principal is a governed, authenticated API call rather than a direct DB write. Deliberately not a JARVIS chat tool — granting/revoking authority is kept out of the LLM tool-calling loop. Every admin route itself requires the caller to already hold an explicit `admin` grant on the `trust` resource (seeded once for the bootstrap principal alongside its other grants); fails closed for everyone else, including a principal otherwise fully authorized for ordinary `read`/`execute` actions. `GrantStore` gained a `revoke(grantId)` method (both `InMemoryGrantStore` and `MySqlGrantStore`) to support real revocation, not just an overriding deny grant.
 
 ## Remaining / intentionally gated
 
 ### Further identity work
-- Wire real per-tenant Trust grant administration (currently: the durable store exists and is authoritative, but provisioning grants for a newly-authenticated OIDC principal beyond the one bootstrap principal is a direct write to the store, not yet an admin tool/UI).
 - Replace the bounded-history read model with a proper paginated conversation view if/when conversations need to exceed the current MAX_HISTORY window.
+- No UI for grant administration yet — `/v1/admin/grants` is a plain authenticated JSON API; an operator console would sit on top of it.
 
 ### Further CEO reasoning
 - Add budget/quota and system-health attention policies where authoritative read models exist.

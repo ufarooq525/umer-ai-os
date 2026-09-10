@@ -9,6 +9,7 @@ import { createLLMProviderFromEnv } from '@umer/model-routing';
 import { TrustRuntime, InMemoryGrantStore, MySqlGrantStore } from '@umer/trust';
 import { createMySqlClient, createMySqlExecutor } from '@umer/db';
 import { InMemorySessionHistoryStore, MySqlSessionHistoryStore, type SessionHistoryStore } from './session-history-store.js';
+import { requireAdmin, listGrants, createGrant, revokeGrant, GrantAdminError } from './grant-admin.js';
 
 const env = loadEnv();
 const port = Number(process.env.JARVIS_PORT ?? 3010);
@@ -49,6 +50,17 @@ if (existingGrants.length === 0) {
       ...(configuredPrincipal.tenantId ? { tenantId: configuredPrincipal.tenantId } : {}),
     });
   }
+  // The bootstrap operator can administer grants for every principal seen
+  // afterward (e.g. a newly-authenticated real OIDC user) via the
+  // /v1/admin/grants routes below, instead of writing to trust_grants by hand.
+  await trust.registerGrant({
+    grantId: `jarvis-${configuredPrincipal.principalId}-admin`,
+    principalId: configuredPrincipal.principalId,
+    action: 'admin',
+    resourceType: 'trust',
+    effect: 'allow',
+    ...(configuredPrincipal.tenantId ? { tenantId: configuredPrincipal.tenantId } : {}),
+  });
 }
 
 const baseTools = createJarvisControlTools({ controlApiBaseUrl, memory });
@@ -144,6 +156,51 @@ const server = createServer(async (req, res) => {
     try { res.write(`event: attention\ndata: ${JSON.stringify({ receivedAt: new Date().toISOString(), attention: await readAttention() })}\n\n`); } catch { /* next poll will retry */ }
     req.on('close', () => attentionClients.delete(res));
     return;
+  }
+
+  if (req.url === '/v1/admin/grants' || req.url?.startsWith('/v1/admin/grants?')) {
+    try {
+      const sessionId = randomUUID();
+      const session = await authenticateRequest(req, sessionId);
+      await requireAdmin(trust, session.principal, sessionId);
+
+      if (req.method === 'GET') {
+        const principalId = new URL(req.url, 'http://localhost').searchParams.get('principalId') ?? undefined;
+        return send(res, 200, { grants: await listGrants(trustStore, principalId) });
+      }
+      if (req.method === 'POST') {
+        const body = await readJson(req);
+        const grant = await createGrant(trustStore, {
+          principalId: typeof body.principalId === 'string' ? body.principalId : '',
+          action: typeof body.action === 'string' ? body.action : '',
+          resourceType: typeof body.resourceType === 'string' ? body.resourceType : '',
+          resourceId: typeof body.resourceId === 'string' ? body.resourceId : undefined,
+          effect: body.effect === 'deny' ? 'deny' : 'allow',
+          tenantId: typeof body.tenantId === 'string' ? body.tenantId : undefined,
+        });
+        return send(res, 201, { grant });
+      }
+      return send(res, 405, { error: 'method_not_allowed' });
+    } catch (error) {
+      if (error instanceof AuthenticationError) return send(res, 401, { error: 'unauthenticated', message: error.message });
+      if (error instanceof GrantAdminError) return send(res, error.code === 'FORBIDDEN' ? 403 : 400, { error: error.code.toLowerCase(), message: error.message });
+      return send(res, 500, { error: 'admin_grants_failed', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const grantMatch = req.url?.match(/^\/v1\/admin\/grants\/([^/?]+)$/);
+  if (grantMatch && req.method === 'DELETE') {
+    try {
+      const sessionId = randomUUID();
+      const session = await authenticateRequest(req, sessionId);
+      await requireAdmin(trust, session.principal, sessionId);
+      await revokeGrant(trustStore, decodeURIComponent(grantMatch[1]!));
+      return send(res, 204, {});
+    } catch (error) {
+      if (error instanceof AuthenticationError) return send(res, 401, { error: 'unauthenticated', message: error.message });
+      if (error instanceof GrantAdminError) return send(res, error.code === 'FORBIDDEN' ? 403 : 400, { error: error.code.toLowerCase(), message: error.message });
+      return send(res, 500, { error: 'admin_grants_failed', message: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   if (req.method !== 'POST' || req.url !== '/v1/jarvis/chat') return send(res, 404, { error: 'not_found' });

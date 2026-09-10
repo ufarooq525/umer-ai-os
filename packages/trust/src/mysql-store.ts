@@ -58,4 +58,8 @@ export class MySqlGrantStore implements GrantStore {
     const rows = await this.db.execute<GrantRow[]>('SELECT grant_id, principal_id, action, resource_type, resource_id, effect, tenant_id FROM trust_grants');
     return rows.map(toGrant);
   }
+
+  async revoke(grantId: string): Promise<void> {
+    await this.db.execute('DELETE FROM trust_grants WHERE grant_id = ?', [grantId]);
+  }
 }
