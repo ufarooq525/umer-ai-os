@@ -2,10 +2,12 @@ import type { JarvisTool } from '@umer/jarvis-core';
 import { createJarvisMemory, type JarvisMemory } from '@umer/jarvis-memory';
 import { gatherEvidence } from './evidence.js';
 import { buildCeoReasoning } from './reasoning.js';
+import { buildProjectSummary } from './project-summary.js';
 
 export { authorizeJarvisTool, createAuthorizedJarvisTools, type AuthorizedJarvisToolsOptions } from './authorization.js';
 export * from './evidence.js';
 export * from './reasoning.js';
+export * from './project-summary.js';
 
 export type JarvisControlToolsOptions = {
   controlApiBaseUrl?: string;
@@ -351,5 +353,30 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [...baseTools, ceoRootCauseAnalysis];
+  const ceoProjectSummary: JarvisTool = {
+    name: 'ceo_project_summary',
+    description: 'Build a project-level CEO summary: current state, active agents, active tasks, active Work Packages, failed runs, pending gates, recent artifacts, blockers, opportunities, business impact and recommended next action — each populated only where matching evidence exists. Use when the CEO asks for a status update on a specific project.',
+    parameters: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'The project to summarize.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
+      },
+      required: ['projectId'],
+      additionalProperties: false,
+    },
+    execute: async (input) => {
+      const body = objectInput(input);
+      if (typeof body.projectId !== 'string' || !body.projectId.trim()) throw new Error('projectId is required');
+      const projectId = body.projectId.trim();
+      const rawLimit = Number(body.limit ?? 100);
+      const limit = Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 100 ? rawLimit : 100;
+      const evidence = await gatherEvidence((path, init) => requestJson(baseUrl, path, init, fetchImpl), undefined, limit);
+      const summary = buildProjectSummary(evidence, projectId);
+      if (!summary) return { projectId, found: false, note: `No project fact for "${projectId}" was found in current evidence.` };
+      return { found: true, generatedAt: new Date().toISOString(), ...summary };
+    },
+  };
+
+  return [...baseTools, ceoRootCauseAnalysis, ceoProjectSummary];
 }

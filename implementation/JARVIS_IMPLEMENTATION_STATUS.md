@@ -76,6 +76,7 @@ Branch: `feature/jarvis-ai-assistant`
 - Every statement in the output is tagged `OBSERVED_FACT`, `INFERENCE`, or `RECOMMENDATION`. Recommendations name existing governed tools (`inspect_agent_run`, `inspect_audit_trail`, `ceo_attention`, `delegate_work`) by their literal registered name and are never executed by this tool.
 - Governed delegation fails closed unless all six gates pass: the agent is registered (linked to the affected project in evidence), not suspended (`controlState !== 'paused'`), the `delegate_work` tool is actually registered, Trust confirms `execute`/`command` authority, explicit CEO approval was supplied for this specific delegation, and acceptance criteria (`doneWhen`) was supplied. Each failing gate is named explicitly.
 - Added deterministic tests: known failure chain, missing relationship, no fabricated root cause, explicit vs. inferred business impact, recommendation/tool mapping, no automatic execution, suspended/unregistered agent, insufficient authority, missing approval/acceptance criteria, and correlation ID preservation.
+- Added `ceo_project_summary` (`project-summary.ts`), a project-scoped summary over the same evidence: current state, active agents, active tasks, active Work Packages, failed runs, pending gates, recent artifacts, opportunities, blockers, business impact and recommended next action — each populated only where matching evidence exists; an unknown project returns no summary rather than an empty-but-shaped one.
 
 ## Remaining / intentionally gated
 
