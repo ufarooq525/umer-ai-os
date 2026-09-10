@@ -46,7 +46,7 @@ function withinWindow(record: unknown, since: number): boolean {
 }
 
 export function createJarvisControlTools(options: JarvisControlToolsOptions = {}): JarvisTool[] {
-  const baseUrl = options.controlApiBaseUrl ?? process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
+  const baseUrl = options.controlApiBaseUrl ?? process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:4000';
   const fetchImpl = options.fetchImpl ?? fetch;
   const memory = options.memory ?? createJarvisMemory();
 

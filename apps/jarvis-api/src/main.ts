@@ -13,7 +13,7 @@ import { requireAdmin, listGrants, createGrant, revokeGrant, GrantAdminError } f
 
 const env = loadEnv();
 const port = Number(process.env.JARVIS_PORT ?? 3010);
-const controlApiBaseUrl = process.env.CONTROL_API_BASE_URL ?? 'http://127.0.0.1:3002';
+const controlApiBaseUrl = process.env.CONTROL_API_BASE_URL ?? `http://127.0.0.1:${env.CONTROL_API_PORT}`;
 const provider = createLLMProviderFromEnv({ env });
 const memoryMode = (process.env.JARVIS_MEMORY_PERSISTENCE ?? 'mysql').toLowerCase();
 const memory = memoryMode === 'mysql'
