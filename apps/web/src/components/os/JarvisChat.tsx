@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { colors, fonts, radii } from '@umer/ui';
 
-type Turn = { role: 'user' | 'assistant'; content: string };
+type ToolCall = { name: string; arguments?: unknown };
+type Turn = { role: 'user' | 'assistant'; content: string; toolCalls?: ToolCall[] };
+
+const SESSION_KEY = 'umer.jarvis.sessionId';
 
 function useNarrow(maxWidth = 720) {
   const [narrow, setNarrow] = useState(false);
@@ -34,7 +37,7 @@ function useViewportHeight() {
   return height;
 }
 
-export function FounderChat() {
+export function JarvisChat() {
   const narrow = useNarrow();
   const viewportHeight = useViewportHeight();
   const [open, setOpen] = useState(false);
@@ -43,8 +46,16 @@ export function FounderChat() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const endRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem(SESSION_KEY);
+      if (stored) setSessionId(stored);
+    } catch {}
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
@@ -72,16 +83,27 @@ export function FounderChat() {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch('/api/founder-chat', {
+      const response = await fetch('/api/jarvis/chat', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ sessionId, message: content }),
       });
-      const payload = (await response.json()) as { reply?: string; error?: string };
-      if (!response.ok || !payload.reply) throw new Error(payload.error ?? 'No answer');
-      setTurns([...next, { role: 'assistant', content: payload.reply }]);
+      const payload = (await response.json()) as {
+        assistantMessage?: string;
+        sessionId?: string;
+        toolCalls?: ToolCall[];
+        error?: string;
+      };
+      if (!response.ok || !payload.assistantMessage) throw new Error(payload.error ?? 'No answer');
+      if (payload.sessionId && payload.sessionId !== sessionId) {
+        setSessionId(payload.sessionId);
+        try {
+          window.sessionStorage.setItem(SESSION_KEY, payload.sessionId);
+        } catch {}
+      }
+      setTurns([...next, { role: 'assistant', content: payload.assistantMessage, toolCalls: payload.toolCalls }]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Chat failed');
+      setError(err instanceof Error ? err.message : 'JARVIS failed to respond');
     } finally {
       setBusy(false);
     }
@@ -92,7 +114,7 @@ export function FounderChat() {
       (window as Window & { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ??
       (window as Window & { SpeechRecognition?: new () => SpeechRecognition }).SpeechRecognition;
     if (!Speech) {
-      setError('This browser cannot take voice. Type the thought instead.');
+      setError('This browser cannot take voice. Type instead.');
       return;
     }
     const rec = new Speech();
@@ -127,8 +149,8 @@ export function FounderChat() {
         position: 'fixed' as const,
         right: 20,
         bottom: 68,
-        width: 'min(420px, calc(100vw - 32px))',
-        height: 'min(560px, calc(100vh - 96px))',
+        width: 'min(440px, calc(100vw - 32px))',
+        height: 'min(600px, calc(100vh - 96px))',
         borderRadius: radii.lg,
         zIndex: 50,
       };
@@ -140,31 +162,36 @@ export function FounderChat() {
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          aria-label={open ? 'Close founder chat' : 'Open founder chat'}
+          aria-label={open ? 'Close JARVIS' : 'Open JARVIS'}
           style={{
             position: 'fixed',
             right: 'max(16px, env(safe-area-inset-right))',
             bottom: 'max(16px, env(safe-area-inset-bottom))',
             zIndex: 55,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
             border: `1px solid ${colors.borderStrong}`,
             background: colors.accent,
             color: colors.accentText,
             borderRadius: 999,
-            padding: narrow ? '12px 16px' : '10px 16px',
+            padding: narrow ? '12px 18px' : '10px 18px',
             fontWeight: 700,
             fontSize: 13,
             cursor: 'pointer',
             minHeight: 44,
+            boxShadow: '0 8px 24px rgba(0,0,0,.28)',
           }}
         >
-          {open ? 'Close think' : 'Think with me'}
+          <span aria-hidden style={{ width: 7, height: 7, borderRadius: 999, background: colors.accentText, opacity: 0.7 }} />
+          {open ? 'Close JARVIS' : 'Ask JARVIS'}
         </button>
       ) : null}
 
       {open ? (
         <div
           role="dialog"
-          aria-label="Founder chat"
+          aria-label="JARVIS"
           style={{
             ...sheetStyle,
             display: 'flex',
@@ -172,6 +199,7 @@ export function FounderChat() {
             border: narrow ? 'none' : `1px solid ${colors.borderStrong}`,
             background: colors.surface,
             color: colors.text,
+            boxShadow: narrow ? 'none' : '0 24px 60px rgba(0,0,0,.35)',
           }}
         >
           <div
@@ -187,9 +215,9 @@ export function FounderChat() {
             }}
           >
             <div>
-              <strong style={{ fontSize: 15 }}>Dump the thought</strong>
+              <strong style={{ fontSize: 15 }}>JARVIS</strong>
               <div style={{ fontSize: 12, color: colors.muted, marginTop: 2 }}>
-                Voice or type. Answers from your local model — it cannot open records yet.
+                Ask about agents, work, opportunities, or why something failed. It reads the real control plane.
               </div>
             </div>
             <button
@@ -226,25 +254,44 @@ export function FounderChat() {
           >
             {turns.length === 0 ? (
               <p style={{ margin: 0, fontSize: 14, color: colors.muted, lineHeight: 1.55 }}>
-                Example: “that Umrah shop’s website on the Maps photo is dead — should we still pitch a storefront?”
+                Try: “what needs my attention right now?” or “why is that work package stuck — run root cause analysis.”
               </p>
             ) : null}
             {turns.map((turn, i) => (
-              <div
-                key={`${turn.role}-${i}`}
-                style={{
-                  justifySelf: turn.role === 'user' ? 'end' : 'start',
-                  maxWidth: '92%',
-                  padding: '10px 12px',
-                  borderRadius: radii.md,
-                  background: turn.role === 'user' ? colors.accentSoft : colors.surfaceRaised,
-                  fontSize: 14,
-                  lineHeight: 1.5,
-                  whiteSpace: 'pre-wrap',
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {turn.content}
+              <div key={`${turn.role}-${i}`} style={{ justifySelf: turn.role === 'user' ? 'end' : 'start', maxWidth: '92%' }}>
+                <div
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: radii.md,
+                    background: turn.role === 'user' ? colors.accentSoft : colors.surfaceRaised,
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {turn.content}
+                </div>
+                {turn.toolCalls && turn.toolCalls.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                    {turn.toolCalls.map((call, ci) => (
+                      <span
+                        key={`${call.name}-${ci}`}
+                        title={JSON.stringify(call.arguments ?? {})}
+                        style={{
+                          fontFamily: fonts.mono,
+                          fontSize: 10,
+                          color: colors.muted,
+                          border: `1px solid ${colors.border}`,
+                          borderRadius: 999,
+                          padding: '3px 8px',
+                        }}
+                      >
+                        ⚙ {call.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
             {busy ? <div style={{ fontSize: 12, color: colors.muted, fontFamily: fonts.mono }}>Thinking…</div> : null}
@@ -270,7 +317,7 @@ export function FounderChat() {
             <textarea
               ref={fieldRef}
               value={input}
-              rows={narrow ? 2 : 2}
+              rows={2}
               enterKeyHint="send"
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -279,7 +326,7 @@ export function FounderChat() {
                   void send(input);
                 }
               }}
-              placeholder="What’s in your head?"
+              placeholder="Ask JARVIS anything about the company…"
               style={{
                 flex: '1 1 180px',
                 minWidth: 0,

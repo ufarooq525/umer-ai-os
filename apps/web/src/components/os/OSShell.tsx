@@ -5,7 +5,7 @@ import { colors, fonts } from '@umer/ui';
 import { GridBackground } from './GridBackground';
 import { PageEnter } from './PageEnter';
 import { Sidebar } from './Sidebar';
-import { FounderChat } from './FounderChat';
+import { JarvisChat } from './JarvisChat';
 
 export function OSShell({ children }: { children: ReactNode }) {
   return (
@@ -30,7 +30,7 @@ export function OSShell({ children }: { children: ReactNode }) {
       >
         <GridBackground />
         <Sidebar />
-        <FounderChat />
+        <JarvisChat />
         <main className="os-main">
           <div className="os-content">
             <PageEnter>{children}</PageEnter>

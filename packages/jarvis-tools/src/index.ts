@@ -20,6 +20,28 @@ function objectInput(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
+/**
+ * Full agent-run records carry unbounded toolCalls/decisions/actionLog history
+ * (real runs have measured in the hundreds of KB each) that blows past small
+ * local-model context windows when embedded raw into a tool result. Attention
+ * and briefing tools only need enough to name and explain the failure.
+ */
+function summarizeFailedRun(run: unknown): Record<string, unknown> {
+  const r = objectInput(run);
+  const actionLog = Array.isArray(r.actionLog) ? r.actionLog : [];
+  const lastAction = actionLog.length > 0 ? actionLog[actionLog.length - 1] : undefined;
+  return {
+    workPackageId: r.workPackageId,
+    runId: r.runId,
+    specialistId: r.specialistId,
+    agentId: r.agentId,
+    status: r.status,
+    errorMessage: r.errorMessage,
+    finishedAt: r.finishedAt,
+    lastAction,
+  };
+}
+
 async function requestJson(baseUrl: string, path: string, init: RequestInit | undefined, fetchImpl: typeof fetch): Promise<unknown> {
   const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}${path}`, {
     ...init,
@@ -72,7 +94,17 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
         requestJson(baseUrl, '/v1/agent-runs?status=failed', { method: 'GET' }, fetchImpl),
         requestJson(baseUrl, '/v1/audit/recent', { method: 'GET' }, fetchImpl),
       ]);
-      return { generatedAt: new Date().toISOString(), source: 'control-api-read-models', dashboard, agents, opportunities, failedRuns, audit };
+      const failed = objectInput(failedRuns);
+      const runs = Array.isArray(failed.agentRuns) ? failed.agentRuns : [];
+      return {
+        generatedAt: new Date().toISOString(),
+        source: 'control-api-read-models',
+        dashboard,
+        agents,
+        opportunities,
+        failedRuns: { count: runs.length, runs: runs.slice(0, 20).map(summarizeFailedRun) },
+        audit,
+      };
     },
   };
 
@@ -95,7 +127,7 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       const attention: Array<Record<string, unknown>> = [];
       for (const finding of findings) attention.push({ severity: 'high', source: 'watchdog', evidence: finding });
       for (const gate of gates) attention.push({ severity: 'high', source: 'pending_gate', evidence: gate, recommendedNextStep: 'Review the gate and explicitly Pass or Fail it.' });
-      for (const run of runs) attention.push({ severity: 'high', source: 'failed_agent_run', evidence: run, recommendedNextStep: 'Inspect the failed run and its error evidence before retrying or delegating new work.' });
+      for (const run of runs.slice(0, 20)) attention.push({ severity: 'high', source: 'failed_agent_run', evidence: summarizeFailedRun(run), recommendedNextStep: 'Inspect the failed run and its error evidence before retrying or delegating new work.' });
       return { generatedAt: new Date().toISOString(), source: 'control-api-read-models', attention, counts: { watchdogFindings: findings.length, pendingGates: gates.length, failedRuns: runs.length }, recentAudit: records.slice(-20), dashboard };
     },
   };
