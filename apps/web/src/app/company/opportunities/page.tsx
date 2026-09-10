@@ -8,7 +8,7 @@ import { CompanySubNav } from '@/components/os/CompanySubNav';
 export const dynamic = 'force-dynamic';
 
 export default async function OpportunitiesPage() {
-  const opportunities = await getOpportunities();
+  const opportunities = await getOpportunities().catch(() => []);
   const sorted = [...opportunities].sort((a, b) => (b.score?.overall ?? 0) - (a.score?.overall ?? 0));
   const highValueCount = sorted.filter((o) => (o.estimatedValueMax ?? 0) >= 15000 || (o.score?.overall ?? 0) >= 75).length;
 
