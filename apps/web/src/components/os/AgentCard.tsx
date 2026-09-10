@@ -46,11 +46,12 @@ export function AgentCard({ agent, run, currentTaskTitle, projectName, compact }
   const reduce = useReducedMotion();
 
   return (
-    <Link href={`/company/agents/${agent.agentId}`} style={{ textDecoration: 'none', color: colors.text, display: 'block' }}>
+    <Link href={`/company/agents/${agent.agentId}`} style={{ textDecoration: 'none', color: colors.text, display: 'flex', height: '100%' }}>
       <motion.div
         whileHover={reduce ? undefined : { y: -3 }}
         transition={{ duration: 0.15 }}
         style={{
+          width: '100%',
           borderRadius: 16,
           border: isWorking ? '1px solid rgba(167, 139, 250, 0.3)' : '1px solid rgba(255, 255, 255, 0.08)',
           background: isWorking
@@ -59,6 +60,7 @@ export function AgentCard({ agent, run, currentTaskTitle, projectName, compact }
           padding: '18px 20px',
           display: 'flex',
           flexDirection: 'column',
+          justifyContent: 'space-between',
           gap: 14,
           boxShadow: '0 8px 30px rgba(0, 0, 0, 0.25)',
           transition: 'border-color 0.15s ease',

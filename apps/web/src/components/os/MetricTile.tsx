@@ -16,11 +16,12 @@ export function MetricTile({ label, value, sublines = [], href }: MetricTileProp
   const hot = value > 0;
 
   return (
-    <Link href={href} style={{ textDecoration: 'none', color: colors.text, display: 'block' }}>
+    <Link href={href} style={{ textDecoration: 'none', color: colors.text, display: 'flex', height: '100%' }}>
       <motion.div
         whileHover={reduce ? undefined : { y: -2 }}
         transition={{ duration: 0.18 }}
         style={{
+          width: '100%',
           padding: spacing.md,
           borderRadius: radii.lg,
           border: `1px solid ${hot ? colors.borderStrong : colors.border}`,
