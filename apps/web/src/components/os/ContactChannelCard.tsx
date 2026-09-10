@@ -12,6 +12,12 @@ const TYPE_LABEL: Record<ContactChannel['type'], string> = {
   email: 'Email',
   address: 'Address',
   maps: 'Google Maps',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  twitter: 'X/Twitter',
+  linkedin: 'LinkedIn',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
 };
 
 const TYPE_ICON: Record<ContactChannel['type'], string> = {
@@ -21,7 +27,16 @@ const TYPE_ICON: Record<ContactChannel['type'], string> = {
   email: '✉',
   address: '📍',
   maps: '🗺',
+  facebook: '👤',
+  instagram: '📷',
+  twitter: '𝕏',
+  linkedin: '💼',
+  youtube: '▶',
+  tiktok: '🎵',
 };
+
+/** Social channels are discovered links, never a verified contact — see deriveSocialChannels. */
+const SOCIAL_TYPES = new Set<ContactChannel['type']>(['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok']);
 
 const CONFIDENCE_COLOR: Record<ContactChannel['confidence'], string> = {
   high: colors.success,
@@ -57,8 +72,33 @@ export function ContactChannelCard({ channels }: { channels: ContactChannel[] })
     };
   }, [website]);
 
+  const hasSocial = channels.some((c) => SOCIAL_TYPES.has(c.type) && c.value);
+
   return (
     <Card title="Contact Intelligence">
+      {hasSocial && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+            padding: '8px 10px',
+            marginBottom: 10,
+            borderRadius: 8,
+            border: `1px solid ${colors.warning}55`,
+            background: `${colors.warning}14`,
+            fontSize: 11.5,
+            color: colors.text,
+            lineHeight: 1.4,
+          }}
+        >
+          <span aria-hidden>⚠</span>
+          <span>
+            Social links below were found on the business&apos;s own website — not verified as active or currently
+            monitored. Confirm before reaching out on any of them.
+          </span>
+        </div>
+      )}
       <div style={{ display: 'grid', gap: 2 }}>
         {channels.map((c) => {
           const live =

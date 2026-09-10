@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Card, colors, fonts } from '@umer/ui';
 import { getBusiness } from '@/lib/control-api';
-import { deriveContactChannels, deriveOutreachReadiness, deriveProspectFit } from '@/lib/commercial-intelligence';
+import { deriveContactChannels, deriveOutreachReadiness, deriveProspectFit, deriveSocialChannels } from '@/lib/commercial-intelligence';
 import { ContactChannelCard } from '@/components/os/ContactChannelCard';
 import { ProspectFitCard } from '@/components/os/ProspectFitCard';
 import { StatusBadge } from '@/components/os/StatusBadge';
@@ -33,7 +33,7 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
   if (!detail) notFound();
 
   const { business, discoveryCandidate, opportunities, outreach, evidence, problems } = detail;
-  const contactChannels = deriveContactChannels(business, discoveryCandidate);
+  const contactChannels = [...deriveContactChannels(business, discoveryCandidate), ...deriveSocialChannels(evidence)];
   const fit = deriveProspectFit(opportunities);
   const readiness = deriveOutreachReadiness(business, contactChannels, evidence.length, outreach);
   const primaryDraft = outreach[0];

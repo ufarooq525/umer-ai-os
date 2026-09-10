@@ -13,6 +13,7 @@ import type {
   BusinessProspectRecord,
   CommercialIntelligenceSummary,
   DiscoveryCandidateRecord,
+  EvidenceRecord,
   OpportunityRecord,
   OpportunityRunEventRecord,
   OutreachDraftRecord,
@@ -20,7 +21,10 @@ import type {
 
 // --- Contact Intelligence ----------------------------------------------------
 
-export type ContactChannelType = 'website' | 'phone' | 'whatsapp' | 'email' | 'address' | 'maps';
+export type SocialChannelType = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
+export type ContactChannelType = 'website' | 'phone' | 'whatsapp' | 'email' | 'address' | 'maps' | SocialChannelType;
+
+const SOCIAL_CHANNEL_TYPES = new Set<ContactChannelType>(['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok']);
 export type ContactConfidence = 'high' | 'medium' | 'low' | 'unknown';
 
 export type ContactChannel = {
@@ -127,6 +131,52 @@ export function deriveContactChannels(
   ];
 }
 
+const SOCIAL_HOST_MAP: Array<[RegExp, SocialChannelType]> = [
+  [/(^|\.)facebook\.com$/i, 'facebook'],
+  [/(^|\.)instagram\.com$/i, 'instagram'],
+  [/(^|\.)(twitter|x)\.com$/i, 'twitter'],
+  [/(^|\.)linkedin\.com$/i, 'linkedin'],
+  [/(^|\.)youtube\.com$/i, 'youtube'],
+  [/(^|\.)tiktok\.com$/i, 'tiktok'],
+];
+
+/**
+ * Social channels discovered on the business's own website (see the
+ * `social_post` evidence records the WebsiteEvidenceSource produces).
+ *
+ * GUARDRAIL — do not bypass: these are unverified by construction. A link
+ * being found does not mean the account is active or monitored, only that
+ * it exists on their site. Confidence is capped at 'low' and the source
+ * label always spells out "unverified" so nothing downstream (a card, a
+ * drawer, a future outreach flow) can present these as confirmed contact
+ * channels without a human explicitly reading past that label first.
+ */
+export function deriveSocialChannels(evidence: EvidenceRecord[]): ContactChannel[] {
+  const channels: ContactChannel[] = [];
+  const seen = new Set<SocialChannelType>();
+  for (const record of evidence) {
+    if (record.type !== 'social_post') continue;
+    let host: string;
+    try {
+      host = new URL(record.sourceUrl).hostname;
+    } catch {
+      continue;
+    }
+    const platform = SOCIAL_HOST_MAP.find(([pattern]) => pattern.test(host))?.[1];
+    if (!platform || seen.has(platform)) continue;
+    seen.add(platform);
+    channels.push({
+      type: platform,
+      value: record.sourceUrl,
+      source: 'Found on their own website — unverified, confirm before using',
+      confidence: 'low',
+      verified: false,
+      href: record.sourceUrl,
+    });
+  }
+  return channels;
+}
+
 // --- Outreach Readiness -------------------------------------------------------
 
 export type OutreachReadinessStatus = 'ready' | 'incomplete' | 'blocked';
@@ -146,13 +196,19 @@ export function deriveOutreachReadiness(
   const reasons: string[] = [];
   const blockers: string[] = [];
 
-  const hasContact = contactChannels.some((c) => c.value);
+  // Social links are deliberately excluded here — deriveSocialChannels marks
+  // them unverified by construction (found on their own site, not confirmed
+  // active), so they must not unlock "ready to reach out" on their own. A
+  // Facebook link with nothing else discovered stays 'blocked', not 'ready'.
+  const hasContact = contactChannels.some((c) => c.value && !SOCIAL_CHANNEL_TYPES.has(c.type));
+  const hasSocialOnly = !hasContact && contactChannels.some((c) => c.value && SOCIAL_CHANNEL_TYPES.has(c.type));
   const hasEvidence = evidenceCount > 0;
   const hasDraft = outreachDrafts.length > 0;
   const identityConfident = business.name.trim().length > 0 && business.name !== 'Unverified Operator';
 
   if (!identityConfident) blockers.push('Business identity could not be confirmed — name is a placeholder.');
   if (hasContact) reasons.push('At least one contact channel discovered.');
+  else if (hasSocialOnly) blockers.push('Only unverified social links found — no confirmed phone, website, or email.');
   else blockers.push('No contact channel discovered (no phone, website, or email).');
 
   if (hasEvidence) reasons.push(`${evidenceCount} supporting evidence item${evidenceCount === 1 ? '' : 's'}.`);

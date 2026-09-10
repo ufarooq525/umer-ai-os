@@ -15,6 +15,7 @@ import {
   deriveOpportunityActivity,
   deriveOutreachReadiness,
   deriveProspectFit,
+  deriveSocialChannels,
   type ContactChannel,
   type OpportunityActivityEntry,
   type OutreachReadiness,
@@ -74,7 +75,9 @@ export async function loadOpportunityDetail(id: string, opts?: { includeNeighbor
         { runId: null, events: [] },
       ];
 
-  const contactChannels = businessDetail ? deriveContactChannels(businessDetail.business, businessDetail.discoveryCandidate) : [];
+  const contactChannels = businessDetail
+    ? [...deriveContactChannels(businessDetail.business, businessDetail.discoveryCandidate), ...deriveSocialChannels(businessDetail.evidence)]
+    : [];
   const readiness = businessDetail
     ? deriveOutreachReadiness(businessDetail.business, contactChannels, businessDetail.evidence.length, businessDetail.outreach)
     : null;

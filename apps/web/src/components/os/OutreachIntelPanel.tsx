@@ -15,7 +15,15 @@ const CHANNEL_TYPE_LABEL: Record<ContactChannel['type'], string> = {
   email: 'Email',
   address: 'Address',
   maps: 'Google Maps',
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  twitter: 'X/Twitter',
+  linkedin: 'LinkedIn',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
 };
+
+const SOCIAL_TYPES = new Set<ContactChannel['type']>(['facebook', 'instagram', 'twitter', 'linkedin', 'youtube', 'tiktok']);
 
 /**
  * Answers "who was contacted, how, and what happened" directly inside a
@@ -86,6 +94,25 @@ export function OutreachIntelPanel({ opportunityId }: { opportunityId: string })
           <p style={{ fontSize: 12.5, color: colors.muted, margin: 0 }}>No contact channels discovered for this prospect yet.</p>
         ) : (
           <div style={{ display: 'grid', gap: 6 }}>
+            {reachableChannels.some((c) => SOCIAL_TYPES.has(c.type)) && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  padding: '8px 10px',
+                  borderRadius: radii.sm,
+                  border: `1px solid ${colors.warning}55`,
+                  background: `${colors.warning}14`,
+                  fontSize: 11.5,
+                  color: colors.text,
+                  lineHeight: 1.4,
+                }}
+              >
+                <span aria-hidden>⚠</span>
+                <span>Social links found on their own website — unverified as active. Confirm before contacting.</span>
+              </div>
+            )}
             {reachableChannels.map((c) => (
               <div
                 key={c.type}

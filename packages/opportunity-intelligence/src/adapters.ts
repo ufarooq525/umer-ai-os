@@ -339,6 +339,34 @@ export class WebsiteEvidenceSource implements EvidenceSource {
         });
       }
 
+      // Social presence — GUARDRAIL: this reads only <a href> links the
+      // business itself published on its own website (the exact page we
+      // already fetched above for the audit). It never queries Facebook,
+      // Instagram, X or LinkedIn directly, so it carries none of their
+      // scraping/ToS exposure and needs no API key or credential.
+      //
+      // A link existing here means exactly that — a link exists on their
+      // site — nothing more. It is NOT confirmation the account is active,
+      // monitored, or still theirs. Every consumer of this evidence (UI,
+      // future agents) MUST keep it labeled unverified and MUST NOT use it
+      // to auto-send a message; that is why strength is 'moderate' (never
+      // 'verified') and the observation says so explicitly below. This
+      // guardrail is deliberate — do not bypass it by upgrading the
+      // strength or dropping the caution text to make the record "cleaner".
+      for (const [platform, profileUrl] of extractSocialLinks(rawHtml)) {
+        records.push({
+          id: evidenceId(candidate.name, `${url.toString()}-social-${platform}`),
+          type: 'social_post',
+          title: `${SOCIAL_LABEL[platform]} page linked from their website`,
+          sourceUrl: profileUrl,
+          observedAt: new Date().toISOString(),
+          observation: `${candidate.name}'s own website links to a ${SOCIAL_LABEL[platform]} page (${profileUrl}). Unverified: this only confirms the link exists on their site, not that the account is still active or monitored — check it manually before treating it as a real channel.`,
+          strength: 'moderate',
+          supports: [`social presence: ${platform}`, 'alternate contact channel'],
+          contradicts: [],
+        });
+      }
+
       return records;
     } catch (error) {
       return [{
@@ -354,6 +382,57 @@ export class WebsiteEvidenceSource implements EvidenceSource {
       }];
     }
   }
+}
+
+type SocialPlatform = 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'youtube' | 'tiktok';
+
+const SOCIAL_LABEL: Record<SocialPlatform, string> = {
+  facebook: 'Facebook',
+  instagram: 'Instagram',
+  twitter: 'X/Twitter',
+  linkedin: 'LinkedIn company',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+};
+
+// Each pattern matches a real profile/page URL and excludes the generic
+// share-button, login, and policy links every site embeds (e.g.
+// facebook.com/sharer.php, instagram.com/accounts/login) which are not the
+// business's own page and would be noise, not a contact channel.
+const SOCIAL_PATTERNS: Array<{ platform: SocialPlatform; regex: RegExp; excludePath: RegExp }> = [
+  { platform: 'facebook', regex: /https?:\/\/(?:www\.)?facebook\.com\/[^\s"'<>]+/gi, excludePath: /\/(sharer|dialog|plugins|tr|policies|help|legal|login|ads)(\/|\.|\?|$)/i },
+  { platform: 'instagram', regex: /https?:\/\/(?:www\.)?instagram\.com\/[^\s"'<>]+/gi, excludePath: /\/(p|reel|reels|explore|accounts|developer)(\/|\?|$)/i },
+  { platform: 'twitter', regex: /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[^\s"'<>]+/gi, excludePath: /\/(intent|share|i|home|hashtag)(\/|\?|$)/i },
+  { platform: 'linkedin', regex: /https?:\/\/(?:www\.)?linkedin\.com\/company\/[^\s"'<>]+/gi, excludePath: /^$/ },
+  { platform: 'youtube', regex: /https?:\/\/(?:www\.)?youtube\.com\/(?:channel|c|@|user)\/[^\s"'<>]+/gi, excludePath: /^$/ },
+  { platform: 'tiktok', regex: /https?:\/\/(?:www\.)?tiktok\.com\/@[^\s"'<>]+/gi, excludePath: /^$/ },
+];
+
+/**
+ * Extracts social profile links from raw HTML the business itself published
+ * on its own website — see the guardrail comment at the call site. Returns
+ * at most one URL per platform (the first found), trimmed of trailing HTML
+ * punctuation that a greedy match can pick up.
+ */
+export function extractSocialLinks(html: string): Array<[SocialPlatform, string]> {
+  const found = new Map<SocialPlatform, string>();
+  for (const { platform, regex, excludePath } of SOCIAL_PATTERNS) {
+    if (found.has(platform)) continue;
+    for (const match of html.matchAll(regex)) {
+      const raw = match[0].replace(/[),.;]+$/, '');
+      let parsed: URL;
+      try {
+        parsed = new URL(raw);
+      } catch {
+        continue;
+      }
+      if (excludePath.test(parsed.pathname)) continue;
+      if (parsed.pathname === '/' || parsed.pathname === '') continue;
+      found.set(platform, parsed.toString());
+      break;
+    }
+  }
+  return [...found.entries()];
 }
 
 function evidenceId(business: string, source: string): string {

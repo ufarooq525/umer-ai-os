@@ -5,15 +5,28 @@ import {
   deriveOpportunityActivity,
   deriveOutreachReadiness,
   deriveProspectFit,
+  deriveSocialChannels,
 } from './commercial-intelligence';
 import type {
   BusinessProspectRecord,
   CommercialIntelligenceSummary,
   DiscoveryCandidateRecord,
+  EvidenceRecord,
   OpportunityRecord,
   OpportunityRunEventRecord,
   OutreachDraftRecord,
 } from './control-api';
+
+const evidence = (over: Partial<EvidenceRecord> = {}): EvidenceRecord => ({
+  id: 'ev-1',
+  type: 'social_post',
+  title: 'Facebook page linked from their website',
+  sourceUrl: 'https://www.facebook.com/al-haramain-transport',
+  observedAt: '2026-09-01T00:00:00.000Z',
+  observation: 'Found on their website. Unverified.',
+  strength: 'moderate',
+  ...over,
+});
 
 const candidate = (over: Partial<DiscoveryCandidateRecord> = {}): DiscoveryCandidateRecord => ({
   id: 'cand-1',
@@ -164,6 +177,54 @@ describe('deriveOutreachReadiness', () => {
     const readiness = deriveOutreachReadiness(business({ name: 'Unverified Operator' }), channels, 2, [draft()]);
     expect(readiness.blockers).toContain('Business identity could not be confirmed — name is a placeholder.');
     expect(readiness.status).not.toBe('ready');
+  });
+
+  it('does not treat a discovered-but-unverified social link as a real contact channel', () => {
+    const socialOnly = deriveSocialChannels([evidence()]);
+    const readiness = deriveOutreachReadiness(business(), socialOnly, 0, []);
+    expect(readiness.status).toBe('blocked');
+    expect(readiness.blockers).toContain('Only unverified social links found — no confirmed phone, website, or email.');
+  });
+});
+
+describe('deriveSocialChannels', () => {
+  it('turns a social_post evidence record into a low-confidence, unverified channel', () => {
+    const channels = deriveSocialChannels([evidence()]);
+    expect(channels).toHaveLength(1);
+    expect(channels[0]).toMatchObject({
+      type: 'facebook',
+      value: 'https://www.facebook.com/al-haramain-transport',
+      confidence: 'low',
+      verified: false,
+    });
+    expect(channels[0]!.source).toMatch(/unverified/i);
+  });
+
+  it('recognizes every supported platform by hostname', () => {
+    const channels = deriveSocialChannels([
+      evidence({ id: 'ev-ig', sourceUrl: 'https://www.instagram.com/al_haramain/' }),
+      evidence({ id: 'ev-tw', sourceUrl: 'https://x.com/al_haramain' }),
+      evidence({ id: 'ev-li', sourceUrl: 'https://www.linkedin.com/company/al-haramain' }),
+    ]);
+    expect(channels.map((c) => c.type).sort()).toEqual(['instagram', 'linkedin', 'twitter']);
+  });
+
+  it('ignores evidence that is not a social_post', () => {
+    expect(deriveSocialChannels([evidence({ type: 'website' })])).toHaveLength(0);
+  });
+
+  it('keeps only the first link per platform', () => {
+    const channels = deriveSocialChannels([
+      evidence({ id: 'ev-1', sourceUrl: 'https://www.facebook.com/business-a' }),
+      evidence({ id: 'ev-2', sourceUrl: 'https://www.facebook.com/business-b' }),
+    ]);
+    expect(channels).toHaveLength(1);
+    expect(channels[0]!.value).toBe('https://www.facebook.com/business-a');
+  });
+
+  it('skips a malformed source URL instead of throwing', () => {
+    expect(() => deriveSocialChannels([evidence({ sourceUrl: 'not-a-url' })])).not.toThrow();
+    expect(deriveSocialChannels([evidence({ sourceUrl: 'not-a-url' })])).toHaveLength(0);
   });
 });
 
