@@ -67,6 +67,16 @@ Branch: `feature/jarvis-ai-assistant`
 - Failed runs and pending human gates are surfaced with evidence and suggested follow-up tools.
 - The LLM remains a reasoning layer over authoritative read models; it is not treated as the source of truth.
 
+### Phase 8 — Deeper CEO reasoning
+- Added `ceo_root_cause_analysis`, a deterministic Evidence -> Causal Analysis -> Root Cause -> Business Impact -> Recommended Action -> Governed Delegation pipeline over the same authoritative read models as `ceo_intelligence`.
+- Extracted the shared evidence-gathering/normalization step into `evidence.ts` (`gatherEvidence`) so both tools correlate the exact same facts across agents, projects, tasks, Work Packages, agent runs, artifacts, opportunities, audit records, correlation IDs and execution IDs — no duplicated read-model logic.
+- Root cause is only ever "established" when a failing fact carries a concrete error/failure detail *and* resolves to a real structural relation already present in evidence; otherwise the tool reports "Root cause not established" and names exactly which evidence is missing. It never fabricates a root cause.
+- Confidence is fixed arithmetic over three evidence checks (error detail, structural relation, correlated audit record) computed in TypeScript — never asked of or invented by the LLM.
+- Business impact is only reported as an OBSERVED_FACT when a linked opportunity fact carries a real `estimatedValueMin`/`estimatedValueMax`/`timeToRevenueDays` field; otherwise it is explicitly labeled an INFERENCE with no invented revenue, customer, deadline, cost or severity figure.
+- Every statement in the output is tagged `OBSERVED_FACT`, `INFERENCE`, or `RECOMMENDATION`. Recommendations name existing governed tools (`inspect_agent_run`, `inspect_audit_trail`, `ceo_attention`, `delegate_work`) by their literal registered name and are never executed by this tool.
+- Governed delegation fails closed unless all six gates pass: the agent is registered (linked to the affected project in evidence), not suspended (`controlState !== 'paused'`), the `delegate_work` tool is actually registered, Trust confirms `execute`/`command` authority, explicit CEO approval was supplied for this specific delegation, and acceptance criteria (`doneWhen`) was supplied. Each failing gate is named explicitly.
+- Added deterministic tests: known failure chain, missing relationship, no fabricated root cause, explicit vs. inferred business impact, recommendation/tool mapping, no automatic execution, suspended/unregistered agent, insufficient authority, missing approval/acceptance criteria, and correlation ID preservation.
+
 ## Remaining / intentionally gated
 
 ### Production identity provider and durable authorization grants
@@ -75,10 +85,10 @@ Branch: `feature/jarvis-ai-assistant`
 - Propagate authenticated tenant identity into Memory Access and any tenant-scoped control-plane adapters.
 - Replace anonymous in-memory conversation history with a durable session/read model appropriate for production.
 
-### Deeper CEO reasoning
-- Add first-class causal/root-cause chains where authoritative relationships support them.
+### Further CEO reasoning
 - Add budget/quota and system-health attention policies where authoritative read models exist.
 - Add richer project-level summaries and decision-quality scoring without fabricating missing evidence.
+- Wire a durable specialist registry (with lifecycle status) into control-api so governed-delegation eligibility can check registered/suspended specialists directly instead of inferring registration from the live agent snapshot.
 
 ### Voice
 - Real STT → JARVIS → TTS provider/runtime integration with the same authorization, correlation and audit boundaries.

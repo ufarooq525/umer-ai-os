@@ -1,7 +1,11 @@
 import type { JarvisTool } from '@umer/jarvis-core';
 import { createJarvisMemory, type JarvisMemory } from '@umer/jarvis-memory';
+import { gatherEvidence } from './evidence.js';
+import { buildCeoReasoning } from './reasoning.js';
 
 export { authorizeJarvisTool, createAuthorizedJarvisTools, type AuthorizedJarvisToolsOptions } from './authorization.js';
+export * from './evidence.js';
+export * from './reasoning.js';
 
 export type JarvisControlToolsOptions = {
   controlApiBaseUrl?: string;
@@ -37,18 +41,6 @@ function withinWindow(record: unknown, since: number): boolean {
   const timestamp = r.occurredAt ?? r.createdAt ?? r.updatedAt ?? r.timestamp ?? r.startedAt ?? r.completedAt ?? r.failedAt;
   const time = isoTime(timestamp);
   return time === 0 || time >= since;
-}
-
-function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) if (typeof record[key] === 'string' && record[key].trim()) return record[key].trim();
-  return undefined;
-}
-
-function matchesFocus(record: unknown, focus: string | undefined): boolean {
-  if (!focus) return true;
-  const r = objectInput(record);
-  const needle = focus.toLowerCase();
-  return Object.values(r).some((value) => typeof value === 'string' && value.toLowerCase().includes(needle));
 }
 
 export function createJarvisControlTools(options: JarvisControlToolsOptions = {}): JarvisTool[] {
@@ -292,64 +284,21 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
       const focus = typeof body.focus === 'string' && body.focus.trim() ? body.focus.trim() : undefined;
       const rawLimit = Number(body.limit ?? 50);
       const limit = Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 100 ? rawLimit : 50;
-      const [dashboard, agents, runs, tasks, audit, artifacts, opportunities] = await Promise.all([
-        requestJson(baseUrl, '/v1/dashboard', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, '/v1/agents', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, '/v1/agent-runs', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, '/v1/tasks', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, '/v1/audit/recent', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, '/v1/artifacts', { method: 'GET' }, fetchImpl),
-        requestJson(baseUrl, '/v1/opportunities?limit=50', { method: 'GET' }, fetchImpl),
-      ]);
+      const evidence = await gatherEvidence((path, init) => requestJson(baseUrl, path, init, fetchImpl), focus, limit);
 
-      const d = objectInput(dashboard);
-      const agentsObj = objectInput(agents);
-      const tasksObj = objectInput(tasks);
-      const runsObj = objectInput(runs);
-      const artifactsObj = objectInput(artifacts);
-      const opportunitiesObj = objectInput(opportunities);
-      const auditObj = objectInput(audit);
-      const collections = {
-        agents: Array.isArray(agentsObj.agents) ? agentsObj.agents : [],
-        projects: Array.isArray(d.projects) ? d.projects : Array.isArray(d.workProjects) ? d.workProjects : [],
-        tasks: Array.isArray(tasksObj.tasks) ? tasksObj.tasks : [],
-        workPackages: Array.isArray(d.workPackages) ? d.workPackages : [],
-        runs: Array.isArray(runsObj.agentRuns) ? runsObj.agentRuns : [],
-        artifacts: Array.isArray(artifactsObj.artifacts) ? artifactsObj.artifacts : [],
-        opportunities: Array.isArray(opportunitiesObj.opportunities) ? opportunitiesObj.opportunities : [],
-        audit: Array.isArray(auditObj.records) ? auditObj.records : [],
-      };
-
-      const filtered = Object.fromEntries(Object.entries(collections).map(([kind, records]) => [kind, records.filter((record) => matchesFocus(record, focus)).slice(0, limit)]));
-      const facts: Array<Record<string, unknown>> = [];
-      const addFact = (type: string, source: string, record: unknown, relations: Record<string, unknown> = {}) => {
-        const r = objectInput(record);
-        facts.push({ type, source, id: firstString(r, ['id', 'agentId', 'taskId', 'workPackageId', 'artifactId', 'opportunityId', 'projectId', 'correlationId']), status: r.status, relations, evidence: record });
-      };
-
-      for (const record of filtered.agents) addFact('agent', 'agents', record, { projectId: firstString(objectInput(record), ['projectId', 'project']), taskId: firstString(objectInput(record), ['taskId', 'task']) });
-      for (const record of filtered.projects) addFact('project', 'dashboard.workProjects', record);
-      for (const record of filtered.tasks) addFact('task', 'tasks', record, { agentId: firstString(objectInput(record), ['agentId', 'agent']), projectId: firstString(objectInput(record), ['projectId', 'project']), workPackageId: firstString(objectInput(record), ['workPackageId']) });
-      for (const record of filtered.workPackages) addFact('work_package', 'dashboard.workPackages', record, { agentId: firstString(objectInput(record), ['agentId', 'specialistId', 'agent']), projectId: firstString(objectInput(record), ['projectId', 'project']), taskId: firstString(objectInput(record), ['taskId', 'task']), runId: firstString(objectInput(record), ['runId', 'executionId']), artifactId: firstString(objectInput(record), ['artifactId']) });
-      for (const record of filtered.runs) addFact('agent_run', 'agent-runs', record, { workPackageId: firstString(objectInput(record), ['workPackageId']), agentId: firstString(objectInput(record), ['agentId', 'specialistId']), projectId: firstString(objectInput(record), ['projectId']), artifactId: firstString(objectInput(record), ['artifactId']) });
-      for (const record of filtered.artifacts) addFact('artifact', 'artifacts', record, { execId: firstString(objectInput(record), ['execId', 'executionId']), workPackageId: firstString(objectInput(record), ['workPackageId']) });
-      for (const record of filtered.opportunities) addFact('opportunity', 'opportunities', record, { projectId: firstString(objectInput(record), ['projectId']), owner: firstString(objectInput(record), ['owner', 'agentId']) });
-      for (const record of filtered.audit) addFact('audit', 'audit', record, { correlationId: firstString(objectInput(record), ['correlationId']), actor: firstString(objectInput(record), ['actor', 'principalId']) });
-
-      const failures = facts.filter((fact) => fact.type === 'agent_run' && ['failed', 'error'].includes(String(fact.status ?? '').toLowerCase()));
-      const pendingGates = Array.isArray(d.pendingGates) ? d.pendingGates : [];
+      const failures = evidence.facts.filter((fact) => fact.type === 'agent_run' && ['failed', 'error'].includes(String(fact.status ?? '').toLowerCase()));
       const recommendations: Array<Record<string, unknown>> = [];
       for (const failure of failures.slice(0, 10)) recommendations.push({ priority: 'high', action: 'inspect_failed_run', reason: 'An authoritative agent run is marked failed.', evidenceId: failure.id, nextTool: 'inspect_agent_run' });
-      for (const gate of pendingGates.filter((gate) => matchesFocus(gate, focus)).slice(0, 10)) recommendations.push({ priority: 'high', action: 'review_pending_gate', reason: 'A human gate is still pending.', evidence: gate });
+      for (const gate of evidence.pendingGates.slice(0, 10)) recommendations.push({ priority: 'high', action: 'review_pending_gate', reason: 'A human gate is still pending.', evidence: gate });
 
       return {
         generatedAt: new Date().toISOString(),
         source: 'control-api-read-models',
         focus: focus ?? null,
-        counts: Object.fromEntries(Object.entries(collections).map(([kind, records]) => [kind, records.length])),
-        evidenceGraph: facts.slice(0, limit),
+        counts: evidence.counts,
+        evidenceGraph: evidence.facts.slice(0, limit),
         observedFailureCount: failures.length,
-        pendingGateCount: pendingGates.length,
+        pendingGateCount: evidence.pendingGates.length,
         recommendedNextSteps: recommendations,
         authority: 'authoritative read models; recommendations are derived and are not executed',
       };
@@ -367,5 +316,40 @@ export function createJarvisControlTools(options: JarvisControlToolsOptions = {}
     },
   };
 
-  return [systemSnapshot, ceoBriefing, ceoAttention, attentionFeed, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, companyTimeline, awayBriefing, listArtifacts, inspectArtifact, retrieveMemory, ceoIntelligence, delegateWork];
+  const baseTools: JarvisTool[] = [systemSnapshot, ceoBriefing, ceoAttention, attentionFeed, listAgents, inspectAgentRuns, inspectAgentRun, listWorkPackages, listTasks, listOpportunities, listAudit, companyTimeline, awayBriefing, listArtifacts, inspectArtifact, retrieveMemory, ceoIntelligence, delegateWork];
+  const baseToolNames = new Set(baseTools.map((tool) => tool.name));
+
+  const ceoRootCauseAnalysis: JarvisTool = {
+    name: 'ceo_root_cause_analysis',
+    description: 'Run the deterministic Evidence -> Causal Analysis -> Root Cause -> Business Impact -> Recommended Action -> Governed Delegation pipeline over authoritative read models. Use when the CEO asks "why did this fail", "what should we do about it", or "should we delegate a fix". Every statement is labeled OBSERVED_FACT, INFERENCE, or RECOMMENDATION. Never fabricates a root cause, confidence score, or business impact figure; if evidence is insufficient it explicitly says "Root cause not established" and names the missing evidence. Recommendations name governed tools but this tool never executes them.',
+    parameters: {
+      type: 'object',
+      properties: {
+        focus: { type: 'string', description: 'Project, agent, task, work package, run, artifact or opportunity keyword to scope the analysis.' },
+        limit: { type: 'integer', minimum: 1, maximum: 100 },
+        approvalGranted: { type: 'boolean', description: 'Set true only when the CEO/an authorized human has explicitly approved the specific delegation this analysis may recommend. Defaults to false (fails closed).' },
+        doneWhen: { type: 'string', description: 'Acceptance criteria for a potential delegated fix. Required for governed delegation to be eligible.' },
+        goal: { type: 'string', description: 'Goal text for a potential delegated fix, used only to describe WHAT would be delegated.' },
+        delegationType: { type: 'string', enum: ['qa', 'seo', 'security', 'perf', 'ux', 'feature', 'bug'] },
+      },
+      additionalProperties: false,
+    },
+    execute: async (input, context) => {
+      const body = objectInput(input);
+      const focus = typeof body.focus === 'string' && body.focus.trim() ? body.focus.trim() : undefined;
+      const rawLimit = Number(body.limit ?? 50);
+      const limit = Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 100 ? rawLimit : 50;
+      const evidence = await gatherEvidence((path, init) => requestJson(baseUrl, path, init, fetchImpl), focus, limit);
+      return buildCeoReasoning(evidence, {
+        registeredToolNames: baseToolNames,
+        authorize: context.authorize,
+        approvalGranted: body.approvalGranted === true,
+        doneWhen: typeof body.doneWhen === 'string' ? body.doneWhen : undefined,
+        goal: typeof body.goal === 'string' ? body.goal : undefined,
+        delegationType: typeof body.delegationType === 'string' ? body.delegationType : undefined,
+      });
+    },
+  };
+
+  return [...baseTools, ceoRootCauseAnalysis];
 }
