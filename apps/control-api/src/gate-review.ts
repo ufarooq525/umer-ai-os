@@ -382,6 +382,51 @@ function buildRuntimeWorkPackageReview(input: {
     };
   }
 
+  if (artifact && (artifact.artifactType === 'TestPlanResults' || workPackage.specialistId === 'qa.verify')) {
+    const verifiedCount = artifact.acceptanceCriteriaMet.filter((c) => c.status === 'VERIFIED').length;
+    const failedCount = artifact.acceptanceCriteriaMet.filter((c) => c.status === 'FAILED').length;
+    const naCount = artifact.acceptanceCriteriaMet.filter((c) => c.status === 'N_A').length;
+
+    const items = artifact.acceptanceCriteriaMet.map((c, i) => ({
+      id: `qa-item-${i + 1}`,
+      title: c.criterion,
+      severity: c.status === 'FAILED' ? 'P0' : 'P1',
+      detail: `Verification status: ${c.status}${c.evidenceRef ? ` (evidence: ${c.evidenceRef})` : ''}`,
+    }));
+
+    const headline = `${projectName}: QA Verification (${verifiedCount} verified, ${failedCount} failed). Authored by ${workPackage.specialistId}.`;
+    const onApprove = `Approving records the QA verification evidence and advances the Work Graph to Security and Release stages.`;
+
+    return {
+      waitId: gate.waitId,
+      gateId: gate.gateId,
+      workPackageId: gate.workPackageId,
+      intakeId: `runtime-${workPackage.workPackageId}`,
+      projectId,
+      projectName,
+      kind: 'findings',
+      headline,
+      onApprove,
+      goal: `Verify quality for ${projectName}`,
+      requestedType: 'qa',
+      findings: {
+        runId: `qa-${workPackage.workPackageId}`,
+        summary: `QA verification plan and results executed by ${workPackage.specialistId}`,
+        counts: {
+          verified: verifiedCount,
+          failed: failedCount,
+          pending: naCount,
+        },
+        items,
+      },
+      acceptanceCriteria: artifact.acceptanceCriteriaMet.map((c) => `${c.criterion}: ${c.status}`),
+      risks: failedCount > 0 ? ['QA reported failed verification criteria.'] : [],
+      nextActions: failedCount > 0
+        ? ['Reject gate and request engineering remediation']
+        : ['Approve gate to advance to Security audit and Release planning'],
+    };
+  }
+
   const headline = `${projectName}: ${workPackage.stage} review (${workPackage.specialistId}).`;
   return {
     waitId: gate.waitId,

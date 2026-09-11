@@ -818,6 +818,27 @@ export function createControlApiServer(state: ControlApiState) {
               lines.push(`Release context: ${relTask.description}`);
             }
           }
+          if (nodeType === 'QA' || nodeType === 'Security') {
+            if (state.artifactStore) {
+              const artifacts = await state.artifactStore.list();
+              const codeArtifact = artifacts.find(
+                (a) => a.artifactType === 'Code' && a.acceptanceStatus === 'submitted',
+              );
+              if (codeArtifact) {
+                const ann = (codeArtifact.metadata?.annotations ?? {}) as Record<string, string>;
+                lines.push(`Preceding Implementation Artifact: ${codeArtifact.artifactId}`);
+                if (ann.filesChanged) {
+                  lines.push(`Implementation Files Changed: ${ann.filesChanged} file(s)`);
+                }
+                if (ann.testsRan) {
+                  lines.push(`Implementation Staged Tests: testsRan=${ann.testsRan}, testsPassed=${ann.testsPassed}`);
+                }
+                if (ann.proposedDiff) {
+                  lines.push(`Implementation Diff:\n\`\`\`diff\n${ann.proposedDiff.slice(0, 3000)}\n\`\`\``);
+                }
+              }
+            }
+          }
         } catch {
           // Non-blocking: fall back gracefully to Requirement grounding alone
         }

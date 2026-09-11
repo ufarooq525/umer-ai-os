@@ -8,6 +8,7 @@ import { createControlPlaneService } from '@umer/control-plane';
 import { createProjectRegistry, contentHash, createManualCodeProducer } from '@umer/registry';
 import { createEventBus } from '@umer/event-bus';
 import { createControlApiServer } from './server.js';
+import { registerQaBusShim, type ControlApiState } from './state.js';
 import { splitUnifiedDiff, buildGateReview } from './gate-review.js';
 import { parseContract, ArtifactContractSchema, SCHEMA_VERSION } from '@umer/contracts';
 import {
@@ -206,6 +207,63 @@ describe('buildGateReview', () => {
     expect(review?.code?.files[0]?.path).toBe('src/hello.ts');
     expect(review?.headline).toContain('demo-client');
     expect(review?.headline).toContain('staged tests passed');
+  });
+
+  it('builds a findings review for runtime QA Work Package backed by a TestPlanResults artifact', async () => {
+    const fixture = await createFixture();
+    const review = buildGateReview({
+      gate: { waitId: 'wait-qa-1', gateId: 'gate-wp-pkg-qa-1', workPackageId: 'pkg-qa-1' },
+      intakes: [],
+      projectRegistry: fixture.state.projectRegistry,
+      workPackages: [
+        {
+          workPackageId: 'pkg-qa-1',
+          execId: 'EXEC-903',
+          status: 'AwaitingReview',
+          specialistId: 'qa.verify',
+          stage: 'QA',
+          projectId: 'demo-client',
+          artifactId: 'art-qa-1',
+        },
+      ],
+      artifacts: [
+        parseContract(ArtifactContractSchema, {
+          id: 'art-qa-1',
+          schemaVersion: SCHEMA_VERSION,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            labels: {},
+            annotations: {
+              suiteCommand: './vendor/bin/phpunit',
+            },
+          },
+          kind: 'artifact',
+          artifactId: 'art-qa-1',
+          artifactType: 'TestPlanResults',
+          version: 'wp:pkg-qa-1:1',
+          producedBy: 'qa.verify',
+          producedFor: 'EXEC-903',
+          acceptanceStatus: 'submitted',
+          acceptanceCriteriaMet: [
+            { criterion: 'Unit test verification for multiply method', status: 'VERIFIED', evidenceRef: 'test://phpunit' },
+            { criterion: 'Regression coverage verification', status: 'VERIFIED', evidenceRef: 'test://regression' },
+          ],
+          sourceTaskId: 'task-qa-1',
+          contentRef: 'memory://artifacts/art-qa-1',
+          contentHash: 'hash-qa-1',
+        }),
+      ],
+    });
+
+    expect(review).toBeDefined();
+    expect(review?.kind).toBe('findings');
+    expect(review?.requestedType).toBe('qa');
+    expect(review?.findings?.counts.verified).toBe(2);
+    expect(review?.findings?.counts.failed).toBe(0);
+    expect(review?.findings?.items).toHaveLength(2);
+    expect(review?.headline).toContain('QA Verification');
+    expect(review?.headline).toContain('2 verified');
   });
 });
 

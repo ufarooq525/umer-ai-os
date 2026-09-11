@@ -22,4 +22,5 @@ export type QaApplyResult = {
   recommendedCommand?: string;
   runs?: QaCommandRun[];
   runBundle?: QaRunBundle;
+  evidenceDir?: string;
 };
