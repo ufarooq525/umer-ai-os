@@ -1002,6 +1002,7 @@ export type GraphNodeType =
   | 'Requirement'
   | 'Agent'
   | 'WorkPackage'
+  | 'Gate'
   | 'AgentRun'
   | 'Artifact'
   | 'Customer'
@@ -1044,6 +1045,7 @@ export type CompanyGraphParams = {
   activeOnly?: boolean;
   blockedOnly?: boolean;
   limit?: number;
+  depth?: number;
 };
 
 export async function getCompanyGraph(params: CompanyGraphParams = {}): Promise<CompanyGraphData> {
@@ -1058,6 +1060,7 @@ export async function getCompanyGraph(params: CompanyGraphParams = {}): Promise<
   if (params.activeOnly) query.set('active', '1');
   if (params.blockedOnly) query.set('blocked', '1');
   if (params.limit) query.set('limit', String(params.limit));
+  if (params.depth) query.set('depth', String(params.depth));
   const qs = query.toString();
   return fetchJson<CompanyGraphData>(`/v1/company/graph${qs ? `?${qs}` : ''}`);
 }

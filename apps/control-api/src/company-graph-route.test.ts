@@ -489,4 +489,99 @@ describe('GET /v1/company/graph', () => {
       expect(status).toBe(404);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Quality Gates and Neighborhood Expansion (Phase 5)
+  // -------------------------------------------------------------------------
+  describe('Quality Gates and Neighborhood Expansion (Phase 5)', () => {
+    it('projects pending quality gates as Gate nodes and connects workpackage_gate and project_workpackage edges', async () => {
+      const proj = await state.projectStore!.create({ name: 'Phase 5 Test Project' }, 'corr-p5');
+      const projectId = proj.projectId;
+
+      state.workPackages.unshift({
+        workPackageId: 'wp-phase5-sec-1',
+        execId: 'EXEC-P5',
+        status: 'AwaitingReview',
+        specialistId: 'security.review',
+        stage: 'Security',
+        projectId,
+      });
+
+      await state.controlPlane.requestGateReview(
+        {
+          gateId: 'gate-wp-wp-phase5-sec-1',
+          execId: 'EXEC-P5',
+          workPackageId: 'wp-phase5-sec-1',
+          stageFrom: 'Execution',
+          stageTo: 'Review',
+          requiredApprovers: ['human.approver'],
+          humanRequired: true,
+        },
+        'corr-p5-gate',
+      );
+
+      const { status, json } = await request(server, `/v1/company/graph?projectId=${projectId}`);
+      expect(status).toBe(200);
+      const graph = asGraph(json);
+
+      const gateNode = graph.nodes.find((n) => n.id === 'gate:gate-wp-wp-phase5-sec-1');
+      expect(gateNode).toBeDefined();
+      expect(gateNode?.type).toBe('Gate');
+      expect(gateNode?.status).toBe('AwaitingReview');
+      expect(gateNode?.metadata.workPackageId).toBe('wp-phase5-sec-1');
+
+      const wpGateEdge = graph.edges.find((e) => e.type === 'workpackage_gate');
+      expect(wpGateEdge).toBeDefined();
+      expect(wpGateEdge?.source).toBe('wp:wp-phase5-sec-1');
+      expect(wpGateEdge?.target).toBe('gate:gate-wp-wp-phase5-sec-1');
+
+      const projWpEdge = graph.edges.find((e) => e.type === 'project_workpackage');
+      expect(projWpEdge).toBeDefined();
+      expect(projWpEdge?.source).toBe(`project:${projectId}`);
+      expect(projWpEdge?.target).toBe('wp:wp-phase5-sec-1');
+    });
+
+    it('expands neighborhood by depth hops from focal node', async () => {
+      const proj = await state.projectStore!.create({ name: 'Phase 5 Depth Project' }, 'corr-p5-depth');
+      const projectId = proj.projectId;
+
+      state.workPackages.unshift({
+        workPackageId: 'wp-phase5-depth-1',
+        execId: 'EXEC-P5D',
+        status: 'AwaitingReview',
+        specialistId: 'security.review',
+        stage: 'Security',
+        projectId,
+      });
+
+      await state.controlPlane.requestGateReview(
+        {
+          gateId: 'gate-wp-wp-phase5-depth-1',
+          execId: 'EXEC-P5D',
+          workPackageId: 'wp-phase5-depth-1',
+          stageFrom: 'Execution',
+          stageTo: 'Review',
+          requiredApprovers: ['human.approver'],
+          humanRequired: true,
+        },
+        'corr-p5-depth-gate',
+      );
+
+      // With depth=1 from project:
+      // Includes project (hop 0) and workpackage (hop 1 via project_workpackage).
+      // Gate is hop 2 (project -> wp -> gate).
+      const { json: json1 } = await request(server, `/v1/company/graph?projectId=${projectId}&depth=1`);
+      const g1 = asGraph(json1);
+      expect(g1.nodes.some((n) => n.id === `project:${projectId}`)).toBe(true);
+      expect(g1.nodes.some((n) => n.id === 'wp:wp-phase5-depth-1')).toBe(true);
+      expect(g1.nodes.some((n) => n.id === 'gate:gate-wp-wp-phase5-depth-1')).toBe(false);
+
+      // With depth=2 from project:
+      const { json: json2 } = await request(server, `/v1/company/graph?projectId=${projectId}&depth=2`);
+      const g2 = asGraph(json2);
+      expect(g2.nodes.some((n) => n.id === `project:${projectId}`)).toBe(true);
+      expect(g2.nodes.some((n) => n.id === 'wp:wp-phase5-depth-1')).toBe(true);
+      expect(g2.nodes.some((n) => n.id === 'gate:gate-wp-wp-phase5-depth-1')).toBe(true);
+    });
+  });
 });

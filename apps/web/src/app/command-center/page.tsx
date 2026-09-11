@@ -178,12 +178,12 @@ export default async function CommandCenterPage() {
 
           {/* Attention */}
           <Link
-            href="/attention"
+            href={gates.length > 0 ? '/gates' : '/attention'}
             style={{
               padding: '16px 20px',
               borderRadius: 14,
-              background: attentionCases.length > 0 ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.07) 0%, rgba(255, 255, 255, 0.015) 100%), #12151e' : 'rgba(255, 255, 255, 0.02)',
-              border: attentionCases.length > 0 ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(255, 255, 255, 0.07)',
+              background: (attentionCases.length > 0 || gates.length > 0) ? 'linear-gradient(180deg, rgba(245, 158, 11, 0.07) 0%, rgba(255, 255, 255, 0.015) 100%), #12151e' : 'rgba(255, 255, 255, 0.02)',
+              border: (attentionCases.length > 0 || gates.length > 0) ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(255, 255, 255, 0.07)',
               textDecoration: 'none',
               color: colors.text,
               display: 'grid',
@@ -191,16 +191,16 @@ export default async function CommandCenterPage() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: attentionCases.length > 0 ? colors.warning : colors.muted }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: (attentionCases.length > 0 || gates.length > 0) ? colors.warning : colors.muted }}>
                 Attention
               </span>
-              <AlertTriangle size={15} style={{ color: attentionCases.length > 0 ? colors.warning : colors.muted }} />
+              <AlertTriangle size={15} style={{ color: (attentionCases.length > 0 || gates.length > 0) ? colors.warning : colors.muted }} />
             </div>
-            <div style={{ fontFamily: fonts.mono, fontSize: 26, fontWeight: 700, color: attentionCases.length > 0 ? colors.warning : '#ffffff', margin: '4px 0 2px' }}>
-              {attentionCases.length}
+            <div style={{ fontFamily: fonts.mono, fontSize: 26, fontWeight: 700, color: (attentionCases.length > 0 || gates.length > 0) ? colors.warning : '#ffffff', margin: '4px 0 2px' }}>
+              {attentionCases.length + gates.length}
             </div>
             <div style={{ fontSize: 11.5, color: colors.muted }}>
-              {pulse.decisionsRequired} decisions waiting · {pulse.tasks.blocked} blocked
+              {gates.length > 0 ? `${gates.length} gate${gates.length === 1 ? '' : 's'} · ` : ''}{pulse.decisionsRequired} decisions · {pulse.tasks.blocked} blocked
             </div>
           </Link>
 
@@ -326,7 +326,48 @@ export default async function CommandCenterPage() {
           </div>
 
           <div style={{ display: 'grid', gap: 10, flex: 1 }}>
-            {pulse.decisionsRequired > 0 ? (
+            {gates.length > 0 && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: radii.sm,
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: colors.warning }}>
+                    {gates.length} Quality Gate{gates.length === 1 ? '' : 's'} Awaiting Sign-Off
+                  </div>
+                  <Link
+                    href="/company/graph?q=gate"
+                    style={{ fontSize: 11, color: colors.accent, textDecoration: 'none', fontWeight: 600 }}
+                  >
+                    View in Graph ⬡
+                  </Link>
+                </div>
+                <div style={{ fontSize: 11.5, color: colors.muted, marginTop: 4 }}>
+                  Specialist deliverables (engineering code diff, QA test plan, or security audit) require CEO review before release.
+                </div>
+                <Link
+                  href="/gates"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    color: colors.warning,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    marginTop: 8,
+                  }}
+                >
+                  Review Quality Gates <ArrowRight size={12} />
+                </Link>
+              </div>
+            )}
+
+            {pulse.decisionsRequired > 0 && (
               <div
                 style={{
                   padding: '12px 14px',
@@ -357,10 +398,12 @@ export default async function CommandCenterPage() {
                   Review Decisions <ArrowRight size={12} />
                 </Link>
               </div>
-            ) : (
+            )}
+
+            {gates.length === 0 && pulse.decisionsRequired === 0 && (
               <div style={{ padding: '24px 10px', textAlign: 'center', color: colors.muted, fontSize: 12.5 }}>
                 <CheckCircle2 size={20} style={{ color: colors.success, margin: '0 auto 6px', opacity: 0.8 }} />
-                No decisions pending. Autonomous operations running within approved boundaries.
+                No quality gates or decisions pending. Autonomous operations running within approved boundaries.
               </div>
             )}
           </div>

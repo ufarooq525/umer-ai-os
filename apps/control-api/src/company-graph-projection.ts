@@ -36,6 +36,7 @@ export type GraphNodeType =
   | 'Requirement'
   | 'Agent'
   | 'WorkPackage'
+  | 'Gate'
   | 'AgentRun'
   | 'Artifact'
   | 'Customer'
@@ -54,6 +55,8 @@ export type GraphEdgeType =
   | 'deal_project'
   | 'opportunity_project'
   | 'project_requirement'
+  | 'project_workpackage'
+  | 'workpackage_gate'
   | 'project_agent'
   | 'agent_workpackage'
   | 'workpackage_agentrun'
@@ -107,6 +110,8 @@ export type GraphFilterOptions = {
   /** When true, only nodes in a real stuck/blocked status survive. */
   blockedOnly?: boolean;
   limit?: number;
+  /** When focal filters (projectId, opportunityId, agentId) are specified, expand neighborhood by N hops. */
+  depth?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -166,7 +171,18 @@ export async function buildCompanyGraph(
     activeOnly = false,
     blockedOnly = false,
     limit = 200,
+    depth,
   } = options;
+
+  const isNeighborhoodExpansion =
+    typeof depth === 'number' &&
+    depth >= 1 &&
+    Boolean(projectId || opportunityId || agentId || customerId);
+
+  const effectiveProjectId = isNeighborhoodExpansion ? undefined : projectId;
+  const effectiveOpportunityId = isNeighborhoodExpansion ? undefined : opportunityId;
+  const effectiveAgentId = isNeighborhoodExpansion ? undefined : agentId;
+  const effectiveCustomerId = isNeighborhoodExpansion ? undefined : customerId;
 
   const nodes: CompanyGraphNode[] = [];
   const edges: CompanyGraphEdge[] = [];
@@ -213,8 +229,8 @@ export async function buildCompanyGraph(
   // 2. Opportunities
   // -------------------------------------------------------------------------
   const allOpportunities = (await state.opportunityReader?.listOpportunities()) ?? [];
-  const filteredOpportunities = opportunityId
-    ? allOpportunities.filter((o) => o.id === opportunityId)
+  const filteredOpportunities = effectiveOpportunityId
+    ? allOpportunities.filter((o) => o.id === effectiveOpportunityId)
     : allOpportunities;
 
   for (const opp of filteredOpportunities) {
@@ -407,9 +423,9 @@ export async function buildCompanyGraph(
   // -------------------------------------------------------------------------
   // 5. Projects (Work Management)
   // -------------------------------------------------------------------------
-  const projectFilter = projectId ? { projectId } : undefined;
+  const projectFilter = effectiveProjectId ? { projectId: effectiveProjectId } : undefined;
   const projects = (await state.projectStore?.list(projectFilter ? { status: undefined } : undefined)) ?? [];
-  const filteredProjects = projectId ? projects.filter((p) => p.projectId === projectId) : projects;
+  const filteredProjects = effectiveProjectId ? projects.filter((p) => p.projectId === effectiveProjectId) : projects;
 
   for (const project of filteredProjects) {
     const projectNodeId = `project:${project.projectId}`;
@@ -456,7 +472,7 @@ export async function buildCompanyGraph(
   // 6. Requirements
   // -------------------------------------------------------------------------
   if (state.requirementStore) {
-    const requirements = (await state.requirementStore.list(projectId ? { projectId } : {})) ?? [];
+    const requirements = (await state.requirementStore.list(effectiveProjectId ? { projectId: effectiveProjectId } : {})) ?? [];
     for (const req of requirements) {
       const reqNodeId = `req:${req.requirementId}`;
       addNode({
@@ -491,12 +507,12 @@ export async function buildCompanyGraph(
   // 7. Agents
   // -------------------------------------------------------------------------
   const allAgents = (await state.agentRegistry?.list()) ?? [];
-  const filteredAgents = agentId ? allAgents.filter((a) => a.agentId === agentId) : allAgents;
+  const filteredAgents = effectiveAgentId ? allAgents.filter((a) => a.agentId === effectiveAgentId) : allAgents;
 
   // Build project → agent edges via tasks
   const agentProjectMap = new Map<string, string>(); // agentId → projectId
   if (state.taskStore) {
-    const tasks = await state.taskStore.list(projectId ? { projectId } : undefined);
+    const tasks = await state.taskStore.list(effectiveProjectId ? { projectId: effectiveProjectId } : undefined);
     for (const task of tasks) {
       if (task.assignedAgentId && task.projectId) {
         agentProjectMap.set(task.assignedAgentId, task.projectId);
@@ -537,9 +553,9 @@ export async function buildCompanyGraph(
   // -------------------------------------------------------------------------
   // 8. Work Packages
   // -------------------------------------------------------------------------
-  const workPackages = projectId
-    ? state.workPackages.filter((wp) => wp.projectId === projectId)
-    : agentId
+  const workPackages = effectiveProjectId
+    ? state.workPackages.filter((wp) => wp.projectId === effectiveProjectId)
+    : effectiveAgentId
       ? state.workPackages.filter((wp) => filteredAgents.some((a) => a.currentWorkPackageId === wp.workPackageId))
       : state.workPackages;
 
@@ -573,6 +589,62 @@ export async function buildCompanyGraph(
         metadata: {},
       });
     }
+
+    // Project → WorkPackage
+    if (wp.projectId) {
+      const projNodeId = `project:${wp.projectId}`;
+      if (nodeIds.has(projNodeId)) {
+        addEdge({
+          id: edgeId(projNodeId, wpNodeId, 'project_workpackage'),
+          source: projNodeId,
+          target: wpNodeId,
+          type: 'project_workpackage',
+          metadata: {},
+        });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 8b. Quality Gates (Awaiting CEO Review)
+  // -------------------------------------------------------------------------
+  const pendingGates = (await state.controlPlane?.listPending()) ?? [];
+  const filteredGates = effectiveProjectId
+    ? pendingGates.filter((g) => {
+        const wp = state.workPackages.find((w) => w.workPackageId === g.workPackageId);
+        return wp?.projectId === effectiveProjectId;
+      })
+    : pendingGates;
+
+  for (const gate of filteredGates) {
+    const gateNodeId = `gate:${gate.gateId}`;
+    addNode({
+      id: gateNodeId,
+      type: 'Gate',
+      label: `Gate: ${gate.gateId}`,
+      status: 'AwaitingReview',
+      metadata: {
+        waitId: gate.waitId,
+        gateId: gate.gateId,
+        workPackageId: gate.workPackageId,
+        rationale: gate.rationale,
+        stageFrom: gate.stageFrom,
+        stageTo: gate.stageTo,
+        requestedAt: gate.requestedAt,
+      },
+    });
+
+    // WorkPackage → Gate
+    const wpNodeId = `wp:${gate.workPackageId}`;
+    if (nodeIds.has(wpNodeId)) {
+      addEdge({
+        id: edgeId(wpNodeId, gateNodeId, 'workpackage_gate'),
+        source: wpNodeId,
+        target: gateNodeId,
+        type: 'workpackage_gate',
+        metadata: {},
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -581,9 +653,9 @@ export async function buildCompanyGraph(
   const agentRunStore = state.agentRunReadModel;
   if (agentRunStore) {
     const allRuns = await agentRunStore.list();
-    const filteredRuns = agentId
-      ? allRuns.filter((r) => r.agentId === agentId)
-      : projectId
+    const filteredRuns = effectiveAgentId
+      ? allRuns.filter((r) => r.agentId === effectiveAgentId)
+      : effectiveProjectId
         ? allRuns.filter((r) => workPackages.some((wp) => wp.workPackageId === r.workPackageId))
         : allRuns;
 
@@ -681,7 +753,7 @@ export async function buildCompanyGraph(
   // 11. Customers + Learnings
   // -------------------------------------------------------------------------
   const allCustomers = (await state.customerSuccess?.listCustomers()) ?? [];
-  const customers = customerId ? allCustomers.filter((c) => c.id === customerId) : allCustomers;
+  const customers = effectiveCustomerId ? allCustomers.filter((c) => c.id === effectiveCustomerId) : allCustomers;
   for (const customer of customers) {
     const customerNodeId = `customer:${customer.id}`;
     addNode({
@@ -857,27 +929,52 @@ export async function buildCompanyGraph(
   }
 
   // -------------------------------------------------------------------------
-  // Apply search filter
+  // Filtering & Neighborhood Expansion
   // -------------------------------------------------------------------------
   const totalNodesBeforeLimit = nodes.length;
   let finalNodes = nodes;
   let finalEdges = edges;
   const filtered =
-    !!(nodeTypes ?? projectId ?? opportunityId ?? agentId ?? customerId ?? statusFilter ?? search) ||
+    !!(nodeTypes ?? projectId ?? opportunityId ?? agentId ?? customerId ?? statusFilter ?? search ?? depth) ||
     activeOnly ||
     blockedOnly;
 
+  // Apply depth-based neighborhood expansion (if focal filter + depth >= 1)
+  if (isNeighborhoodExpansion) {
+    let focalIds = new Set<string>();
+    if (projectId) focalIds.add(`project:${projectId}`);
+    if (opportunityId) focalIds.add(`opp:${opportunityId}`);
+    if (agentId) focalIds.add(`agent:${agentId}`);
+    if (customerId) focalIds.add(`customer:${customerId}`);
+
+    for (let d = 0; d < depth!; d++) {
+      const nextHop = new Set(focalIds);
+      for (const edge of edges) {
+        if (focalIds.has(edge.source)) nextHop.add(edge.target);
+        if (focalIds.has(edge.target)) nextHop.add(edge.source);
+      }
+      focalIds = nextHop;
+    }
+
+    finalNodes = nodes.filter((n) => focalIds.has(n.id));
+    const finalNodeIds = new Set(finalNodes.map((n) => n.id));
+    finalEdges = edges.filter((e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target));
+  }
+
+  // -------------------------------------------------------------------------
+  // Apply search filter
+  // -------------------------------------------------------------------------
   if (search && search.trim().length > 0) {
     const searchQuery = search.trim();
-    const matchingIds = new Set(nodes.filter((n) => matchesSearch(n, searchQuery)).map((n) => n.id));
+    const matchingIds = new Set(finalNodes.filter((n) => matchesSearch(n, searchQuery)).map((n) => n.id));
     // Also include direct neighbors of matching nodes
-    for (const edge of edges) {
+    for (const edge of finalEdges) {
       if (matchingIds.has(edge.source)) matchingIds.add(edge.target);
       if (matchingIds.has(edge.target)) matchingIds.add(edge.source);
     }
-    finalNodes = nodes.filter((n) => matchingIds.has(n.id));
+    finalNodes = finalNodes.filter((n) => matchingIds.has(n.id));
     const finalNodeIds = new Set(finalNodes.map((n) => n.id));
-    finalEdges = edges.filter((e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target));
+    finalEdges = finalEdges.filter((e) => finalNodeIds.has(e.source) && finalNodeIds.has(e.target));
   }
 
   // -------------------------------------------------------------------------

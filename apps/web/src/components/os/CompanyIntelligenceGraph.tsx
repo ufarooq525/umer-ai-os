@@ -42,6 +42,7 @@ const NODE_COLORS: Record<GraphNodeType, string> = {
   Requirement: '#fdba74',   // peach
   Agent:       '#a78bfa',   // purple
   WorkPackage: '#fbbf24',   // amber
+  Gate:        '#f59e0b',   // warning amber
   AgentRun:    '#818cf8',   // indigo
   Artifact:    '#94a3b8',   // gray
   Customer:    '#f472b6',   // pink
@@ -61,6 +62,9 @@ function nodeRadius(node: CompanyGraphNode): number {
   if (node.type === 'Opportunity' && typeof meta.estimatedValueMax === 'number') {
     return Math.min(base + Math.sqrt(meta.estimatedValueMax / 1000), 24);
   }
+  if (node.type === 'Gate') {
+    return 11;
+  }
   return base;
 }
 
@@ -73,7 +77,7 @@ type FocusMode = 'COMPANY' | 'INTELLIGENCE' | 'OPERATIONS' | 'REVENUE';
 const FOCUS_MODE_TYPES: Record<FocusMode, GraphNodeType[] | null> = {
   COMPANY:      null,  // show everything
   INTELLIGENCE: ['Niche', 'Opportunity', 'Prospect', 'Contact', 'Outreach'],
-  OPERATIONS:   ['Agent', 'Project', 'WorkPackage', 'AgentRun', 'Artifact', 'Requirement', 'Deployment', 'Incident'],
+  OPERATIONS:   ['Agent', 'Project', 'WorkPackage', 'Gate', 'AgentRun', 'Artifact', 'Requirement', 'Deployment', 'Incident'],
   REVENUE:      ['Opportunity', 'Prospect', 'Deal', 'Proposal', 'Project', 'Customer', 'Learning'],
 };
 
@@ -312,6 +316,17 @@ export function CompanyIntelligenceGraph({
         ctx.arc(node.x, node.y, node.radius + 6, 0, Math.PI * 2);
         ctx.fillStyle = `${color}33`;
         ctx.fill();
+      }
+
+      // Attention ring for Gate awaiting CEO review
+      if (node.type === 'Gate' && (node.status === 'AwaitingReview' || !node.status)) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5 / scale;
+        ctx.setLineDash([3 / scale, 3 / scale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       // Circle
@@ -791,8 +806,17 @@ function getNodeLinks(node: SimNode): { label: string; href: string }[] {
       return [{ label: 'View Agent', href: `/company/agents/${meta.agentId}` }];
     case 'Prospect':
       return meta.nicheId ? [{ label: 'View Prospect', href: `/company/prospects?niche=${meta.nicheId}` }] : [];
-    case 'Deal':
-      return []; // no dedicated deal page yet
+    case 'Gate':
+      return [{ label: 'Review Quality Gate', href: `/gates#${meta.waitId ?? ''}` }];
+    case 'WorkPackage':
+      return meta.status === 'AwaitingReview'
+        ? [
+            { label: 'Review Quality Gate', href: '/gates' },
+            { label: 'View Agent Runs', href: `/agent-runs/${meta.workPackageId ?? ''}` },
+          ]
+        : [{ label: 'View Agent Runs', href: `/agent-runs/${meta.workPackageId ?? ''}` }];
+    case 'Requirement':
+      return meta.projectId ? [{ label: 'View Project Requirements', href: `/company/projects/${meta.projectId}` }] : [];
     case 'Artifact':
       return [{ label: 'View Artifacts', href: '/artifacts' }];
     case 'AgentRun':

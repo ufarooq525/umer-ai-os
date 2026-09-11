@@ -2554,7 +2554,9 @@ export function createControlApiServer(state: ControlApiState) {
         const activeOnlyParam = url.searchParams.get('active') ?? url.searchParams.get('activeOnly');
         const blockedParam = url.searchParams.get('blocked');
         const limitParam = url.searchParams.get('limit');
-        const depthParam = url.searchParams.get('depth'); // reserved for future neighborhood expansion
+        const depthParam = url.searchParams.get('depth');
+        const depthParsed = depthParam ? parseInt(depthParam, 10) : undefined;
+        const depth = typeof depthParsed === 'number' && !isNaN(depthParsed) ? Math.min(Math.max(1, depthParsed), 10) : undefined;
 
         const filterOptions: GraphFilterOptions = {
           projectId: url.searchParams.get('projectId') ?? undefined,
@@ -2566,14 +2568,11 @@ export function createControlApiServer(state: ControlApiState) {
           activeOnly: activeOnlyParam === 'true' || activeOnlyParam === '1',
           blockedOnly: blockedParam === 'true' || blockedParam === '1',
           limit: limitParam ? Math.min(Math.max(1, parseInt(limitParam, 10)), 1000) : 200,
+          depth,
           nodeTypes: nodeTypesParam
             ? (nodeTypesParam.split(',').map((t) => t.trim()).filter(Boolean) as GraphNodeType[])
             : undefined,
         };
-
-        // depth is accepted but reserved — future: walk the graph N hops from
-        // focal nodes rather than returning the global projection.
-        void depthParam; // intentionally unused until neighborhood expansion is wired
 
         const graph = await buildCompanyGraph(state, filterOptions);
         sendJson(res, 200, graph);
