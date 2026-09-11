@@ -207,10 +207,14 @@ JSON RESPONSE SCHEMA:
   "notes": ["Optional notes on implementation details"]
 }`;
 
+      const knowledgeBlock =
+        request.knowledgeContext && request.knowledgeContext.length > 0
+          ? `COMPANY KNOWLEDGE & OPERATIONAL LEARNINGS:\n${request.knowledgeContext.map((k) => `- ${k}`).join('\n')}\n\n`
+          : '';
+
       const userPrompt = `PROJECT: ${request.projectName} (Category: ${request.category}, Type: ${request.type})
 GOAL: ${request.goal}
-${request.doneWhen ? `DONE WHEN: ${request.doneWhen}\n` : ''}
-INSPECTED REPOSITORY FILES:
+${request.doneWhen ? `DONE WHEN: ${request.doneWhen}\n` : ''}${knowledgeBlock}INSPECTED REPOSITORY FILES:
 ${filesContext}
 
 Implement the requested change now. Output only the JSON response object.`;

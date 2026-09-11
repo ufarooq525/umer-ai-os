@@ -25,9 +25,9 @@ const NODE_COLORS: Record<GraphNodeType, string> = {
   WorkPackage: '#fbbf24',
   Gate: '#f59e0b',
   AgentRun: '#818cf8',
-  Artifact: '#94a3b8',
+  Artifact: '#06b6d4',
   Customer: '#f472b6',
-  Learning: '#e879f9',
+  Learning: '#10b981',
   Deployment: '#6ee7b7',
   Incident: '#f87171',
 };
@@ -50,7 +50,9 @@ function nodeHref(node: CompanyGraphNode): string | null {
     case 'Requirement':
       return meta.projectId ? `/company/projects/${meta.projectId}` : null;
     case 'Artifact':
-      return '/artifacts';
+      return meta.artifactId ? `/artifacts#${meta.artifactId}` : '/artifacts';
+    case 'Learning':
+      return '/operations';
     case 'AgentRun':
       return meta.workPackageId ? `/agent-runs/${meta.workPackageId}` : null;
     default:

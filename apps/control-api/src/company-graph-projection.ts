@@ -57,13 +57,16 @@ export type GraphEdgeType =
   | 'project_requirement'
   | 'project_workpackage'
   | 'workpackage_gate'
+  | 'gate_artifact'
   | 'project_agent'
   | 'agent_workpackage'
   | 'workpackage_agentrun'
+  | 'workpackage_artifact'
   | 'agentrun_artifact'
   | 'project_customer'
   | 'opportunity_customer'
   | 'customer_learning'
+  | 'project_learning'
   | 'learning_opportunity'
   | 'project_deployment'
   | 'deployment_incident';
@@ -645,6 +648,35 @@ export async function buildCompanyGraph(
         metadata: {},
       });
     }
+
+    // Gate → Artifact
+    if (gate.artifactId) {
+      const artNodeId = `artifact:${gate.artifactId}`;
+      const artifact = await state.artifactStore?.get(gate.artifactId);
+      if (artifact) {
+        addNode({
+          id: artNodeId,
+          type: 'Artifact',
+          label: artifact.artifactType,
+          status: artifact.acceptanceStatus,
+          metadata: {
+            artifactId: artifact.artifactId,
+            artifactType: artifact.artifactType,
+            version: artifact.version,
+            producedBy: artifact.producedBy,
+            acceptanceStatus: artifact.acceptanceStatus,
+            createdAt: artifact.createdAt,
+          },
+        });
+      }
+      addEdge({
+        id: edgeId(gateNodeId, artNodeId, 'gate_artifact'),
+        source: gateNodeId,
+        target: artNodeId,
+        type: 'gate_artifact',
+        metadata: {},
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -692,7 +724,7 @@ export async function buildCompanyGraph(
         });
       }
 
-      // AgentRun → Artifact
+      // AgentRun → Artifact & WorkPackage → Artifact
       if (run.artifactId) {
         const artifact = await state.artifactStore?.get(run.artifactId);
         if (artifact) {
@@ -718,6 +750,16 @@ export async function buildCompanyGraph(
             type: 'agentrun_artifact',
             metadata: {},
           });
+
+          if (nodeIds.has(wpNodeId)) {
+            addEdge({
+              id: edgeId(wpNodeId, artNodeId, 'workpackage_artifact'),
+              source: wpNodeId,
+              target: artNodeId,
+              type: 'workpackage_artifact',
+              metadata: {},
+            });
+          }
         }
       }
     }
@@ -745,6 +787,26 @@ export async function buildCompanyGraph(
             createdAt: artifact.createdAt,
           },
         });
+      }
+
+      // Link Artifact to matching WorkPackage if known
+      const targetWp = workPackages.find(
+        (wp) =>
+          wp.workPackageId === artifact.producedBy ||
+          wp.workPackageId === artifact.producedFor ||
+          (artifact as { metadata?: { workPackageId?: string } }).metadata?.workPackageId === wp.workPackageId
+      );
+      if (targetWp) {
+        const wpNodeId = `wp:${targetWp.workPackageId}`;
+        if (nodeIds.has(wpNodeId)) {
+          addEdge({
+            id: edgeId(wpNodeId, artNodeId, 'workpackage_artifact'),
+            source: wpNodeId,
+            target: artNodeId,
+            type: 'workpackage_artifact',
+            metadata: {},
+          });
+        }
       }
     }
   }
@@ -825,6 +887,20 @@ export async function buildCompanyGraph(
       },
     });
 
+    // Project → Learning
+    if (learning.projectId) {
+      const projectNodeId = `project:${learning.projectId}`;
+      if (nodeIds.has(projectNodeId)) {
+        addEdge({
+          id: edgeId(projectNodeId, learningNodeId, 'project_learning'),
+          source: projectNodeId,
+          target: learningNodeId,
+          type: 'project_learning',
+          metadata: {},
+        });
+      }
+    }
+
     // Customer → Learning
     if (learning.customerId) {
       const customerNodeId = `customer:${learning.customerId}`;
@@ -839,9 +915,15 @@ export async function buildCompanyGraph(
       }
     }
 
-    // Learning → Opportunity (calibration loop)
-    if (learning.opportunityId) {
-      const oppNodeId = `opp:${learning.opportunityId}`;
+    // Learning → Opportunity (closed calibration loop)
+    const effectiveOpportunityId =
+      learning.opportunityId ??
+      (learning.projectId
+        ? filteredProjects.find((p) => p.projectId === learning.projectId)?.sourceOpportunityId
+        : undefined);
+
+    if (effectiveOpportunityId) {
+      const oppNodeId = `opp:${effectiveOpportunityId}`;
       if (nodeIds.has(oppNodeId)) {
         addEdge({
           id: edgeId(learningNodeId, oppNodeId, 'learning_opportunity'),

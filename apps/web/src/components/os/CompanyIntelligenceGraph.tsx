@@ -44,9 +44,9 @@ const NODE_COLORS: Record<GraphNodeType, string> = {
   WorkPackage: '#fbbf24',   // amber
   Gate:        '#f59e0b',   // warning amber
   AgentRun:    '#818cf8',   // indigo
-  Artifact:    '#94a3b8',   // gray
+  Artifact:    '#06b6d4',   // cyan
   Customer:    '#f472b6',   // pink
-  Learning:    '#e879f9',   // violet
+  Learning:    '#10b981',   // emerald
   Deployment:  '#6ee7b7',   // mint
   Incident:    '#f87171',   // red
 };
@@ -72,13 +72,14 @@ function nodeRadius(node: CompanyGraphNode): number {
 // CEO Focus Mode filters
 // ---------------------------------------------------------------------------
 
-type FocusMode = 'COMPANY' | 'INTELLIGENCE' | 'OPERATIONS' | 'REVENUE';
+type FocusMode = 'COMPANY' | 'INTELLIGENCE' | 'OPERATIONS' | 'REVENUE' | 'KNOWLEDGE';
 
 const FOCUS_MODE_TYPES: Record<FocusMode, GraphNodeType[] | null> = {
   COMPANY:      null,  // show everything
   INTELLIGENCE: ['Niche', 'Opportunity', 'Prospect', 'Contact', 'Outreach'],
   OPERATIONS:   ['Agent', 'Project', 'WorkPackage', 'Gate', 'AgentRun', 'Artifact', 'Requirement', 'Deployment', 'Incident'],
   REVENUE:      ['Opportunity', 'Prospect', 'Deal', 'Proposal', 'Project', 'Customer', 'Learning'],
+  KNOWLEDGE:    ['Opportunity', 'Project', 'WorkPackage', 'Gate', 'Artifact', 'Learning'],
 };
 
 // ---------------------------------------------------------------------------
@@ -586,7 +587,7 @@ export function CompanyIntelligenceGraph({
           />
 
           {/* Focus modes */}
-          {(['COMPANY', 'INTELLIGENCE', 'OPERATIONS', 'REVENUE'] as FocusMode[]).map((mode) => (
+          {(['COMPANY', 'INTELLIGENCE', 'OPERATIONS', 'REVENUE', 'KNOWLEDGE'] as FocusMode[]).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -818,7 +819,16 @@ function getNodeLinks(node: SimNode): { label: string; href: string }[] {
     case 'Requirement':
       return meta.projectId ? [{ label: 'View Project Requirements', href: `/company/projects/${meta.projectId}` }] : [];
     case 'Artifact':
-      return [{ label: 'View Artifacts', href: '/artifacts' }];
+      return [
+        { label: 'View Sealed Output', href: `/artifacts#${meta.artifactId ?? ''}` },
+        { label: 'View All Artifacts', href: '/artifacts' },
+      ];
+    case 'Learning':
+      return [
+        { label: 'View Operations & Learnings', href: '/operations' },
+        ...(meta.projectId ? [{ label: 'View Project', href: `/company/projects/${meta.projectId}` }] : []),
+        ...(meta.opportunityId ? [{ label: 'View Opportunity', href: `/company/opportunities?open=${meta.opportunityId}` }] : []),
+      ];
     case 'AgentRun':
       return meta.agentId ? [{ label: 'View Agent Run', href: `/agent-runs/${meta.workPackageId}` }] : [];
     case 'Customer':

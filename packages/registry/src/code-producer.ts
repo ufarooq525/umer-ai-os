@@ -30,6 +30,8 @@ export type CodeProductionRequest = {
   maxFiles: number;
   /** Sandboxed read of a repo-relative file. Null when missing or unsafe. */
   readProjectFile: (relativePath: string) => Promise<string | null>;
+  /** Operational learnings or knowledge context to guide generation. */
+  knowledgeContext?: string[];
 };
 
 export type CodeProductionOutcome =

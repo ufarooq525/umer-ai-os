@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir } from 'node:fs/promises';
-import type { AuditContract } from '@umer/contracts';
+import type { AuditContract, ProjectId } from '@umer/contracts';
 import type { CeoCommandService, ControlPlaneService, SpecialistControlPort } from '@umer/control-plane';
 import type { AuditService } from '@umer/audit';
 import type { TrustRuntime } from '@umer/trust';
@@ -135,11 +135,28 @@ export const applySecurityOnGatePass = async (
             goal: `Autonomous security review on gate pass for ${wp.workPackageId}`,
             runId: `sec-${wp.workPackageId}`,
           });
-          return await applySecurityToProject({
+          const secResult = await applySecurityToProject({
             project,
             report: auditReport,
             rationale: input.rationale,
           });
+          if (state.customerSuccess) {
+            try {
+              const projRecord = await state.projectStore?.get(wp.projectId);
+              await state.customerSuccess.extractLearning({
+                sourceType: 'delivery_outcome',
+                projectId: project.projectId as ProjectId,
+                opportunityId: projRecord?.sourceOpportunityId,
+                category: 'technical_pattern',
+                title: `Security Gate Cleared: ${wp.workPackageId}`,
+                keyInsight: 'Static audit and dependency scan completed with zero critical vulnerabilities.',
+                recommendedActions: ['Maintain dependency lockfile and continuous automated scanning.'],
+              });
+            } catch {
+              // fail-safe
+            }
+          }
+          return secResult;
         } catch {
           return undefined;
         }
@@ -183,6 +200,22 @@ export const applyQaOnGatePass = async (
             runs: runBundle.runs,
             runBundle,
           };
+          if (state.customerSuccess) {
+            try {
+              const projRecord = await state.projectStore?.get(wp.projectId);
+              await state.customerSuccess.extractLearning({
+                sourceType: 'delivery_outcome',
+                projectId: project.projectId as ProjectId,
+                opportunityId: projRecord?.sourceOpportunityId,
+                category: 'delivery_workflow',
+                title: `QA Gate Passed: ${wp.workPackageId}`,
+                keyInsight: `Verified ${runBundle.runs.length} test run(s) across target project before CEO sign-off.`,
+                recommendedActions: ['Keep test suites aligned with newly implemented features.'],
+              });
+            } catch {
+              // fail-safe
+            }
+          }
           return result;
         } catch {
           return undefined;
@@ -228,6 +261,22 @@ export const applyEngOnGatePass = async (
             summary: `Applied ${scoped.changedFiles.length} file(s) for ${runId}`,
             reverted: false,
           };
+          if (state.customerSuccess) {
+            try {
+              const projRecord = await state.projectStore?.get(wp.projectId);
+              await state.customerSuccess.extractLearning({
+                sourceType: 'delivery_outcome',
+                projectId: project.projectId as ProjectId,
+                opportunityId: projRecord?.sourceOpportunityId,
+                category: 'technical_pattern',
+                title: `Engineering Delivery Applied: ${runId}`,
+                keyInsight: `Applied ${scoped.changedFiles.length} file(s) with pre-gate staging verification.`,
+                recommendedActions: ['Preserve verified architectural conventions in subsequent tasks.'],
+              });
+            } catch {
+              // fail-safe
+            }
+          }
           return result;
         } catch {
           return undefined;

@@ -15,7 +15,7 @@
 
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
-import type { Opportunity } from '@umer/contracts';
+import { type Opportunity, ArtifactContractSchema, parseContract } from '@umer/contracts';
 import { createControlApiServer, createControlApiState } from './server.js';
 import type { ControlApiState } from './state.js';
 import type { CompanyGraph, CompanyGraphNode } from './company-graph-projection.js';
@@ -583,5 +583,131 @@ describe('GET /v1/company/graph', () => {
       expect(g2.nodes.some((n) => n.id === 'wp:wp-phase5-depth-1')).toBe(true);
       expect(g2.nodes.some((n) => n.id === 'gate:gate-wp-wp-phase5-depth-1')).toBe(true);
     });
+
+    it('emits gate_artifact, workpackage_artifact, project_learning, and closed-loop learning_opportunity edges', async () => {
+      const oppId = 'opp-p6-loop';
+      await state.opportunityReader?.saveOpportunity({
+        id: oppId,
+        nicheId: 'niche-health',
+        type: 'product',
+        title: 'Phase 6 Closed Loop Healthcare AI',
+        status: 'project_created',
+        market: 'Healthcare',
+        geography: 'UAE',
+        problemIds: ['prob-p6-health'],
+        score: {
+          problemSeverity: 85,
+          demandEvidence: 80,
+          abilityToPay: 75,
+          reachability: 70,
+          solutionFit: 85,
+          competitiveGap: 75,
+          deliveryFeasibility: 85,
+          evidenceConfidence: 80,
+          overall: 82,
+          recommendation: 'product_candidate',
+        },
+        estimatedValueMin: 50000,
+        currency: 'USD',
+        evidenceRefs: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      const proj = await state.projectStore!.create(
+        { name: 'Phase 6 Delivery Project', sourceOpportunityId: oppId },
+        'corr-p6-proj',
+      );
+      const projectId = proj.projectId;
+      const wpId = 'wp-phase6-closed-loop-1';
+      const artifactId = 'art-phase6-sec-report-1';
+
+      state.workPackages.unshift({
+        workPackageId: wpId,
+        execId: 'EXEC-P6',
+        status: 'AwaitingReview',
+        specialistId: 'security.review',
+        stage: 'Security',
+        projectId,
+      });
+
+      await state.artifactStore?.save(
+        parseContract(ArtifactContractSchema, {
+          id: artifactId,
+          schemaVersion: '1.0.0',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: { labels: {}, annotations: {} },
+          kind: 'artifact',
+          artifactId,
+          artifactType: 'SecurityReport',
+          version: '1.0.0',
+          producedBy: wpId,
+          producedFor: 'EXEC-P6',
+          acceptanceStatus: 'submitted',
+          acceptanceCriteriaMet: [],
+          contentRef: 'security://report/p6.md',
+        }),
+      );
+
+      await state.controlPlane.requestGateReview(
+        {
+          gateId: `gate-${wpId}`,
+          execId: 'EXEC-P6',
+          workPackageId: wpId,
+          artifactId,
+          stageFrom: 'Execution',
+          stageTo: 'Review',
+          requiredApprovers: ['human.approver'],
+          humanRequired: true,
+        },
+        'corr-p6-gate',
+      );
+
+      // Seed a delivery learning extracted for this project
+      const learning = await state.customerSuccess?.extractLearning({
+        sourceType: 'delivery_outcome',
+        projectId,
+        opportunityId: oppId,
+        category: 'delivery_workflow',
+        title: 'Closed-Loop Calibration: Healthcare Compliance Verified',
+        keyInsight: 'Pre-flight dependency scanning eliminated CVE risks before gate sign-off.',
+        recommendedActions: ['Incorporate automated npm audit checks into base project scaffold.'],
+      });
+
+      const { status, json } = await request(server, `/v1/company/graph?projectId=${projectId}&depth=3`);
+      expect(status).toBe(200);
+      const graph = asGraph(json);
+
+      // Verify Nodes
+      expect(graph.nodes.some((n) => n.id === `project:${projectId}`)).toBe(true);
+      expect(graph.nodes.some((n) => n.id === `wp:${wpId}`)).toBe(true);
+      expect(graph.nodes.some((n) => n.id === `gate:gate-${wpId}`)).toBe(true);
+      expect(graph.nodes.some((n) => n.id === `artifact:${artifactId}`)).toBe(true);
+      expect(graph.nodes.some((n) => n.id === `learning:${learning?.id}`)).toBe(true);
+      expect(graph.nodes.some((n) => n.id === `opp:${oppId}`)).toBe(true);
+
+      // Verify Edges
+      const gateArtEdge = graph.edges.find((e) => e.type === 'gate_artifact');
+      expect(gateArtEdge).toBeDefined();
+      expect(gateArtEdge?.source).toBe(`gate:gate-${wpId}`);
+      expect(gateArtEdge?.target).toBe(`artifact:${artifactId}`);
+
+      const wpArtEdge = graph.edges.find((e) => e.type === 'workpackage_artifact');
+      expect(wpArtEdge).toBeDefined();
+      expect(wpArtEdge?.source).toBe(`wp:${wpId}`);
+      expect(wpArtEdge?.target).toBe(`artifact:${artifactId}`);
+
+      const projLearnEdge = graph.edges.find((e) => e.type === 'project_learning');
+      expect(projLearnEdge).toBeDefined();
+      expect(projLearnEdge?.source).toBe(`project:${projectId}`);
+      expect(projLearnEdge?.target).toBe(`learning:${learning?.id}`);
+
+      const learnOppEdge = graph.edges.find((e) => e.type === 'learning_opportunity');
+      expect(learnOppEdge).toBeDefined();
+      expect(learnOppEdge?.source).toBe(`learning:${learning?.id}`);
+      expect(learnOppEdge?.target).toBe(`opp:${oppId}`);
+    });
   });
 });
+

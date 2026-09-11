@@ -211,4 +211,44 @@ Here is the implementation:
       expect(outcome.changes[0]!.content).toContain('multiply');
     }
   });
+
+  it('injects operational learnings and company knowledge into prompt when present', async () => {
+    let capturedPrompt = '';
+    const provider: LLMProvider = {
+      providerId: 'mock-llm',
+      chat: async (req) => {
+        capturedPrompt = req.messages.find((m) => m.role === 'user')?.content ?? '';
+        return {
+          message: {
+            role: 'assistant',
+            content: JSON.stringify({
+              changes: [
+                {
+                  path: 'Math.php',
+                  content: '<?php\nclass Math {}\n',
+                  note: 'Updated with knowledge',
+                },
+              ],
+            }),
+          },
+          finishReason: 'stop',
+        };
+      },
+    };
+
+    const producer = createLlmCodeProducer({ provider });
+    const request = createMockRequest({
+      knowledgeContext: [
+        'Always validate input parameters before arithmetic operations',
+        'Avoid fatal division by zero errors by throwing InvalidArgumentException',
+      ],
+    });
+
+    const outcome = await producer.produce(request);
+    expect(outcome.status).toBe('produced');
+    expect(capturedPrompt).toContain('COMPANY KNOWLEDGE & OPERATIONAL LEARNINGS:');
+    expect(capturedPrompt).toContain('- Always validate input parameters before arithmetic operations');
+    expect(capturedPrompt).toContain('- Avoid fatal division by zero errors by throwing InvalidArgumentException');
+  });
 });
+
