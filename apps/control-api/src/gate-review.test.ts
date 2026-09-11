@@ -8,8 +8,8 @@ import { createControlPlaneService } from '@umer/control-plane';
 import { createProjectRegistry, contentHash, createManualCodeProducer } from '@umer/registry';
 import { createEventBus } from '@umer/event-bus';
 import { createControlApiServer } from './server.js';
-import { registerQaBusShim, type ControlApiState } from './state.js';
 import { splitUnifiedDiff, buildGateReview } from './gate-review.js';
+import { parseContract, ArtifactContractSchema, SCHEMA_VERSION } from '@umer/contracts';
 import {
   CODE_PRODUCER_ENV,
   listCodeProducers,
@@ -136,13 +136,76 @@ describe('splitUnifiedDiff', () => {
 });
 
 describe('buildGateReview', () => {
-  it('returns null when no intake backs the gate (demo seed)', () => {
+  it('returns null when no intake or work package backs the gate (demo seed)', () => {
     expect(
       buildGateReview({
         gate: { waitId: 'w1', gateId: 'gate-dev-qa', workPackageId: 'wp-e2e-1' },
         intakes: [],
       }),
     ).toBeNull();
+  });
+
+  it('builds a rich gate review for runtime work packages backed by a Code artifact', () => {
+    const diff =
+      'diff --git a/src/hello.ts b/src/hello.ts\n--- a/src/hello.ts\n+++ b/src/hello.ts\n@@ -1 +1 @@\n-export const greeting = "hello";\n+export const greeting = "hello world";\n';
+    const review = buildGateReview({
+      gate: { waitId: 'w-rt-1', gateId: 'gate-wp-pkg-100', workPackageId: 'pkg-100' },
+      intakes: [],
+      workPackages: [
+        {
+          workPackageId: 'pkg-100',
+          execId: 'exec-100',
+          status: 'AwaitingReview',
+          specialistId: 'eng.app-delivery',
+          stage: 'Implementation',
+          projectId: 'demo-client',
+          artifactId: 'art-100',
+        },
+      ],
+      artifacts: [
+        parseContract(ArtifactContractSchema, {
+          id: 'art-100',
+          schemaVersion: SCHEMA_VERSION,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            labels: {},
+            annotations: {
+              proposedDiff: diff,
+              filesChanged: '1',
+              linesAdded: '1',
+              linesRemoved: '1',
+              testsRan: 'true',
+              testsPassed: 'true',
+              runId: 'eng-run-100',
+            },
+          },
+          kind: 'artifact',
+          artifactId: 'art-100',
+          artifactType: 'Code',
+          version: 'wp:pkg-100:1',
+          producedBy: 'eng.app-delivery',
+          producedFor: 'EXEC-100',
+          acceptanceStatus: 'submitted',
+          acceptanceCriteriaMet: [
+            { criterion: 'Controlled repository diff', status: 'VERIFIED' },
+            { criterion: 'Staged test execution', status: 'VERIFIED' },
+          ],
+          sourceTaskId: 'task-1',
+          contentRef: 'file://eng-run-100/PROPOSED_DIFF.patch',
+          contentHash: 'hash-100',
+        }),
+      ],
+    });
+
+    expect(review).toBeDefined();
+    expect(review?.kind).toBe('code');
+    expect(review?.code?.filesChanged).toBe(1);
+    expect(review?.code?.testsRan).toBe(true);
+    expect(review?.code?.testsPassed).toBe(true);
+    expect(review?.code?.files[0]?.path).toBe('src/hello.ts');
+    expect(review?.headline).toContain('demo-client');
+    expect(review?.headline).toContain('staged tests passed');
   });
 });
 

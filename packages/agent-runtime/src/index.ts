@@ -26,3 +26,7 @@ export {
   type RuntimeEventSource,
   type SubscribeAgentRunReadModelOptions,
 } from './read-model.js';
+export {
+  createLlmCodeProducer,
+  type LlmCodeProducerOptions,
+} from './code-producer-llm.js';

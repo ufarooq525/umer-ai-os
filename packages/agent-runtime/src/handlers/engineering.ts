@@ -169,6 +169,8 @@ export async function runEngineeringApplicationDelivery(
             linesRemoved: String(report.editStats.linesRemoved),
             testsRan: String(report.testsRan),
             testsPassed: String(report.testsPassed),
+            changeSet: JSON.stringify(report.changeSet),
+            edits: JSON.stringify(report.edits),
             ...(citations.length > 0
               ? { memoryCitations: JSON.stringify(citations.map((c) => c.memoryId)) }
               : {}),
@@ -200,9 +202,49 @@ export async function runEngineeringApplicationDelivery(
         deliveryReport: report,
       };
     }
+    // Delivery runner ran but could not mark package ready (e.g. scoping declined, tests failed, or syntax issues)
+    const blockers = report.blockers ?? [];
+    const artifact = parseContract(ArtifactContractSchema, {
+      id: artifactId,
+      schemaVersion: SCHEMA_VERSION,
+      createdAt: now,
+      updatedAt: now,
+      metadata: {
+        labels: {},
+        annotations: {
+          blockers: JSON.stringify(blockers),
+          status: report.status,
+          runId: report.runId,
+          ...(citations.length > 0
+            ? { memoryCitations: JSON.stringify(citations.map((c) => c.memoryId)) }
+            : {}),
+        },
+      },
+      kind: 'artifact',
+      artifactId,
+      artifactType: 'Code',
+      version: `wp:${workPackage.workPackageId}:${workPackage.attempt}`,
+      producedBy: mandate.contract.specialistId,
+      producedFor: workPackage.execId,
+      acceptanceStatus: 'draft',
+      acceptanceCriteriaMet: workPackage.taskIds.map((taskId) => ({
+        criterion: `Task ${taskId} delivery evidence`,
+        status: 'N_A' as const,
+      })),
+      sourceTaskId: workPackage.taskIds[0],
+      contentRef: `memory://artifacts/${artifactId}`,
+      contentHash: mandate.specHash,
+    });
+
+    return {
+      summary: `${workPackage.workPackageId} needs manual scoping — ${blockers.join('; ') || 'scoping declined'}${citationNote}`,
+      artifact,
+      memoryCitations: citations,
+      deliveryReport: report,
+    };
   }
 
-  // Honest fallback when no change-set, ungrounded, or scoping declined:
+  // Honest fallback when no change-set, ungrounded, or scoping declined without runner:
   const artifact = parseContract(ArtifactContractSchema, {
     id: artifactId,
     schemaVersion: SCHEMA_VERSION,

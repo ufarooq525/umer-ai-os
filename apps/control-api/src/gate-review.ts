@@ -6,8 +6,9 @@
  * specialist already produced.
  */
 
-import type { IntakePlan } from '@umer/registry';
-import type { IntakeRecord } from './state.js';
+import type { IntakePlan, ProjectRegistry, ResolvedProject } from '@umer/registry';
+import type { ArtifactContract } from '@umer/contracts';
+import type { IntakeRecord, WorkPackageSummary } from './state.js';
 
 export type ReviewFileChange = {
   path: string;
@@ -278,48 +279,196 @@ export type PendingGateLike = {
   workPackageId: string;
 };
 
+function buildRuntimeWorkPackageReview(input: {
+  gate: PendingGateLike;
+  workPackage: WorkPackageSummary;
+  artifact?: ArtifactContract;
+  projectRegistry?: ProjectRegistry;
+}): GateReview {
+  const { gate, workPackage, artifact, projectRegistry } = input;
+  let project: ResolvedProject | undefined;
+  if (projectRegistry && workPackage.projectId) {
+    try {
+      project = projectRegistry.get(workPackage.projectId);
+    } catch {
+      project = undefined;
+    }
+  }
+  const projectName = project?.name ?? workPackage.projectId ?? workPackage.execId;
+  const projectId = project?.projectId ?? workPackage.projectId ?? workPackage.execId;
+
+  if (artifact && artifact.artifactType === 'Code') {
+    const annotations = (artifact.metadata?.annotations ?? {}) as Record<string, string>;
+    const proposedDiff = annotations.proposedDiff ?? '';
+    const diffByPath = splitUnifiedDiff(proposedDiff);
+    const filesChanged = Number(annotations.filesChanged ?? diffByPath.size ?? 0);
+    const linesAdded = Number(annotations.linesAdded ?? 0);
+    const linesRemoved = Number(annotations.linesRemoved ?? 0);
+    const testsRan = annotations.testsRan === 'true';
+    const testsPassed = annotations.testsPassed === 'true';
+    const runId = annotations.runId ?? `eng-${workPackage.workPackageId}`;
+
+    const files: ReviewFileChange[] = [];
+    for (const [path, diff] of diffByPath.entries()) {
+      const counts = countDiffLines(diff);
+      files.push({
+        path,
+        action: 'modify',
+        linesAdded: counts.added,
+        linesRemoved: counts.removed,
+        note: `Change proposed by ${workPackage.specialistId}`,
+        diff,
+      });
+    }
+
+    const runs: ReviewTestRun[] = testsRan
+      ? [
+          {
+            kind: 'phpunit',
+            command: project?.qaTestCommand ?? './vendor/bin/phpunit',
+            outcome: testsPassed ? 'passed' : 'failed',
+            summary: testsPassed
+              ? 'Staged unit/feature test suite passed'
+              : 'Staged test execution failed',
+          },
+        ]
+      : [];
+
+    const testLabel = testsPassed
+      ? 'staged tests passed'
+      : testsRan
+        ? 'staged tests did NOT all pass'
+        : 'no staged test actually ran';
+
+    const headline = `${projectName}: ${filesChanged} file(s), +${linesAdded}/-${linesRemoved}, ${testLabel}. Authored by ${workPackage.specialistId}.`;
+    const onApprove = `Approving accepts this delivery in the Work Graph, advances execution to QA and Security gates, and allows applying changes to ${project?.absolutePath ?? 'workspace'}.`;
+
+    return {
+      waitId: gate.waitId,
+      gateId: gate.gateId,
+      workPackageId: gate.workPackageId,
+      intakeId: `runtime-${workPackage.workPackageId}`,
+      projectId,
+      projectName,
+      kind: 'code',
+      headline,
+      onApprove,
+      goal: `Autonomous delivery for ${workPackage.workPackageId}`,
+      requestedType: 'feature',
+      code: {
+        runId,
+        status: testsPassed ? 'ready' : 'failed',
+        rationale: `Autonomous engineering delivery executed in isolated staging workspace by specialist ${workPackage.specialistId}.`,
+        author: workPackage.specialistId,
+        authorStatus: 'produced',
+        filesChanged,
+        linesAdded,
+        linesRemoved,
+        files,
+        testsRan,
+        testsPassed,
+        testCommand: project?.qaTestCommand ?? './vendor/bin/phpunit',
+        runs,
+        blockers: testsPassed ? [] : ['Staged tests did not pass.'],
+      },
+      acceptanceCriteria: artifact.acceptanceCriteriaMet.map((c) => `${c.criterion}: ${c.status}`),
+      risks: testsPassed ? [] : ['Staged test failure — applying may break project test suite.'],
+      nextActions: testsPassed
+        ? [
+            'Approve gate to hand off to QA & Security verification',
+            'Reject gate if diff does not meet requirements',
+          ]
+        : ['Inspect staging failure and reject work package for retry'],
+    };
+  }
+
+  const headline = `${projectName}: ${workPackage.stage} review (${workPackage.specialistId}).`;
+  return {
+    waitId: gate.waitId,
+    gateId: gate.gateId,
+    workPackageId: gate.workPackageId,
+    intakeId: `runtime-${workPackage.workPackageId}`,
+    projectId,
+    projectName,
+    kind: 'findings',
+    headline,
+    onApprove: `Approving accepts stage ${workPackage.stage} and advances the Work Graph.`,
+    goal: `Deliver ${workPackage.stage}`,
+    requestedType: workPackage.stage.toLowerCase(),
+    acceptanceCriteria: artifact?.acceptanceCriteriaMet.map((c) => `${c.criterion}: ${c.status}`) ?? [],
+    risks: [],
+    nextActions: ['Review deliverables and decide on gate approval'],
+  };
+}
+
 /**
  * Assemble the review for one pending gate. Returns null when the gate has no intake
- * behind it (e.g. the demo seed), so callers can 404 rather than invent content.
+ * or runtime Work Package behind it, so callers can 404 rather than invent content.
  */
 export function buildGateReview(input: {
   gate: PendingGateLike;
   intakes: IntakeRecord[];
+  workPackages?: WorkPackageSummary[];
+  artifacts?: ArtifactContract[];
+  projectRegistry?: ProjectRegistry;
 }): GateReview | null {
   const intake = input.intakes.find(
     (item) => `wp-${item.intakeId}` === input.gate.workPackageId,
   );
-  if (!intake) return null;
+  if (intake) {
+    const plan = intake.plan;
+    const code = buildCodeReview(plan);
+    const findings = code ? undefined : buildFindingsReview(plan);
+    const { headline, onApprove } = headlineFor({ plan, code, findings });
 
-  const plan = intake.plan;
-  const code = buildCodeReview(plan);
-  const findings = code ? undefined : buildFindingsReview(plan);
-  const { headline, onApprove } = headlineFor({ plan, code, findings });
+    return {
+      waitId: input.gate.waitId,
+      gateId: input.gate.gateId,
+      workPackageId: input.gate.workPackageId,
+      intakeId: intake.intakeId,
+      projectId: plan.projectId,
+      projectName: plan.projectName,
+      kind: code ? 'code' : 'findings',
+      headline,
+      onApprove,
+      goal: plan.goal,
+      requestedType: plan.type,
+      routing: plan.routing
+        ? {
+            suggestedType: plan.routing.suggestedType,
+            agreed: plan.routing.agreed,
+            note: plan.routing.note,
+            confidence: plan.routing.confidence,
+          }
+        : undefined,
+      code,
+      findings,
+      acceptanceCriteria: plan.acceptanceCriteria,
+      risks: plan.risks,
+      nextActions: plan.nextActions,
+    };
+  }
 
-  return {
-    waitId: input.gate.waitId,
-    gateId: input.gate.gateId,
-    workPackageId: input.gate.workPackageId,
-    intakeId: intake.intakeId,
-    projectId: plan.projectId,
-    projectName: plan.projectName,
-    kind: code ? 'code' : 'findings',
-    headline,
-    onApprove,
-    goal: plan.goal,
-    requestedType: plan.type,
-    routing: plan.routing
-      ? {
-          suggestedType: plan.routing.suggestedType,
-          agreed: plan.routing.agreed,
-          note: plan.routing.note,
-          confidence: plan.routing.confidence,
-        }
-      : undefined,
-    code,
-    findings,
-    acceptanceCriteria: plan.acceptanceCriteria,
-    risks: plan.risks,
-    nextActions: plan.nextActions,
-  };
+  // Runtime Work Package lookup
+  const wp = input.workPackages?.find(
+    (w) =>
+      w.workPackageId === input.gate.workPackageId ||
+      input.gate.gateId === `gate-wp-${w.workPackageId}`,
+  );
+  if (!wp) return null;
+
+  const artifact =
+    (wp.artifactId
+      ? input.artifacts?.find((a) => a.artifactId === wp.artifactId)
+      : undefined) ??
+    input.artifacts?.find(
+      (a) => a.producedFor === wp.execId || a.version?.includes(wp.workPackageId),
+    );
+
+  return buildRuntimeWorkPackageReview({
+    gate: input.gate,
+    workPackage: wp,
+    artifact,
+    projectRegistry: input.projectRegistry,
+  });
 }

@@ -23,6 +23,7 @@
     "@umer/event-bus": "workspace:*",
     "@umer/kernel": "workspace:*",
     "@umer/message-fabric": "workspace:*",
+    "@umer/model-routing": "workspace:*",
     "@umer/observability": "workspace:*",
     "@umer/opportunity-intelligence": "workspace:*",
     "@umer/orchestration": "workspace:*",

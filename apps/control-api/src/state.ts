@@ -14,7 +14,7 @@ import type { ProjectStore } from './project-store.js';
 import type { TaskStore } from './task-store.js';
 import type { RequirementStore } from './requirement-store.js';
 import type { AgentControlStore } from './agent-control-store.js';
-import { applyEngToProject, applyQaToProject, applySeoToProject, applySecurityToProject, applyPerfToProject, applyUxToProject, createProjectRegistry, decideEngGate, decideSecurityGateByCategory, decidePerfGateByCategory, hasElevatedSecurityFindings, hasElevatedPerfFindings, planIntakeForControl, type EngApplyResult, type IntakeInstruction, type IntakePlan, type CodeProducer, type ProjectRegistry, type ResolvedProject, type QaApplyResult, type SeoApplyResult, type SecurityApplyResult, type PerfApplyResult, type UxApplyResult, type DeploymentEngine } from '@umer/registry';
+import { applyEngToProject, applyScopedEdits, applyQaToProject, applySeoToProject, applySecurityToProject, applyPerfToProject, applyUxToProject, createProjectRegistry, decideEngGate, decideSecurityGateByCategory, decidePerfGateByCategory, hasElevatedSecurityFindings, hasElevatedPerfFindings, planIntakeForControl, type EngApplyResult, type IntakeInstruction, type IntakePlan, type CodeProducer, type ProjectRegistry, type ResolvedProject, type QaApplyResult, type SeoApplyResult, type SecurityApplyResult, type PerfApplyResult, type UxApplyResult, type DeploymentEngine } from '@umer/registry';
 
 export type WorkPackageSummary = { workPackageId: string; execId: string; status: string; specialistId: string; stage: string; artifactId?: string; projectId?: string; errorMessage?: string; updatedAt?: string };
 export type WorkGraphPlanResult = { created: string[]; skipped: Array<{ nodeId: string; nodeType: string; reason: string }>; occurredAt: string };
@@ -119,5 +119,49 @@ export const applyUxOnGatePass = (state: ControlApiState, input: { workPackageId
 export const applySecurityOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-security-') ? applyGate(state, input) : Promise.resolve(undefined);
 export const applySeoOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-seo-') ? applyGate(state, input) : Promise.resolve(undefined);
 export const applyQaOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-qa-') ? applyGate(state, input) : Promise.resolve(undefined);
-export const applyEngOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string; approver: string }) => input.gateId.startsWith('gate-eng-') ? applyGate(state, input) : Promise.resolve(undefined);
+export const applyEngOnGatePass = async (
+  state: ControlApiState,
+  input: { workPackageId: string; gateId: string; rationale: string; approver: string },
+) => {
+  if (input.gateId.startsWith('gate-eng-')) {
+    return applyGate(state, input);
+  }
+  if (input.gateId.startsWith('gate-wp-')) {
+    const wp = state.workPackages.find((w) => w.workPackageId === input.workPackageId);
+    if (wp && wp.specialistId === 'eng.app-delivery') {
+      const artifact = wp.artifactId ? await state.artifactStore?.get(wp.artifactId) : undefined;
+      const annotations = (artifact?.metadata?.annotations ?? {}) as Record<string, string>;
+      const rawEdits = annotations.edits;
+      if (rawEdits && wp.projectId) {
+        try {
+          const edits = JSON.parse(rawEdits);
+          const project = state.projectRegistry.requireActive(wp.projectId);
+          const scoped = await applyScopedEdits({
+            root: project.absolutePath,
+            edits,
+          });
+          const runId = annotations.runId ?? `eng-${wp.workPackageId}`;
+          const result: EngApplyResult = {
+            projectId: project.projectId,
+            absolutePath: project.absolutePath,
+            runId,
+            appliedAt: new Date().toISOString(),
+            evidenceDir: `.umer/eng/${runId}`,
+            diffApplied: true,
+            files: scoped.files,
+            changedFiles: scoped.changedFiles,
+            verifiedExisting: [],
+            stillManual: [],
+            summary: `Applied ${scoped.changedFiles.length} file(s) for ${runId}`,
+            reverted: false,
+          };
+          return result;
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+};
 export async function listRecentAudit(state: ControlApiState): Promise<AuditContract[]> { return state.auditService.query(); }

@@ -2370,7 +2370,14 @@ export function createControlApiServer(state: ControlApiState) {
         sendJson(res, 404, { error: 'gate_not_pending', waitId });
         return;
       }
-      const review = buildGateReview({ gate, intakes: state.intakes });
+      const artifacts = state.artifactStore ? await state.artifactStore.list() : undefined;
+      const review = buildGateReview({
+        gate,
+        intakes: state.intakes,
+        workPackages: state.workPackages,
+        artifacts,
+        projectRegistry: state.projectRegistry,
+      });
       if (!review) {
         sendJson(res, 404, { error: 'no_intake_for_gate', waitId });
         return;

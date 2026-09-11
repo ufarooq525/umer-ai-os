@@ -8,11 +8,21 @@
  */
 
 import { createManualCodeProducer, type CodeProducer } from '@umer/registry';
+import { createLlmCodeProducer } from '@umer/agent-runtime';
+import { createLLMProviderFromEnv } from '@umer/model-routing';
 
 export const CODE_PRODUCER_ENV = 'UMER_ENG_CODE_PRODUCER';
 
+function createLlmProducer(): CodeProducer {
+  const provider = createLLMProviderFromEnv();
+  return createLlmCodeProducer({ provider });
+}
+
 const PRODUCER_FACTORIES: Record<string, () => CodeProducer> = {
   manual: createManualCodeProducer,
+  llm: createLlmProducer,
+  qwen: createLlmProducer,
+  automated: createLlmProducer,
 };
 
 export const DEFAULT_CODE_PRODUCER = 'manual';

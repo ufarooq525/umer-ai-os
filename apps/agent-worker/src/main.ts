@@ -7,6 +7,7 @@ import { createLogger } from '@umer/observability';
 import {
   createAgentRuntime,
   createAgentWorker,
+  createLlmCodeProducer,
   createMessageFabricAgentEventPublisher,
 } from '@umer/agent-runtime';
 import { InMemoryRegistryAdapter, loadSpecFromFile } from '@umer/specialist-sdk';
@@ -86,6 +87,13 @@ const llmProvider = createLLMProviderFromEnv({ env });
 
 const fabric = await createMessageFabric({ producer: serviceName });
 const { engine: artifactEngine } = createArtifactStack();
+const codeProducer = createLlmCodeProducer({
+  provider: llmProvider,
+  model: env.LLM_MODEL,
+  temperature: env.LLM_TEMPERATURE,
+  maxTokens: env.LLM_MAX_TOKENS,
+});
+
 const worker = createAgentWorker({
   runtime: createAgentRuntime({
     resolveMandate: async (specialistId) => {
@@ -93,6 +101,7 @@ const worker = createAgentWorker({
       return loaded ? { mandate: loaded.mandate, binding: loaded.binding } : undefined;
     },
     events: createMessageFabricAgentEventPublisher(fabric, serviceName),
+    codeProducer,
     llm: {
       provider: llmProvider,
       toolRegistry,
