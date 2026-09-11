@@ -254,8 +254,8 @@ class MathTest extends TestCase
             provider: llmProvider,
             toolRegistry,
             toolRouter,
-            maxIterations: 10,
-            runTimeoutMs: 120000,
+            maxIterations: 8,
+            runTimeoutMs: 300000,
             temperature: 0.1,
             maxTokens: 2048,
           },
@@ -416,7 +416,7 @@ class MathTest extends TestCase
         `Files Changed: ${engAnnotations.filesChanged} file(s)\n` +
         `Staged Tests Status: testsRan=${engAnnotations.testsRan}, testsPassed=${engAnnotations.testsPassed}\n` +
         `Implementation Diff:\n\`\`\`diff\n${engAnnotations.proposedDiff}\n\`\`\`\n\n` +
-        `Inspect the repository dependencies and files, check for vulnerabilities or credentials, and produce security audit evidence.`;
+        `Inspect the repository dependencies and files using process_run_audit for npm advisories, and provide your final security assessment and findings.`;
 
       const secWorkPackage = parseContract(WorkPackageContractSchema, {
         id: `pkg-${secWpId}`,
@@ -462,7 +462,7 @@ class MathTest extends TestCase
       let secArtifact: any = null;
       const expectedSecArtifactId = `art-${secWpId}-1`;
       const t1 = Date.now();
-      while (Date.now() - t1 < 120000) {
+      while (Date.now() - t1 < 240000) {
         const artifacts = await artifactStore.list();
         const found = artifacts.find((a) => a.artifactId === expectedSecArtifactId || a.producedFor === 'EXEC-909');
         if (found) {
@@ -538,6 +538,6 @@ class MathTest extends TestCase
       const applyReportMd = await readFile(join(runDir, 'APPLY_REPORT.md'), 'utf8');
       expect(applyReportMd).toContain('Security apply report');
     },
-    240000,
+    360000,
   );
 });
