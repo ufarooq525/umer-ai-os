@@ -427,6 +427,51 @@ function buildRuntimeWorkPackageReview(input: {
     };
   }
 
+  if (artifact && (artifact.artifactType === 'SecurityReport' || workPackage.specialistId === 'security.review')) {
+    const verifiedCount = artifact.acceptanceCriteriaMet.filter((c) => c.status === 'VERIFIED').length;
+    const failedCount = artifact.acceptanceCriteriaMet.filter((c) => c.status === 'FAILED').length;
+    const naCount = artifact.acceptanceCriteriaMet.filter((c) => c.status === 'N_A').length;
+
+    const items = artifact.acceptanceCriteriaMet.map((c, i) => ({
+      id: `sec-item-${i + 1}`,
+      title: c.criterion,
+      severity: c.status === 'FAILED' ? 'P0' : 'P1',
+      detail: `Security status: ${c.status}${c.evidenceRef ? ` (evidence: ${c.evidenceRef})` : ''}`,
+    }));
+
+    const headline = `${projectName}: Security Review (${verifiedCount} verified, ${failedCount} failed). Authored by ${workPackage.specialistId}.`;
+    const onApprove = `Approving records the Security audit evidence and advances the Work Graph to the Release stage.`;
+
+    return {
+      waitId: gate.waitId,
+      gateId: gate.gateId,
+      workPackageId: gate.workPackageId,
+      intakeId: `runtime-${workPackage.workPackageId}`,
+      projectId,
+      projectName,
+      kind: 'findings',
+      headline,
+      onApprove,
+      goal: `Verify security for ${projectName}`,
+      requestedType: 'security',
+      findings: {
+        runId: `sec-${workPackage.workPackageId}`,
+        summary: `Security review and audit executed by ${workPackage.specialistId}`,
+        counts: {
+          verified: verifiedCount,
+          failed: failedCount,
+          pending: naCount,
+        },
+        items,
+      },
+      acceptanceCriteria: artifact.acceptanceCriteriaMet.map((c) => `${c.criterion}: ${c.status}`),
+      risks: failedCount > 0 ? ['Security review reported vulnerabilities or failed verification criteria.'] : [],
+      nextActions: failedCount > 0
+        ? ['Reject gate and request security remediation before release']
+        : ['Approve gate to advance to Release planning'],
+    };
+  }
+
   const headline = `${projectName}: ${workPackage.stage} review (${workPackage.specialistId}).`;
   return {
     waitId: gate.waitId,

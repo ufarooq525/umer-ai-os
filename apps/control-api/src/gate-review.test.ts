@@ -265,6 +265,63 @@ describe('buildGateReview', () => {
     expect(review?.headline).toContain('QA Verification');
     expect(review?.headline).toContain('2 verified');
   });
+
+  it('builds a findings review for runtime Security Work Package backed by a SecurityReport artifact', async () => {
+    const fixture = await createFixture();
+    const review = buildGateReview({
+      gate: { waitId: 'wait-sec-1', gateId: 'gate-wp-pkg-sec-1', workPackageId: 'pkg-sec-1' },
+      intakes: [],
+      projectRegistry: fixture.state.projectRegistry,
+      workPackages: [
+        {
+          workPackageId: 'pkg-sec-1',
+          execId: 'EXEC-904',
+          status: 'AwaitingReview',
+          specialistId: 'security.review',
+          stage: 'Security',
+          projectId: 'demo-client',
+          artifactId: 'art-sec-1',
+        },
+      ],
+      artifacts: [
+        parseContract(ArtifactContractSchema, {
+          id: 'art-sec-1',
+          schemaVersion: SCHEMA_VERSION,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            labels: {},
+            annotations: {
+              scanCommand: 'npm audit',
+            },
+          },
+          kind: 'artifact',
+          artifactId: 'art-sec-1',
+          artifactType: 'SecurityReport',
+          version: 'wp:pkg-sec-1:1',
+          producedBy: 'security.review',
+          producedFor: 'EXEC-904',
+          acceptanceStatus: 'submitted',
+          acceptanceCriteriaMet: [
+            { criterion: 'Dependency vulnerability audit', status: 'VERIFIED', evidenceRef: 'sec://npm-audit' },
+            { criterion: 'Static code secret scan', status: 'VERIFIED', evidenceRef: 'sec://secret-scan' },
+          ],
+          sourceTaskId: 'task-sec-1',
+          contentRef: 'memory://artifacts/art-sec-1',
+          contentHash: 'hash-sec-1',
+        }),
+      ],
+    });
+
+    expect(review).toBeDefined();
+    expect(review?.kind).toBe('findings');
+    expect(review?.requestedType).toBe('security');
+    expect(review?.findings?.counts.verified).toBe(2);
+    expect(review?.findings?.counts.failed).toBe(0);
+    expect(review?.findings?.items).toHaveLength(2);
+    expect(review?.headline).toContain('Security Review');
+    expect(review?.headline).toContain('2 verified');
+  });
 });
 
 describe('gate review route', () => {

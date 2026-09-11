@@ -15,7 +15,7 @@ import type { ProjectStore } from './project-store.js';
 import type { TaskStore } from './task-store.js';
 import type { RequirementStore } from './requirement-store.js';
 import type { AgentControlStore } from './agent-control-store.js';
-import { applyEngToProject, applyScopedEdits, applyQaToProject, runQaSuites, collectQaRepoSignals, applySeoToProject, applySecurityToProject, applyPerfToProject, applyUxToProject, createProjectRegistry, decideEngGate, decideSecurityGateByCategory, decidePerfGateByCategory, hasElevatedSecurityFindings, hasElevatedPerfFindings, planIntakeForControl, type EngApplyResult, type IntakeInstruction, type IntakePlan, type CodeProducer, type ProjectRegistry, type ResolvedProject, type QaApplyResult, type SeoApplyResult, type SecurityApplyResult, type PerfApplyResult, type UxApplyResult, type DeploymentEngine } from '@umer/registry';
+import { applyEngToProject, applyScopedEdits, applyQaToProject, runQaSuites, collectQaRepoSignals, applySeoToProject, applySecurityToProject, runSecurityAudit, applyPerfToProject, applyUxToProject, createProjectRegistry, decideEngGate, decideSecurityGateByCategory, decidePerfGateByCategory, hasElevatedSecurityFindings, hasElevatedPerfFindings, planIntakeForControl, type EngApplyResult, type IntakeInstruction, type IntakePlan, type CodeProducer, type ProjectRegistry, type ResolvedProject, type QaApplyResult, type SeoApplyResult, type SecurityApplyResult, type PerfApplyResult, type UxApplyResult, type DeploymentEngine } from '@umer/registry';
 
 export type WorkPackageSummary = { workPackageId: string; execId: string; status: string; specialistId: string; stage: string; artifactId?: string; projectId?: string; errorMessage?: string; updatedAt?: string };
 export type WorkGraphPlanResult = { created: string[]; skipped: Array<{ nodeId: string; nodeType: string; reason: string }>; occurredAt: string };
@@ -117,7 +117,37 @@ async function applyGate(state: ControlApiState, input: { workPackageId: string;
 }
 export const applyPerfOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-perf-') ? applyGate(state, input) : Promise.resolve(undefined);
 export const applyUxOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-ux-') ? applyGate(state, input) : Promise.resolve(undefined);
-export const applySecurityOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-security-') ? applyGate(state, input) : Promise.resolve(undefined);
+export const applySecurityOnGatePass = async (
+  state: ControlApiState,
+  input: { workPackageId: string; gateId: string; rationale: string },
+) => {
+  if (input.gateId.startsWith('gate-security-')) {
+    return applyGate(state, input);
+  }
+  if (input.gateId.startsWith('gate-wp-')) {
+    const wp = state.workPackages.find((w) => w.workPackageId === input.workPackageId);
+    if (wp && (wp.specialistId === 'security.review' || wp.stage === 'Security')) {
+      if (wp.projectId) {
+        try {
+          const project = state.projectRegistry.requireActive(wp.projectId);
+          const auditReport = await runSecurityAudit({
+            project,
+            goal: `Autonomous security review on gate pass for ${wp.workPackageId}`,
+            runId: `sec-${wp.workPackageId}`,
+          });
+          return await applySecurityToProject({
+            project,
+            report: auditReport,
+            rationale: input.rationale,
+          });
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+};
 export const applySeoOnGatePass = (state: ControlApiState, input: { workPackageId: string; gateId: string; rationale: string }) => input.gateId.startsWith('gate-seo-') ? applyGate(state, input) : Promise.resolve(undefined);
 export const applyQaOnGatePass = async (
   state: ControlApiState,
