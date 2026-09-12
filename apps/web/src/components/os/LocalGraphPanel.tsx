@@ -30,6 +30,7 @@ const NODE_COLORS: Record<GraphNodeType, string> = {
   Learning: '#10b981',
   Deployment: '#6ee7b7',
   Incident: '#f87171',
+  Finding: '#ef4444',
 };
 
 function nodeHref(node: CompanyGraphNode): string | null {
@@ -53,6 +54,8 @@ function nodeHref(node: CompanyGraphNode): string | null {
       return meta.artifactId ? `/artifacts#${meta.artifactId}` : '/artifacts';
     case 'Learning':
       return '/operations';
+    case 'Finding':
+      return meta.findingId ? `/watchdogs#${meta.findingId}` : '/watchdogs';
     case 'AgentRun':
       return meta.workPackageId ? `/agent-runs/${meta.workPackageId}` : null;
     default:

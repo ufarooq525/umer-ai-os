@@ -1008,7 +1008,8 @@ export type GraphNodeType =
   | 'Customer'
   | 'Learning'
   | 'Deployment'
-  | 'Incident';
+  | 'Incident'
+  | 'Finding';
 
 export type CompanyGraphNode = {
   id: string;
@@ -1087,6 +1088,153 @@ export async function getCustomers(): Promise<CustomerRecord[]> {
     return res.customers;
   } catch {
     return [];
+  }
+}
+
+// --- Autonomous Watchdogs (RFC-007) ---------------------------------------
+
+export type WatchdogFinding = {
+  findingId: string;
+  fingerprint: string;
+  watchdogId: string;
+  projectId: string;
+  title: string;
+  summary: string;
+  category: string;
+  severity: {
+    tier: 'info' | 'warning' | 'high' | 'critical';
+    riskScore: number;
+    confidence: string;
+    sticky: boolean;
+  };
+  status: 'open' | 'acked' | 'mitigating' | 'cleared' | 'wontfix';
+  escalationStage: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  remediation?: string;
+  path?: string;
+  evidence?: string;
+  ackedBy?: string;
+  ackedAt?: string;
+  clearedBy?: string;
+  clearedAt?: string;
+  clearanceReason?: string;
+};
+
+export type WatchRun = {
+  runId: string;
+  watchdogId: string;
+  scheduleId?: string;
+  cadence: string;
+  projectId: string;
+  startedAt: string;
+  finishedAt: string;
+  outcome: 'healthy' | 'findings_detected' | 'failed';
+  findings: WatchdogFinding[];
+  findingCount: number;
+  summary: string;
+};
+
+export type WatchdogSchedule = {
+  id: string;
+  watchdogId: string;
+  projectId: string;
+  cadence: string;
+  cron?: string;
+  paused: boolean;
+  lastRunAt?: string;
+  nextRunAt?: string;
+};
+
+export async function getWatchdogRuns(params?: { projectId?: string; watchdogId?: string; limit?: number }): Promise<WatchRun[]> {
+  try {
+    const q = new URLSearchParams();
+    if (params?.projectId) q.set('projectId', params.projectId);
+    if (params?.watchdogId) q.set('watchdogId', params.watchdogId);
+    if (params?.limit) q.set('limit', String(params.limit));
+    const url = `/v1/watchdogs/runs${q.toString() ? `?${q.toString()}` : ''}`;
+    const res = await fetchJson<{ runs: WatchRun[] }>(url);
+    return res.runs ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getWatchdogFindings(params?: {
+  projectId?: string;
+  watchdogId?: string;
+  status?: string;
+  severityTier?: string;
+}): Promise<WatchdogFinding[]> {
+  try {
+    const q = new URLSearchParams();
+    if (params?.projectId) q.set('projectId', params.projectId);
+    if (params?.watchdogId) q.set('watchdogId', params.watchdogId);
+    if (params?.status) q.set('status', params.status);
+    if (params?.severityTier) q.set('severityTier', params.severityTier);
+    const url = `/v1/watchdogs/findings${q.toString() ? `?${q.toString()}` : ''}`;
+    const res = await fetchJson<{ findings: WatchdogFinding[] }>(url);
+    return res.findings ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function ackWatchdogFinding(findingId: string, actor: string = 'ceo.operator'): Promise<WatchdogFinding | null> {
+  try {
+    return await fetchJson<WatchdogFinding>(`/v1/watchdogs/findings/${encodeURIComponent(findingId)}/ack`, {
+      method: 'POST',
+      body: JSON.stringify({ actor }),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function clearWatchdogFinding(
+  findingId: string,
+  reason: string,
+  actor: string = 'ceo.operator',
+): Promise<WatchdogFinding | null> {
+  try {
+    return await fetchJson<WatchdogFinding>(`/v1/watchdogs/findings/${encodeURIComponent(findingId)}/clear`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, actor }),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function runWatchdogNow(projectId: string, watchdogId: string): Promise<WatchRun | null> {
+  try {
+    return await fetchJson<WatchRun>('/v1/watchdogs/run', {
+      method: 'POST',
+      body: JSON.stringify({ projectId, watchdogId, cadence: 'manual' }),
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function getWatchdogSchedules(projectId?: string): Promise<WatchdogSchedule[]> {
+  try {
+    const url = `/v1/watchdogs/schedules${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`;
+    const res = await fetchJson<{ schedules: WatchdogSchedule[] }>(url);
+    return res.schedules ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function patchWatchdogSchedule(id: string, update: { paused?: boolean }): Promise<WatchdogSchedule | null> {
+  try {
+    return await fetchJson<WatchdogSchedule>(`/v1/watchdogs/schedules/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(update),
+    });
+  } catch {
+    return null;
   }
 }
 

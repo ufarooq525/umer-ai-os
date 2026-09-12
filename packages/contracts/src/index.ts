@@ -29,3 +29,4 @@ export * from './operations/index.js';
 export * from './commercial/index.js';
 export * from './customer-success/index.js';
 export * from './company-loop/index.js';
+export * from './watchdogs/index.js';

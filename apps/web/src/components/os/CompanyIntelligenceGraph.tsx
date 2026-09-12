@@ -49,6 +49,7 @@ const NODE_COLORS: Record<GraphNodeType, string> = {
   Learning:    '#10b981',   // emerald
   Deployment:  '#6ee7b7',   // mint
   Incident:    '#f87171',   // red
+  Finding:     '#ef4444',   // alert red
 };
 
 function nodeColor(type: GraphNodeType): string {
@@ -65,6 +66,9 @@ function nodeRadius(node: CompanyGraphNode): number {
   if (node.type === 'Gate') {
     return 11;
   }
+  if (node.type === 'Finding') {
+    return 10;
+  }
   return base;
 }
 
@@ -77,7 +81,7 @@ type FocusMode = 'COMPANY' | 'INTELLIGENCE' | 'OPERATIONS' | 'REVENUE' | 'KNOWLE
 const FOCUS_MODE_TYPES: Record<FocusMode, GraphNodeType[] | null> = {
   COMPANY:      null,  // show everything
   INTELLIGENCE: ['Niche', 'Opportunity', 'Prospect', 'Contact', 'Outreach'],
-  OPERATIONS:   ['Agent', 'Project', 'WorkPackage', 'Gate', 'AgentRun', 'Artifact', 'Requirement', 'Deployment', 'Incident'],
+  OPERATIONS:   ['Agent', 'Project', 'WorkPackage', 'Gate', 'AgentRun', 'Artifact', 'Requirement', 'Deployment', 'Incident', 'Finding'],
   REVENUE:      ['Opportunity', 'Prospect', 'Deal', 'Proposal', 'Project', 'Customer', 'Learning'],
   KNOWLEDGE:    ['Opportunity', 'Project', 'WorkPackage', 'Gate', 'Artifact', 'Learning'],
 };
@@ -833,6 +837,11 @@ function getNodeLinks(node: SimNode): { label: string; href: string }[] {
       return meta.agentId ? [{ label: 'View Agent Run', href: `/agent-runs/${meta.workPackageId}` }] : [];
     case 'Customer':
       return [];
+    case 'Finding':
+      return [
+        { label: 'View in Watchdogs Console', href: `/watchdogs#${meta.findingId ?? ''}` },
+        ...(meta.projectId ? [{ label: 'View Project', href: `/company/projects/${meta.projectId}` }] : []),
+      ];
     default:
       return [];
   }

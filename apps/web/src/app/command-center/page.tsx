@@ -13,6 +13,7 @@ import {
   getWorkPackages,
   getWorkProjects,
   getCompanyOverview,
+  getWatchdogFindings,
 } from '@/lib/control-api';
 import { deriveAttentionCases, deriveCompanyPulse } from '@/lib/company-derive';
 import { deriveCommercialAttentionCases } from '@/lib/commercial-intelligence';
@@ -23,7 +24,6 @@ import { agentCurrentRun } from '@/components/os/joins';
 import { CompanyNowHero } from '@/components/os/CompanyNowHero';
 import { ExecutiveThreeCol } from '@/components/os/ExecutiveThreeCol';
 import { HorizontalCompanyFlow } from '@/components/os/HorizontalCompanyFlow';
-import { WatchdogFindingsBanner } from '@/components/WatchdogFindingsBanner';
 import { RuntimeTruthStrip } from '@/components/os/RuntimeTruthStrip';
 import { formatRelativeTime } from '@/components/os/format';
 
@@ -51,6 +51,7 @@ export default async function CommandCenterPage() {
     workPackages,
     runtime,
     companyOverview,
+    watchdogFindings,
   ] = await Promise.all([
     settled(getOpportunities(), []),
     settled(getWorkProjects(), []),
@@ -64,6 +65,7 @@ export default async function CommandCenterPage() {
     settled(getWorkPackages(), []),
     probeRuntimeTruth(),
     settled(getCompanyOverview(), null),
+    settled(getWatchdogFindings({ status: 'open' }), []),
   ]);
 
   const pulse = deriveCompanyPulse(agents, projects, tasks, opportunities);
@@ -82,8 +84,6 @@ export default async function CommandCenterPage() {
     controlApiUp: runtime.controlApi.status === 'up',
     llm: { status: runtime.llm.status, label: runtime.llm.label },
   });
-
-  const watchdogFindings = dashboard?.watchdogFindings ?? [];
   // An agent whose current run keeps failing (e.g. no mandate registered)
   // isn't meaningfully "working" — exclude it so this count can't read as
   // healthier than it is next to the CEO Attention list flagging the same runs.
@@ -191,16 +191,16 @@ export default async function CommandCenterPage() {
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: (attentionCases.length > 0 || gates.length > 0) ? colors.warning : colors.muted }}>
+              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: (attentionCases.length > 0 || gates.length > 0 || watchdogFindings.length > 0) ? colors.warning : colors.muted }}>
                 Attention
               </span>
-              <AlertTriangle size={15} style={{ color: (attentionCases.length > 0 || gates.length > 0) ? colors.warning : colors.muted }} />
+              <AlertTriangle size={15} style={{ color: (attentionCases.length > 0 || gates.length > 0 || watchdogFindings.length > 0) ? colors.warning : colors.muted }} />
             </div>
-            <div style={{ fontFamily: fonts.mono, fontSize: 26, fontWeight: 700, color: (attentionCases.length > 0 || gates.length > 0) ? colors.warning : '#ffffff', margin: '4px 0 2px' }}>
-              {attentionCases.length + gates.length}
+            <div style={{ fontFamily: fonts.mono, fontSize: 26, fontWeight: 700, color: (attentionCases.length > 0 || gates.length > 0 || watchdogFindings.length > 0) ? colors.warning : '#ffffff', margin: '4px 0 2px' }}>
+              {attentionCases.length + gates.length + watchdogFindings.length}
             </div>
             <div style={{ fontSize: 11.5, color: colors.muted }}>
-              {gates.length > 0 ? `${gates.length} gate${gates.length === 1 ? '' : 's'} · ` : ''}{pulse.decisionsRequired} decisions · {pulse.tasks.blocked} blocked
+              {gates.length > 0 ? `${gates.length} gate${gates.length === 1 ? '' : 's'} · ` : ''}{watchdogFindings.length > 0 ? `${watchdogFindings.length} finding${watchdogFindings.length === 1 ? '' : 's'} · ` : ''}{pulse.decisionsRequired} decisions · {pulse.tasks.blocked} blocked
             </div>
           </Link>
 
@@ -262,8 +262,6 @@ export default async function CommandCenterPage() {
         </div>
       </section>
 
-      {/* Watchdog findings if any */}
-      {watchdogFindings.length > 0 && <WatchdogFindingsBanner findings={watchdogFindings} />}
 
       {/* 2. PRIMARY AREA: COMPANY NOW */}
       <section>
@@ -400,10 +398,59 @@ export default async function CommandCenterPage() {
               </div>
             )}
 
-            {gates.length === 0 && pulse.decisionsRequired === 0 && (
+            {watchdogFindings.length > 0 && (
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: radii.sm,
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 13, fontWeight: 650, color: colors.text }}>
+                    {watchdogFindings.length} Watchdog Finding{watchdogFindings.length === 1 ? '' : 's'} Detected
+                  </div>
+                  <Link
+                    href="/watchdogs"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      fontFamily: fonts.mono,
+                      color: colors.danger,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    Console →
+                  </Link>
+                </div>
+                <div style={{ fontSize: 11.5, color: colors.muted, marginTop: 4 }}>
+                  Observation-only background watchdogs detected security, dependency, QA, or architecture issues.
+                </div>
+                <Link
+                  href="/watchdogs"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    color: colors.danger,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    marginTop: 8,
+                  }}
+                >
+                  Review Watchdog Findings <ArrowRight size={12} />
+                </Link>
+              </div>
+            )}
+
+            {gates.length === 0 && pulse.decisionsRequired === 0 && watchdogFindings.length === 0 && (
               <div style={{ padding: '24px 10px', textAlign: 'center', color: colors.muted, fontSize: 12.5 }}>
                 <CheckCircle2 size={20} style={{ color: colors.success, margin: '0 auto 6px', opacity: 0.8 }} />
-                No quality gates or decisions pending. Autonomous operations running within approved boundaries.
+                No quality gates, decisions, or watchdog findings pending. Autonomous operations running within approved boundaries.
               </div>
             )}
           </div>

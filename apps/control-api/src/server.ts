@@ -41,6 +41,7 @@ import {
   ProjectIdSchema,
   DealIdSchema,
   ContactIdSchema,
+  WatchScheduleIdSchema,
   type DeliveryOutcomeStatus,
   type SupportCaseSeverity,
   type FeedbackSentiment,
@@ -67,12 +68,21 @@ import {
 } from '@umer/opportunity-intelligence';
 import type { DiscoveryCandidateRecord } from '@umer/contracts';
 import { InMemoryArtifactStore } from '@umer/artifacts';
-import { routeIntakeGoal, type IntakeInstruction, DeploymentEngine } from '@umer/registry';
-import type { DeploymentStrategy, Environment, RollbackPlan } from '@umer/contracts';
+import { routeIntakeGoal, type IntakeInstruction, DeploymentEngine, WatchdogEngine } from '@umer/registry';
+import type {
+  DeploymentStrategy,
+  Environment,
+  RollbackPlan,
+  WatchdogId,
+  WatchdogCadence,
+  FindingStatus,
+  FindingSeverityTier,
+} from '@umer/contracts';
 import { InMemoryProjectStore } from './project-store.js';
 import { InMemoryTaskStore } from './task-store.js';
 import { RequirementAlreadyDecidedError } from './requirement-store.js';
 import { InMemoryAgentControlStore } from './agent-control-store.js';
+import { InMemoryWatchdogStore, type WatchdogStore } from './watchdog-store.js';
 import {
   type ControlApiState,
   applyEngOnGatePass,
@@ -121,6 +131,8 @@ async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
 
 export type ControlApiStateOptions = {
   deploymentEngine?: DeploymentEngine;
+  watchdogStore?: WatchdogStore;
+  watchdogEngine?: WatchdogEngine;
 };
 
 export async function createControlApiState(options?: ControlApiStateOptions): Promise<ControlApiState> {
@@ -144,6 +156,9 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
     effect: 'allow',
   });
 
+  const watchdogStore = options?.watchdogStore ?? new InMemoryWatchdogStore();
+  const watchdogEngine = options?.watchdogEngine ?? new WatchdogEngine();
+
   const state: ControlApiState = {
     workPackages: [],
     intakes: [],
@@ -162,8 +177,34 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
     artifactStore: new InMemoryArtifactStore(),
     workGraphStore: new InMemoryWorkGraphStore(),
     deploymentEngine: options?.deploymentEngine ?? new DeploymentEngine(),
+    watchdogStore,
+    watchdogEngine,
     trustRuntime,
   };
+
+  // Pre-seed default schedules for active projects if none registered
+  for (const p of state.projectRegistry.list()) {
+    if (p.status === 'active' && watchdogStore.listSchedules(p.projectId).length === 0) {
+      watchdogStore.addSchedule({
+        id: WatchScheduleIdSchema.parse(`wdsched-sec-${p.projectId}`),
+        watchdogId: 'security.watchdog',
+        projectId: ProjectIdSchema.parse(p.projectId),
+        cadence: 'nightly',
+        cron: '0 2 * * *',
+        paused: false,
+        options: {},
+      });
+      watchdogStore.addSchedule({
+        id: WatchScheduleIdSchema.parse(`wdsched-deps-${p.projectId}`),
+        watchdogId: 'deps.watchdog',
+        projectId: ProjectIdSchema.parse(p.projectId),
+        cadence: 'hourly',
+        cron: '0 * * * *',
+        paused: false,
+        options: {},
+      });
+    }
+  }
   state.persistentWorkGraph = new PersistentWorkGraph(state.workGraphStore!);
   state.commandService = createCeoCommandService(
     {
@@ -443,6 +484,152 @@ export function createControlApiServer(state: ControlApiState) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+      return;
+    }
+
+    if (path === '/v1/watchdogs/runs' && req.method === 'GET') {
+      const projectId = url.searchParams.get('projectId') || undefined;
+      const watchdogId = (url.searchParams.get('watchdogId') as WatchdogId) || undefined;
+      const outcome = url.searchParams.get('outcome') || undefined;
+      const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
+      const runs = state.watchdogStore?.listRuns({ projectId, watchdogId, outcome, limit }) ?? [];
+      sendJson(res, 200, { runs, count: runs.length });
+      return;
+    }
+
+    if (path === '/v1/watchdogs/findings' && req.method === 'GET') {
+      const projectId = url.searchParams.get('projectId') || undefined;
+      const watchdogId = (url.searchParams.get('watchdogId') as WatchdogId) || undefined;
+      const status = (url.searchParams.get('status') as FindingStatus) || undefined;
+      const severityTier = (url.searchParams.get('severityTier') as FindingSeverityTier) || undefined;
+      const findings = state.watchdogStore?.listFindings({ projectId, watchdogId, status, severityTier }) ?? [];
+      sendJson(res, 200, { findings, count: findings.length });
+      return;
+    }
+
+    const findingAckMatch = path.match(/^\/v1\/watchdogs\/findings\/([^/]+)\/ack$/);
+    if (findingAckMatch && req.method === 'POST') {
+      const findingId = decodeURIComponent(findingAckMatch[1]!);
+      const body = await readJsonBody<{ actor?: string; ackedBy?: string }>(req);
+      try {
+        const actor = body.actor ?? body.ackedBy ?? 'human.operator';
+        const finding = state.watchdogStore?.ackFinding(findingId, actor);
+        const corrAck = `corr-wd-ack-${Date.now()}`;
+        await state.auditService.append({
+          action: 'watchdog.finding.acked',
+          actor,
+          resourceType: 'watchdog_finding',
+          resourceId: findingId,
+          outcome: 'success',
+          correlationId: corrAck,
+          detail: { findingId },
+        }, corrAck);
+        sendJson(res, 200, finding);
+      } catch (err) {
+        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const findingClearMatch = path.match(/^\/v1\/watchdogs\/findings\/([^/]+)\/clear$/);
+    if (findingClearMatch && req.method === 'POST') {
+      const findingId = decodeURIComponent(findingClearMatch[1]!);
+      const body = await readJsonBody<{ reason?: string; actor?: string; clearedBy?: string }>(req);
+      try {
+        const actor = body.actor ?? body.clearedBy ?? 'human.operator';
+        const reason = body.reason ?? 'Verified and resolved by operator';
+        const finding = state.watchdogStore?.clearFinding(findingId, reason, actor);
+        const corrClear = `corr-wd-clear-${Date.now()}`;
+        await state.auditService.append({
+          action: 'watchdog.finding.cleared',
+          actor,
+          resourceType: 'watchdog_finding',
+          resourceId: findingId,
+          outcome: 'success',
+          correlationId: corrClear,
+          detail: { findingId, reason },
+        }, corrClear);
+        sendJson(res, 200, finding);
+      } catch (err) {
+        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    const findingGetMatch = path.match(/^\/v1\/watchdogs\/findings\/([^/]+)$/);
+    if (findingGetMatch && req.method === 'GET') {
+      const findingId = decodeURIComponent(findingGetMatch[1]!);
+      const finding = state.watchdogStore?.getFinding(findingId);
+      if (!finding) {
+        sendJson(res, 404, { error: `finding ${findingId} not found` });
+        return;
+      }
+      sendJson(res, 200, finding);
+      return;
+    }
+
+    if (path === '/v1/watchdogs/run' && req.method === 'POST') {
+      const body = await readJsonBody<{
+        projectId: string;
+        watchdogId: WatchdogId;
+        cadence?: WatchdogCadence;
+      }>(req);
+
+      if (!body.projectId || !body.watchdogId) {
+        sendJson(res, 400, { error: 'projectId and watchdogId are required' });
+        return;
+      }
+
+      try {
+        const project = state.projectRegistry.requireActive(body.projectId);
+        const engine = state.watchdogEngine ?? new WatchdogEngine();
+        const run = await engine.executeWatchRun({
+          project,
+          watchdogId: body.watchdogId,
+          cadence: body.cadence ?? 'manual',
+        });
+        state.watchdogStore?.recordRun(run);
+
+        const corrRun = `corr-wdrun-${run.runId}`;
+        await state.auditService.append({
+          action: 'watchdog.run.completed',
+          actor: 'system',
+          resourceType: 'watchdog_run',
+          resourceId: run.runId,
+          outcome: run.outcome === 'failed' ? 'failure' : 'success',
+          correlationId: corrRun,
+          detail: {
+            watchdogId: run.watchdogId,
+            projectId: run.projectId,
+            findingCount: run.findingCount,
+            outcome: run.outcome,
+          },
+        }, corrRun);
+
+        sendJson(res, 201, run);
+      } catch (err) {
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (path === '/v1/watchdogs/schedules' && req.method === 'GET') {
+      const projectId = url.searchParams.get('projectId') || undefined;
+      const schedules = state.watchdogStore?.listSchedules(projectId) ?? [];
+      sendJson(res, 200, { schedules, count: schedules.length });
+      return;
+    }
+
+    const schedulePatchMatch = path.match(/^\/v1\/watchdogs\/schedules\/([^/]+)$/);
+    if (schedulePatchMatch && req.method === 'PATCH') {
+      const scheduleId = decodeURIComponent(schedulePatchMatch[1]!);
+      const body = await readJsonBody<{ paused?: boolean; cadence?: WatchdogCadence }>(req);
+      try {
+        const updated = state.watchdogStore?.updateSchedule(scheduleId, body);
+        sendJson(res, 200, updated);
+      } catch (err) {
+        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) });
       }
       return;
     }

@@ -42,7 +42,8 @@ export type GraphNodeType =
   | 'Customer'
   | 'Learning'
   | 'Deployment'
-  | 'Incident';
+  | 'Incident'
+  | 'Finding';
 
 export type GraphEdgeType =
   | 'niche_opportunity'
@@ -69,7 +70,8 @@ export type GraphEdgeType =
   | 'project_learning'
   | 'learning_opportunity'
   | 'project_deployment'
-  | 'deployment_incident';
+  | 'deployment_incident'
+  | 'project_finding';
 
 export type CompanyGraphNode = {
   id: string;
@@ -1006,6 +1008,52 @@ export async function buildCompanyGraph(
             }
           }
         }
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 13. Watchdog Findings
+  // -------------------------------------------------------------------------
+  if (state.watchdogStore) {
+    const openFindings = state.watchdogStore.listFindings({
+      projectId: effectiveProjectId,
+      status: 'open',
+    });
+
+    for (const f of openFindings) {
+      const findingNodeId = `finding:${f.findingId}`;
+      addNode({
+        id: findingNodeId,
+        type: 'Finding',
+        label: `${f.severity.tier.toUpperCase()}: ${f.title}`,
+        status: f.status,
+        metadata: {
+          findingId: f.findingId,
+          fingerprint: f.fingerprint,
+          watchdogId: f.watchdogId,
+          projectId: f.projectId,
+          category: f.category,
+          severityTier: f.severity.tier,
+          riskScore: f.severity.riskScore,
+          escalationStage: f.escalationStage,
+          lastSeenAt: f.lastSeenAt,
+          summary: f.summary,
+        },
+      });
+
+      // Project → Finding
+      const projNodeId = `project:${f.projectId}`;
+      if (nodeIds.has(projNodeId)) {
+        addEdge({
+          id: edgeId(projNodeId, findingNodeId, 'project_finding'),
+          source: projNodeId,
+          target: findingNodeId,
+          type: 'project_finding',
+          metadata: {
+            severity: f.severity.tier,
+          },
+        });
       }
     }
   }

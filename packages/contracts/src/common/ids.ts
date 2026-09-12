@@ -39,6 +39,9 @@ export const FeedbackIdSchema = IdSchema.brand<'FeedbackId'>();
 export const LearningIdSchema = IdSchema.brand<'LearningId'>();
 export const FinancialSummaryIdSchema = IdSchema.brand<'FinancialSummaryId'>();
 export const LoopCycleIdSchema = IdSchema.brand<'LoopCycleId'>();
+export const WatchRunIdSchema = IdSchema.brand<'WatchRunId'>();
+export const FindingIdSchema = IdSchema.brand<'FindingId'>();
+export const WatchScheduleIdSchema = IdSchema.brand<'WatchScheduleId'>();
 
 export type RequestId = z.infer<typeof RequestIdSchema>;
 export type ExecId = z.infer<typeof ExecIdSchema>;
@@ -56,6 +59,9 @@ export type AuditId = z.infer<typeof AuditIdSchema>;
 export type CorrelationId = z.infer<typeof CorrelationIdSchema>;
 export type TenantId = z.infer<typeof TenantIdSchema>;
 export type CapabilityId = z.infer<typeof CapabilityIdSchema>;
+export type WatchRunId = z.infer<typeof WatchRunIdSchema>;
+export type FindingId = z.infer<typeof FindingIdSchema>;
+export type WatchScheduleId = z.infer<typeof WatchScheduleIdSchema>;
 export type AgentId = z.infer<typeof AgentIdSchema>;
 export type AgentRunId = z.infer<typeof AgentRunIdSchema>;
 export type WorkGraphNodeId = z.infer<typeof WorkGraphNodeIdSchema>;
@@ -73,5 +79,3 @@ export type FeedbackId = z.infer<typeof FeedbackIdSchema>;
 export type LearningId = z.infer<typeof LearningIdSchema>;
 export type FinancialSummaryId = z.infer<typeof FinancialSummaryIdSchema>;
 export type LoopCycleId = z.infer<typeof LoopCycleIdSchema>;
-
-

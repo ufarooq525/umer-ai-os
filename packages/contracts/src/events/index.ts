@@ -86,6 +86,20 @@ export const RuntimeEventNameSchema = z.enum([
   'control.gate.fail',
   'control.approval.requested',
   'control.approval.resolved',
+  'watchdog.tick',
+  'watchdog.run.started',
+  'watchdog.run.completed',
+  'watchdog.run.failed',
+  'watchdog.finding.cleared',
+  'watchdog.escalation.raised',
+  'watchdog.security.advisory',
+  'watchdog.security.secret_suspected',
+  'watchdog.deps.policy_break',
+  'watchdog.deps.updated',
+  'watchdog.qa.coverage_regress',
+  'watchdog.qa.regression_recurred',
+  'watchdog.arch.module_drift',
+  'watchdog.arch.cycle_detected',
 ]);
 
 export const EventEnvelopeSchema = z

@@ -217,3 +217,7 @@ export {
   type DeploymentEngineOptions,
   type HealthProbeCheck,
 } from './deployment-engine.js';
+export {
+  WatchdogEngine,
+  computeWatchdogFingerprint,
+} from './watchdog-engine.js';

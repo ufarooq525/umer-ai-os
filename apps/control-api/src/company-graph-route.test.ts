@@ -15,7 +15,7 @@
 
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import type { Server } from 'node:http';
-import { type Opportunity, ArtifactContractSchema, parseContract } from '@umer/contracts';
+import { type Opportunity, ArtifactContractSchema, parseContract, FindingIdSchema, ProjectIdSchema, WatchRunIdSchema } from '@umer/contracts';
 import { createControlApiServer, createControlApiState } from './server.js';
 import type { ControlApiState } from './state.js';
 import type { CompanyGraph, CompanyGraphNode } from './company-graph-projection.js';
@@ -624,7 +624,7 @@ describe('GET /v1/company/graph', () => {
 
       state.workPackages.unshift({
         workPackageId: wpId,
-        execId: 'EXEC-P6',
+        execId: 'EXEC-601',
         status: 'AwaitingReview',
         specialistId: 'security.review',
         stage: 'Security',
@@ -643,7 +643,7 @@ describe('GET /v1/company/graph', () => {
           artifactType: 'SecurityReport',
           version: '1.0.0',
           producedBy: wpId,
-          producedFor: 'EXEC-P6',
+          producedFor: 'EXEC-601',
           acceptanceStatus: 'submitted',
           acceptanceCriteriaMet: [],
           contentRef: 'security://report/p6.md',
@@ -653,7 +653,7 @@ describe('GET /v1/company/graph', () => {
       await state.controlPlane.requestGateReview(
         {
           gateId: `gate-${wpId}`,
-          execId: 'EXEC-P6',
+          execId: 'EXEC-601',
           workPackageId: wpId,
           artifactId,
           stageFrom: 'Execution',
@@ -707,6 +707,69 @@ describe('GET /v1/company/graph', () => {
       expect(learnOppEdge).toBeDefined();
       expect(learnOppEdge?.source).toBe(`learning:${learning?.id}`);
       expect(learnOppEdge?.target).toBe(`opp:${oppId}`);
+    });
+
+    it('emits Finding nodes and project_finding edges from watchdog store', async () => {
+      const proj = await state.projectStore!.create(
+        { name: 'Watchdog Graph Test Project' },
+        'corr-wd-graph-proj',
+      );
+      const projectId = proj.projectId;
+
+      // Record a watch run with findings
+      state.watchdogStore?.recordRun({
+        runId: WatchRunIdSchema.parse('wdrun-test-graph-01'),
+        watchdogId: 'security.watchdog',
+        cadence: 'nightly',
+        projectId: ProjectIdSchema.parse(projectId),
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        outcome: 'findings_detected',
+        findings: [
+          {
+            findingId: FindingIdSchema.parse('wdfind-graph-01'),
+            fingerprint: 'fp-graph-sec-cve',
+            watchdogId: 'security.watchdog',
+            projectId: ProjectIdSchema.parse(projectId),
+            title: 'Critical CVE in project dependency',
+            summary: 'Detected critical security risk in dependency tree',
+            category: 'dependency_vulnerability',
+            severity: {
+              tier: 'critical',
+              riskScore: 25,
+              confidence: 'certain',
+              sticky: true,
+            },
+            status: 'open',
+            escalationStage: 'S1',
+            firstSeenAt: new Date().toISOString(),
+            lastSeenAt: new Date().toISOString(),
+            remediation: 'Upgrade affected package immediately',
+            evidenceArtifactIds: [],
+            impactModules: [],
+            details: {},
+          },
+        ],
+        findingCount: 1,
+        summary: 'Security watchdog detected 1 critical finding.',
+        metadata: {},
+      });
+
+      const { status, json } = await request(server, `/v1/company/graph?projectId=${projectId}`);
+      expect(status).toBe(200);
+      const graph = asGraph(json);
+
+      // Verify Finding Node
+      const findingNode = graph.nodes.find((n) => n.id === 'finding:wdfind-graph-01');
+      expect(findingNode).toBeDefined();
+      expect(findingNode?.type).toBe('Finding');
+      expect(findingNode?.label).toContain('CRITICAL');
+
+      // Verify project_finding Edge
+      const findingEdge = graph.edges.find((e) => e.type === 'project_finding');
+      expect(findingEdge).toBeDefined();
+      expect(findingEdge?.source).toBe(`project:${projectId}`);
+      expect(findingEdge?.target).toBe('finding:wdfind-graph-01');
     });
   });
 });
