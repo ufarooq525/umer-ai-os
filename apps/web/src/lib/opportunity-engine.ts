@@ -18,6 +18,8 @@ import {
   StaticDiscoverySource,
   StaticEvidenceSource,
   WebsiteEvidenceSource,
+  BUILTIN_NICHE_PROFILES,
+  type NicheProfile,
 } from '@umer/opportunity-intelligence';
 import { MARKET_PRESETS, normalizeMarket, type MarketPreset } from './market-scan';
 
@@ -60,6 +62,7 @@ export type OpportunityRunStatus = {
   events: OpportunityEvent[];
   error: string | null;
   market: MarketPreset;
+  niche: { id: string; name: string } | null;
 };
 
 const state: OpportunityRunStatus = {
@@ -78,9 +81,11 @@ const state: OpportunityRunStatus = {
   events: [],
   error: null,
   market: MARKET_PRESETS[0]!,
+  niche: null,
 };
 
 let activeMarket: MarketPreset = MARKET_PRESETS[0]!;
+let activeNiche: NicheProfile | null = null;
 
 export function getActiveMarket(): MarketPreset {
   return { ...activeMarket };
@@ -90,6 +95,35 @@ export function setActiveMarket(input: Parameters<typeof normalizeMarket>[0]): M
   activeMarket = normalizeMarket(input);
   state.market = { ...activeMarket };
   return getActiveMarket();
+}
+
+export function getActiveNiche(): NicheProfile | null {
+  return activeNiche ? { ...activeNiche } : null;
+}
+
+export function setActiveNiche(nicheId: string | null): NicheProfile | null {
+  if (!nicheId) {
+    activeNiche = null;
+    state.niche = null;
+    return null;
+  }
+  
+  const profile = BUILTIN_NICHE_PROFILES.find((p) => p.id === nicheId);
+  if (!profile) {
+    throw new Error(`Niche profile "${nicheId}" not found`);
+  }
+  
+  activeNiche = profile;
+  state.niche = { id: profile.id, name: profile.name };
+  return getActiveNiche();
+}
+
+export function listNicheProfiles(): Array<{ id: string; name: string; description: string }> {
+  return BUILTIN_NICHE_PROFILES.map((p) => ({
+    id: p.id,
+    name: p.name,
+    description: p.description,
+  }));
 }
 
 function event(agent: string, message: string, stage?: string, level?: string) {
