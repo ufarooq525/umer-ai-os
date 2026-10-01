@@ -20,6 +20,8 @@
     "test:e2e": "vitest run tests/e2e",
     "opportunity:test": "vitest run packages/opportunity-intelligence/src/e2e-mysql-flow.test.ts",
     "clean": "pnpm -r run clean && rimraf node_modules",
+    "cleanup:agents": "node scripts/cleanup-test-agents.mjs",
+    "cleanup:agents:apply": "node scripts/cleanup-test-agents.mjs --apply",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
     "db:migrate": "pnpm --filter @umer/db migrate",

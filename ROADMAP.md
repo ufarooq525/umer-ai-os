@@ -16,7 +16,7 @@ Architecture V1 and the Implementation Blueprint are **frozen**. Progress is mea
 | **M8** | Artifact Engine | ✅ Complete |
 | **M9** | Trust & Audit | ✅ Complete |
 | **M10** | Control-plane UI | ✅ Complete |
-| **M11** | Production deployment | ✅ Complete |
+| **M11** | Production deployment | ⏸️ Deferred (local-first) |
 
 ## Workflow
 

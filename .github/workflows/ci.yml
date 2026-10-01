@@ -55,21 +55,15 @@ jobs:
           - name: control-api
             file: infra/docker/Dockerfile.worker
             args: APP_NAME=control-api
-          - name: api-gateway
+          - name: jarvis-api
             file: infra/docker/Dockerfile.worker
-            args: APP_NAME=api-gateway
+            args: APP_NAME=jarvis-api
           - name: orchestration-worker
             file: infra/docker/Dockerfile.worker
             args: APP_NAME=orchestration-worker
           - name: agent-worker
             file: infra/docker/Dockerfile.worker
             args: APP_NAME=agent-worker
-          - name: extension-worker
-            file: infra/docker/Dockerfile.worker
-            args: APP_NAME=extension-worker
-          - name: audit-sink
-            file: infra/docker/Dockerfile.worker
-            args: APP_NAME=audit-sink
           - name: web
             file: infra/docker/Dockerfile.web
             args: ''
