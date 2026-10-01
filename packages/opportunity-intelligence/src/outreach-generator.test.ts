@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BusinessProspect, EvidenceRecord, NicheDefinition, Opportunity, Problem } from '@umer/contracts';
 import { DefaultOutreachGenerator } from './outreach-generator.js';
-import { SAUDI_UMRAH_NICHE } from './niche-profiles.js';
+import { SAUDI_UMRAH_NICHE, CLINICS_HOSPITALS_NICHE } from './niche-profiles.js';
 
 describe('DefaultOutreachGenerator', () => {
   const generator = new DefaultOutreachGenerator();
@@ -75,6 +75,7 @@ describe('DefaultOutreachGenerator', () => {
       problems: [problem],
       evidence: [evidence],
       niche: SAUDI_UMRAH_NICHE,
+      nicheProfile: SAUDI_UMRAH_NICHE,
     });
 
     expect(drafts).toHaveLength(2);
@@ -93,5 +94,88 @@ describe('DefaultOutreachGenerator', () => {
     expect(emailDraft?.body).toContain('Automated Instant Umrah Booking');
     expect(emailDraft?.body).not.toMatch(/\d+\s*[–-]\s*\d+\s*%/);
     expect(emailDraft?.body).toContain('founder@umerfarooqtech.com');
+  });
+
+  it('generates clinic/hospital outreach with healthcare-specific template', async () => {
+    const clinicBusiness: BusinessProspect = {
+      id: 'biz-clinic-1',
+      name: 'City Medical Center',
+      geography: 'Karachi',
+      industry: 'medical center',
+      sourceRefs: ['google-places:clinic-1', 'email:info@citymedical.example'],
+      discoveredAt: new Date().toISOString(),
+    };
+
+    const clinicProblem: Problem = {
+      id: 'prob-clinic-1',
+      statement: 'The business operates without a public digital storefront, causing complete loss of direct online demand.',
+      severity: 85,
+      frequency: 80,
+      financialImpact: 85,
+      evidenceConfidence: 90,
+      evidenceRefs: ['ev-clinic-1'],
+    };
+
+    const clinicEvidence: EvidenceRecord = {
+      id: 'ev-clinic-1',
+      type: 'directory',
+      title: 'Business listing without public website',
+      sourceUrl: 'https://www.google.com/maps',
+      observedAt: new Date().toISOString(),
+      observation: 'City Medical Center has a public listing but operates without a registered website domain.',
+      strength: 'verified',
+      supports: ['missing website'],
+      contradicts: [],
+    };
+
+    const clinicOpportunity: Opportunity = {
+      id: 'opp-clinic-1',
+      type: 'service',
+      title: 'Professional Medical Website with Online Booking',
+      geography: 'Karachi',
+      market: 'Healthcare',
+      nicheId: CLINICS_HOSPITALS_NICHE.id,
+      businessId: clinicBusiness.id,
+      problemIds: [clinicProblem.id],
+      score: {
+        overall: 82,
+        marketDemand: 85,
+        problemSeverity: 85,
+        feasibility: 80,
+        unitEconomics: 75,
+        reachability: 85,
+        strategicFit: 85,
+        confidence: 85,
+        recommendation: 'outreach_ready',
+      },
+      estimatedValueMin: 2000,
+      estimatedValueMax: 5000,
+      currency: 'USD',
+      timeToRevenueDays: 21,
+      evidenceRefs: [clinicEvidence.id],
+      status: 'outreach_ready',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const drafts = await generator.generateDrafts({
+      opportunity: clinicOpportunity,
+      business: clinicBusiness,
+      problems: [clinicProblem],
+      evidence: [clinicEvidence],
+      niche: CLINICS_HOSPITALS_NICHE,
+      nicheProfile: CLINICS_HOSPITALS_NICHE,
+    });
+
+    expect(drafts).toHaveLength(1);
+    const emailDraft = drafts[0];
+    expect(emailDraft?.channel).toBe('email');
+    expect(emailDraft?.language).toBe('en');
+    expect(emailDraft?.recipient).toBe('info@citymedical.example');
+    expect(emailDraft?.subject).toContain('City Medical Center');
+    expect(emailDraft?.body).toContain('City Medical Center');
+    expect(emailDraft?.body).toContain('operates without a public digital storefront');
+    expect(emailDraft?.body).toContain('modern websites');
+    expect(emailDraft?.body).not.toContain('{{');
   });
 });
