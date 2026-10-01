@@ -55,27 +55,35 @@ type NavGroup = {
 
 const NAV_GROUPS: NavGroup[] = [
   {
-    id: 'company',
-    title: 'Company',
-    icon: Building2,
+    id: 'opportunities',
+    title: 'Opportunities & Leads',
+    icon: Sparkles,
     items: [
-      { href: '/company', label: 'Overview', icon: Building2 },
-      { href: '/company/agents', label: 'Agents (Team)', icon: Bot },
-      { href: '/company/projects', label: 'Projects', icon: LayoutGrid },
-      { href: '/company/tasks', label: 'Tasks', icon: CheckSquare },
-      { href: '/company/graph', label: 'Company Graph', icon: Share2 },
-      { href: '/activity', label: 'Activity', icon: Radio },
+      { href: '/company/opportunities', label: 'Opportunities', icon: Sparkles },
+      { href: '/company/prospects', label: 'Prospects', icon: Users },
+      { href: '/markets', label: 'Markets & Niches', icon: Globe },
+      { href: '/seo', label: 'SEO Sites', icon: Search },
     ],
   },
   {
-    id: 'intelligence',
-    title: 'Intelligence',
-    icon: Sparkles,
+    id: 'approvals',
+    title: 'Approvals & Decisions',
+    icon: Scale,
     items: [
-      { href: '/markets', label: 'Markets & Niches', icon: Globe },
-      { href: '/company/opportunities', label: 'Opportunities', icon: Sparkles },
-      { href: '/company/prospects', label: 'Prospects', icon: Users },
-      { href: '/seo', label: 'SEO Sites', icon: Search },
+      { href: '/decisions', label: 'Approvals', icon: Scale },
+      { href: '/gates', label: 'Quality Review', icon: ShieldCheck },
+      { href: '/attention', label: 'Attention Items', icon: AlertTriangle, badgeKey: 'attention' },
+    ],
+  },
+  {
+    id: 'agents',
+    title: 'Agents & Work',
+    icon: Bot,
+    items: [
+      { href: '/company/agents', label: 'Agents', icon: Bot },
+      { href: '/company/projects', label: 'Projects', icon: LayoutGrid },
+      { href: '/company/tasks', label: 'Tasks', icon: CheckSquare },
+      { href: '/activity', label: 'Activity', icon: Radio },
     ],
   },
   {
@@ -89,17 +97,6 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'delivery',
-    title: 'Delivery',
-    icon: Layers,
-    items: [
-      { href: '/delivery', label: 'Lifecycle Overview', icon: Layers },
-      { href: '/delivery/requirements', label: 'Requirements', icon: FileText },
-      { href: '/projects', label: 'Codebases & Repos', icon: FolderGit2 },
-      { href: '/operations', label: 'Operations & SRE', icon: Activity },
-    ],
-  },
-  {
     id: 'finance',
     title: 'Finance',
     icon: DollarSign,
@@ -108,24 +105,20 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'governance',
-    title: 'Governance',
-    icon: Scale,
+    id: 'advanced',
+    title: 'Advanced',
+    icon: Settings,
     items: [
-      { href: '/decisions', label: 'CEO Decisions', icon: Scale },
-      { href: '/attention', label: 'Attention Center', icon: AlertTriangle, badgeKey: 'attention' },
-      { href: '/gates', label: 'Quality Gates', icon: ShieldCheck },
-      { href: '/audit', label: 'Audit Log', icon: ScrollText },
-      { href: '/autonomy', label: 'Autonomy & Mandates', icon: Briefcase },
-    ],
-  },
-  {
-    id: 'system',
-    title: 'System',
-    icon: Zap,
-    items: [
+      { href: '/company', label: 'Company Overview', icon: Building2 },
+      { href: '/company/graph', label: 'Company Graph', icon: Share2 },
+      { href: '/delivery', label: 'Delivery', icon: Layers },
+      { href: '/delivery/requirements', label: 'Requirements', icon: FileText },
+      { href: '/projects', label: 'Codebases & Repos', icon: FolderGit2 },
+      { href: '/operations', label: 'Operations', icon: Activity },
       { href: '/agent-runs', label: 'Agent Runs', icon: Clock },
       { href: '/artifacts', label: 'Artifacts', icon: FileText },
+      { href: '/audit', label: 'Audit Log', icon: ScrollText },
+      { href: '/autonomy', label: 'Autonomy & Mandates', icon: Briefcase },
       { href: '/events', label: 'Message Fabric', icon: Zap },
       { href: '/system-health', label: 'System Health', icon: HeartPulse },
       { href: '/guide', label: 'Guide & Docs', icon: BookOpenCheck },
@@ -159,13 +152,12 @@ export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    company: true,
-    intelligence: true,
+    opportunities: true,
+    approvals: true,
+    agents: true,
     sales: true,
-    delivery: true,
     finance: true,
-    governance: true,
-    system: false,
+    advanced: false,
   });
   const attentionCount = useAttentionCount();
 
@@ -208,7 +200,7 @@ export function Sidebar() {
 
   const isActive = (href: string) => {
     const base = href.split('#')[0]!;
-    if (base === '/command-center') {
+    if (base === '/command-center' || base === '/') {
       return pathname === '/' || pathname === '/command-center';
     }
     return pathname === base || pathname.startsWith(`${base}/`);
@@ -256,7 +248,7 @@ export function Sidebar() {
         }}
       >
         {!collapsed && (
-          <Link href="/command-center" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <Link href="/" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div
                 style={{
@@ -310,14 +302,14 @@ export function Sidebar() {
 
       {/* Navigation Groups */}
       <div className="sidebar-scroll" style={{ padding: '12px 10px', display: 'grid', gap: 14, flex: 1, overflowY: 'auto' }}>
-        {/* Pinned Command Center */}
+        {/* Pinned Home */}
         <div>
           {(() => {
-            const active = isActive('/command-center');
+            const active = isActive('/');
             return (
               <Link
-                href="/command-center"
-                title={collapsed ? 'Command Center' : undefined}
+                href="/"
+                title={collapsed ? 'Home' : undefined}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -335,7 +327,7 @@ export function Sidebar() {
                 }}
               >
                 <LayoutDashboard size={16} style={{ color: active ? colors.accent : colors.muted, flexShrink: 0 }} />
-                {!collapsed && <span>Command Center</span>}
+                {!collapsed && <span>Home</span>}
               </Link>
             );
           })()}

@@ -16,7 +16,8 @@
     "clean": "rimraf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "opportunity:test": "vitest run src/e2e-mysql-flow.test.ts"
+    "opportunity:test": "vitest run src/e2e-mysql-flow.test.ts",
+    "discover": "tsx src/cli-run-e2e.ts"
   },
   "dependencies": {
     "@umer/contracts": "workspace:*",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.1.8",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

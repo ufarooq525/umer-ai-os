@@ -257,7 +257,7 @@ already exist:
 | `GET /v1/agents`, `/v1/agents/:id` | `status`, `department`, `specialist` | `state.agentRegistry` (+ `currentProjectId` joined at read time) |
 | `GET /v1/work-projects`, `/v1/work-projects/:id` | `status`, `owner` | `state.projectStore` |
 | `GET /v1/tasks`, `/v1/tasks/:id` | `status`, `agent`, `project` | `state.taskStore` |
-| `GET /v1/opportunities`, `/v1/opportunities/:id` | `status` | `state.opportunityReader` (Opportunity Intelligence, read-only) |
+| `GET /v1/company/opportunities`, `/v1/company/opportunities/:id` | `status` | `state.opportunityReader` (Opportunity Intelligence, read-only) |
 
 `GET /v1/projects` (registry codebases) is untouched.
 
