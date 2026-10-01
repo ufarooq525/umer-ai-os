@@ -44,12 +44,18 @@ importers:
       '@umer/trust':
         specifier: workspace:*
         version: link:packages/trust
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.6.1
       eslint:
         specifier: ^9.17.0
         version: 9.39.5
       eslint-config-prettier:
         specifier: ^9.1.0
         version: 9.1.2(eslint@9.39.5)
+      mysql2:
+        specifier: ^3.11.5
+        version: 3.24.2(@types/node@22.20.1)
       prettier:
         specifier: ^3.4.2
         version: 3.9.6

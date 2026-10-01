@@ -5,9 +5,8 @@
  * Safely removes test/smoke-test agent records from the database.
  * 
  * Usage:
- *   node scripts/cleanup-test-agents.mjs                  # dry-run (show what would be deleted)
- *   node scripts/cleanup-test-agents.mjs --apply          # actually delete
- *   node scripts/cleanup-test-agents.mjs --apply --all    # delete all idle agents (use with caution)
+ *   pnpm cleanup:agents                  # dry-run (show what would be deleted)
+ *   pnpm cleanup:agents:apply            # actually delete
  * 
  * Safety: Only deletes agents that are clearly test/smoke-test records:
  * - agent_id or name contains 'test', 'smoke', 'demo', 'e2e', or 'fixture'
@@ -20,10 +19,16 @@
  * - Agents active within the last 7 days
  */
 
-import { createMySqlClient, createMySqlExecutor } from '@umer/db';
-import { loadEnv } from '@umer/config';
+import { createConnection } from 'mysql2/promise';
+import { config } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const env = loadEnv();
+// Load .env from repo root
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const rootDir = join(__dirname, '..');
+config({ path: join(rootDir, '.env') });
+
 const apply = process.argv.includes('--apply');
 const all = process.argv.includes('--all');
 const daysOld = parseInt(process.env.CLEANUP_MIN_DAYS_OLD ?? '7', 10);
@@ -31,7 +36,14 @@ const daysOld = parseInt(process.env.CLEANUP_MIN_DAYS_OLD ?? '7', 10);
 console.log('=== Umer AI OS — Test Agent Cleanup ===\n');
 console.log(`Mode: ${apply ? '🔴 APPLY (will delete)' : '🟢 DRY-RUN (preview only)'}`);
 console.log(`Min age: ${daysOld} days`);
-console.log(`Database: ${env.OPPORTUNITY_DATABASE_URL.replace(/:[^:]+@/, ':***@')}\n`);
+
+const dbUrl = process.env.OPPORTUNITY_DATABASE_URL;
+if (!dbUrl) {
+  console.error('❌ OPPORTUNITY_DATABASE_URL not set in .env');
+  process.exit(1);
+}
+
+console.log(`Database: ${dbUrl.replace(/:[^:]+@/, ':***@')}\n`);
 
 const SEEDED_AGENTS = [
   'orchestrator',
@@ -70,8 +82,22 @@ function isTestAgent(agentId, name, status) {
 }
 
 async function main() {
-  const client = createMySqlClient();
-  const executor = createMySqlExecutor(client);
+  // Parse MySQL URL
+  const match = dbUrl.match(/^mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/(.+)$/);
+  if (!match) {
+    console.error('❌ Invalid OPPORTUNITY_DATABASE_URL format. Expected: mysql://user:pass@host:port/database');
+    process.exit(1);
+  }
+
+  const [, user, password, host, port, database] = match;
+  
+  const connection = await createConnection({
+    host,
+    port: parseInt(port, 10),
+    user,
+    password,
+    database,
+  });
   
   try {
     // Find candidates in ai_agents (workforce)
@@ -83,7 +109,8 @@ async function main() {
       ORDER BY updated_at ASC
     `;
     
-    const workforceAgents = await executor.query(workforceQuery, [...SAFE_STATUSES, daysOld]);
+    const [workforceRows] = await connection.execute(workforceQuery, [...SAFE_STATUSES, daysOld]);
+    const workforceAgents = Array.isArray(workforceRows) ? workforceRows : [];
     const workforceCandidates = workforceAgents.filter(row => 
       all || isTestAgent(row.agent_id, row.name, row.status)
     );
@@ -97,7 +124,8 @@ async function main() {
       ORDER BY last_seen_at ASC
     `;
     
-    const obsAgents = await executor.query(obsQuery, [...SAFE_STATUSES, daysOld]);
+    const [obsRows] = await connection.execute(obsQuery, [...SAFE_STATUSES, daysOld]);
+    const obsAgents = Array.isArray(obsRows) ? obsRows : [];
     const obsCandidates = obsAgents.filter(row => 
       all || isTestAgent(row.agent_id, row.name, row.status)
     );
@@ -107,6 +135,7 @@ async function main() {
     
     if (workforceCandidates.length === 0 && obsCandidates.length === 0) {
       console.log('✅ No test agents to clean up.');
+      await connection.end();
       process.exit(0);
     }
     
@@ -130,6 +159,7 @@ async function main() {
     if (!apply) {
       console.log('🟢 DRY-RUN complete. No changes made.');
       console.log('   Run with --apply to actually delete these records.\n');
+      await connection.end();
       process.exit(0);
     }
     
@@ -140,13 +170,13 @@ async function main() {
     let deletedObs = 0;
     
     for (const row of workforceCandidates) {
-      await executor.execute('DELETE FROM ai_agents WHERE agent_id = ?', [row.agent_id]);
+      await connection.execute('DELETE FROM ai_agents WHERE agent_id = ?', [row.agent_id]);
       deletedWorkforce++;
       console.log(`  ✓ Deleted ai_agents: ${row.agent_id}`);
     }
     
     for (const row of obsCandidates) {
-      await executor.execute('DELETE FROM observability_agents WHERE agent_id = ?', [row.agent_id]);
+      await connection.execute('DELETE FROM observability_agents WHERE agent_id = ?', [row.agent_id]);
       deletedObs++;
       console.log(`  ✓ Deleted observability_agents: ${row.agent_id}`);
     }
@@ -157,9 +187,10 @@ async function main() {
     
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : String(error));
+    await connection.end();
     process.exit(1);
   } finally {
-    await client.end();
+    await connection.end();
   }
 }
 
