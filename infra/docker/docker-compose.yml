@@ -120,25 +120,32 @@ services:
       timeout: 5s
       retries: 10
 
-  api-gateway:
+  jarvis-api:
     profiles: ['apps']
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.worker
       args:
-        APP_NAME: api-gateway
-    image: umer-gateway:local
+        APP_NAME: jarvis-api
+    image: umer-jarvis:local
     environment:
       <<: *app-env
-      GATEWAY_PORT: '4080'
-      OTEL_SERVICE_NAME: api-gateway
+      JARVIS_PORT: '3010'
+      OTEL_SERVICE_NAME: jarvis-api
+      HEALTH_PORT: '8080'
     ports:
-      - '4080:4080'
+      - '3010:3010'
     depends_on:
-      control-api:
+      postgres:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:4080/health']
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3010/health']
       interval: 10s
       timeout: 5s
       retries: 10
@@ -193,48 +200,6 @@ services:
     environment:
       <<: *app-env
       OTEL_SERVICE_NAME: agent-worker
-      HEALTH_PORT: '8080'
-    depends_on:
-      nats:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  extension-worker:
-    profiles: ['apps']
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.worker
-      args:
-        APP_NAME: extension-worker
-    image: umer-extension:local
-    environment:
-      <<: *app-env
-      OTEL_SERVICE_NAME: extension-worker
-      HEALTH_PORT: '8080'
-    depends_on:
-      nats:
-        condition: service_healthy
-    healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-  audit-sink:
-    profiles: ['apps']
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.worker
-      args:
-        APP_NAME: audit-sink
-    image: umer-audit:local
-    environment:
-      <<: *app-env
-      OTEL_SERVICE_NAME: audit-sink
       HEALTH_PORT: '8080'
     depends_on:
       nats:

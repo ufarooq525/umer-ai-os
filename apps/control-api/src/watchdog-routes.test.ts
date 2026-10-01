@@ -113,9 +113,10 @@ describe('Watchdog Routes (RFC-007)', () => {
     // 3. Query findings
     const findingsRes = await request(server, 'GET', `/v1/watchdogs/findings?projectId=${active!.projectId}`);
     expect(findingsRes.status).toBe(200);
+    expect(findingsRes.json.findings).toBeDefined();
     expect(Array.isArray(findingsRes.json.findings)).toBe(true);
 
-    if (findingsRes.json.findings.length > 0) {
+    if (findingsRes.json.findings && findingsRes.json.findings.length > 0) {
       const firstFinding = findingsRes.json.findings[0];
 
       // 4. Get specific finding

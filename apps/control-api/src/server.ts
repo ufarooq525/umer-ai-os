@@ -110,14 +110,40 @@ import { buildCompanyGraph, type GraphFilterOptions, type GraphNodeType } from '
 const SERVICE_NAME = 'control-api';
 const log = createLogger(SERVICE_NAME);
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
+const allowedOrigins = (process.env.CONTROL_API_CORS_ORIGINS ?? 'http://localhost:3001,http://127.0.0.1:3001')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+const sharedToken = process.env.CONTROL_API_TOKEN?.trim();
+
+if (!sharedToken) {
+  console.warn('[control-api] CONTROL_API_TOKEN not set — accepting requests from localhost without authentication. Set CONTROL_API_TOKEN in production.');
+}
+
+function getCorsOrigin(req: IncomingMessage): string {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) return origin;
+  return allowedOrigins[0] ?? '*';
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown, req?: IncomingMessage): void {
+  const corsOrigin = req ? getCorsOrigin(req) : (allowedOrigins[0] ?? '*');
   res.writeHead(status, {
     'content-type': 'application/json',
-    'access-control-allow-origin': '*',
+    'access-control-allow-origin': corsOrigin,
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type, authorization',
+    'access-control-allow-credentials': 'true'
   });
   res.end(JSON.stringify(body));
+}
+
+function checkSharedToken(req: IncomingMessage): boolean {
+  if (!sharedToken) return true; // No token configured, allow (localhost warning already logged)
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return false;
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+  return token === sharedToken;
 }
 
 async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
@@ -441,16 +467,22 @@ export async function createControlApiState(options?: ControlApiStateOptions): P
 export function createControlApiServer(state: ControlApiState) {
   return createServer(async (req, res) => {
     if (req.method === 'OPTIONS') {
-      sendJson(res, 204, {});
+      sendJson(res, 204, {}, req);
       return;
     }
 
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
+    
+    // Mutating endpoints require token auth when configured
+    if (req.method === 'POST' && !checkSharedToken(req)) {
+      sendJson(res, 401, { error: 'unauthorized', message: 'Valid authorization token required for mutating operations' }, req);
+      return;
+    }
 
     if (path === '/health' && req.method === 'GET') {
       const body = await healthCheck(SERVICE_NAME);
-      sendJson(res, 200, body);
+      sendJson(res, 200, body, req);
       return;
     }
 
@@ -465,7 +497,7 @@ export function createControlApiServer(state: ControlApiState) {
         ...summary,
         watchdogFindingsAwaitingReview: watchdogFindings.length,
         watchdogFindings,
-      });
+      }, req);
       return;
     }
 
@@ -483,7 +515,7 @@ export function createControlApiServer(state: ControlApiState) {
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -494,7 +526,7 @@ export function createControlApiServer(state: ControlApiState) {
       const outcome = url.searchParams.get('outcome') || undefined;
       const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
       const runs = state.watchdogStore?.listRuns({ projectId, watchdogId, outcome, limit }) ?? [];
-      sendJson(res, 200, { runs, count: runs.length });
+      sendJson(res, 200, { runs, count: runs.length }, req);
       return;
     }
 
@@ -504,7 +536,7 @@ export function createControlApiServer(state: ControlApiState) {
       const status = (url.searchParams.get('status') as FindingStatus) || undefined;
       const severityTier = (url.searchParams.get('severityTier') as FindingSeverityTier) || undefined;
       const findings = state.watchdogStore?.listFindings({ projectId, watchdogId, status, severityTier }) ?? [];
-      sendJson(res, 200, { findings, count: findings.length });
+      sendJson(res, 200, { findings, count: findings.length }, req);
       return;
     }
 
@@ -525,9 +557,9 @@ export function createControlApiServer(state: ControlApiState) {
           correlationId: corrAck,
           detail: { findingId },
         }, corrAck);
-        sendJson(res, 200, finding);
+        sendJson(res, 200, finding, req);
       } catch (err) {
-        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -550,9 +582,9 @@ export function createControlApiServer(state: ControlApiState) {
           correlationId: corrClear,
           detail: { findingId, reason },
         }, corrClear);
-        sendJson(res, 200, finding);
+        sendJson(res, 200, finding, req);
       } catch (err) {
-        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -562,10 +594,10 @@ export function createControlApiServer(state: ControlApiState) {
       const findingId = decodeURIComponent(findingGetMatch[1]!);
       const finding = state.watchdogStore?.getFinding(findingId);
       if (!finding) {
-        sendJson(res, 404, { error: `finding ${findingId} not found` });
+        sendJson(res, 404, { error: `finding ${findingId} not found` }, req);
         return;
       }
-      sendJson(res, 200, finding);
+      sendJson(res, 200, finding, req);
       return;
     }
 
@@ -577,7 +609,7 @@ export function createControlApiServer(state: ControlApiState) {
       }>(req);
 
       if (!body.projectId || !body.watchdogId) {
-        sendJson(res, 400, { error: 'projectId and watchdogId are required' });
+        sendJson(res, 400, { error: 'projectId and watchdogId are required' }, req);
         return;
       }
 
@@ -607,9 +639,9 @@ export function createControlApiServer(state: ControlApiState) {
           },
         }, corrRun);
 
-        sendJson(res, 201, run);
+        sendJson(res, 201, run, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -617,7 +649,7 @@ export function createControlApiServer(state: ControlApiState) {
     if (path === '/v1/watchdogs/schedules' && req.method === 'GET') {
       const projectId = url.searchParams.get('projectId') || undefined;
       const schedules = state.watchdogStore?.listSchedules(projectId) ?? [];
-      sendJson(res, 200, { schedules, count: schedules.length });
+      sendJson(res, 200, { schedules, count: schedules.length }, req);
       return;
     }
 
@@ -627,9 +659,9 @@ export function createControlApiServer(state: ControlApiState) {
       const body = await readJsonBody<{ paused?: boolean; cadence?: WatchdogCadence }>(req);
       try {
         const updated = state.watchdogStore?.updateSchedule(scheduleId, body);
-        sendJson(res, 200, updated);
+        sendJson(res, 200, updated, req);
       } catch (err) {
-        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 404, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -638,12 +670,12 @@ export function createControlApiServer(state: ControlApiState) {
       sendJson(res, 200, {
         projectsRoot: state.projectRegistry.getProjectsRoot(),
         projects: listProjects(state),
-      });
+      }, req);
       return;
     }
 
     if (path === '/v1/intake' && req.method === 'GET') {
-      sendJson(res, 200, { intakes: state.intakes });
+      sendJson(res, 200, { intakes: state.intakes }, req);
       return;
     }
 
@@ -651,11 +683,11 @@ export function createControlApiServer(state: ControlApiState) {
       const body = await readJsonBody<Partial<IntakeInstruction>>(req);
       try {
         const record = await submitIntake(state, body as IntakeInstruction);
-        sendJson(res, 201, record);
+        sendJson(res, 201, record, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -666,7 +698,7 @@ export function createControlApiServer(state: ControlApiState) {
     // created as a side effect of a real intake, never fabricated via this API.
     if (path === '/v1/requirements' && req.method === 'GET') {
       if (!state.requirementStore) {
-        sendJson(res, 200, { requirements: [] });
+        sendJson(res, 200, { requirements: [] }, req);
         return;
       }
       const projectId = url.searchParams.get('projectId') ?? undefined;
@@ -677,7 +709,7 @@ export function createControlApiServer(state: ControlApiState) {
         requestId,
         status: status as RequirementStatus | undefined,
       });
-      sendJson(res, 200, { requirements });
+      sendJson(res, 200, { requirements }, req);
       return;
     }
 
@@ -686,10 +718,10 @@ export function createControlApiServer(state: ControlApiState) {
       const requirementId = decodeURIComponent(requirementGetMatch[1]!);
       const requirement = await state.requirementStore?.get(requirementId);
       if (!requirement) {
-        sendJson(res, 404, { error: `requirement ${requirementId} not found` });
+        sendJson(res, 404, { error: `requirement ${requirementId} not found` }, req);
         return;
       }
-      sendJson(res, 200, requirement);
+      sendJson(res, 200, requirement, req);
       return;
     }
 
@@ -698,16 +730,16 @@ export function createControlApiServer(state: ControlApiState) {
       const requirementId = decodeURIComponent(requirementDecideMatch[1]!);
       const body = await readJsonBody<{ decision?: 'Approved' | 'Rejected'; decidedBy?: string; reason?: string }>(req);
       if (body.decision !== 'Approved' && body.decision !== 'Rejected') {
-        sendJson(res, 400, { error: 'decision must be "Approved" or "Rejected"' });
+        sendJson(res, 400, { error: 'decision must be "Approved" or "Rejected"' }, req);
         return;
       }
       if (!body.decidedBy) {
-        sendJson(res, 400, { error: 'decidedBy is required' });
+        sendJson(res, 400, { error: 'decidedBy is required' }, req);
         return;
       }
       const existing = await state.requirementStore?.get(requirementId);
       if (!existing) {
-        sendJson(res, 404, { error: `requirement ${requirementId} not found` });
+        sendJson(res, 404, { error: `requirement ${requirementId} not found` }, req);
         return;
       }
       let requirement: RequirementContract | undefined;
@@ -720,7 +752,7 @@ export function createControlApiServer(state: ControlApiState) {
         });
       } catch (err) {
         if (err instanceof RequirementAlreadyDecidedError) {
-          sendJson(res, 409, { error: err.message });
+          sendJson(res, 409, { error: err.message }, req);
           return;
         }
         throw err;
@@ -737,7 +769,7 @@ export function createControlApiServer(state: ControlApiState) {
         },
         `corr-requirement-decide-${requirementId}-${Date.now()}`,
       );
-      sendJson(res, 200, requirement);
+      sendJson(res, 200, requirement, req);
       return;
     }
 
@@ -750,7 +782,7 @@ export function createControlApiServer(state: ControlApiState) {
       }>(req);
       const goal = body.goal?.trim() ?? '';
       if (goal.length < 8) {
-        sendJson(res, 400, { error: 'goal must be at least 8 characters' });
+        sendJson(res, 400, { error: 'goal must be at least 8 characters' }, req);
         return;
       }
       sendJson(res, 200, {
@@ -766,7 +798,7 @@ export function createControlApiServer(state: ControlApiState) {
     }
 
     if (path === '/v1/work-packages' && req.method === 'GET') {
-      sendJson(res, 200, { workPackages: state.workPackages });
+      sendJson(res, 200, { workPackages: state.workPackages }, req);
       return;
     }
 
@@ -786,7 +818,7 @@ export function createControlApiServer(state: ControlApiState) {
         // comment on state.ts. Absent means "no plan has reported back yet",
         // not "nothing is ready" — check nodes' own status for that.
         lastPlanResult: state.workGraphPlanResults?.get(projectId) ?? null,
-      });
+      }, req);
       return;
     }
 
@@ -811,11 +843,11 @@ export function createControlApiServer(state: ControlApiState) {
           },
           `corr-decompose-${projectId}-${Date.now()}`,
         );
-        sendJson(res, 200, { projectId, nodes: graph.listNodes(projectId), edges: graph.listEdges(projectId) });
+        sendJson(res, 200, { projectId, nodes: graph.listNodes(projectId), edges: graph.listEdges(projectId) }, req);
       } catch (err) {
         // Most likely a duplicate decomposition (same slug already applied to this project) —
         // WorkGraph's own validation (duplicate node/edge ids) is the source of truth here.
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -835,16 +867,16 @@ export function createControlApiServer(state: ControlApiState) {
       const body = await readJsonBody<{ type?: string; title?: string; requestedBy?: string }>(req);
       const AUDIT_NODE_TYPES: ReadonlySet<string> = new Set(['UX', 'QA', 'Security']);
       if (!body.type || !AUDIT_NODE_TYPES.has(body.type)) {
-        sendJson(res, 400, { error: 'type must be one of "UX", "QA", or "Security"' });
+        sendJson(res, 400, { error: 'type must be one of "UX", "QA", or "Security"' }, req);
         return;
       }
       if (!body.requestedBy) {
-        sendJson(res, 400, { error: 'requestedBy is required' });
+        sendJson(res, 400, { error: 'requestedBy is required' }, req);
         return;
       }
       const project = await state.projectStore?.get(projectId);
       if (!project) {
-        sendJson(res, 404, { error: `project ${projectId} not found` });
+        sendJson(res, 404, { error: `project ${projectId} not found` }, req);
         return;
       }
       try {
@@ -866,9 +898,9 @@ export function createControlApiServer(state: ControlApiState) {
           },
           correlationId,
         );
-        sendJson(res, 201, { projectId, node, nodes: graph.listNodes(projectId) });
+        sendJson(res, 201, { projectId, node, nodes: graph.listNodes(projectId) }, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -1118,25 +1150,25 @@ export function createControlApiServer(state: ControlApiState) {
       const projectId = decodeURIComponent(workGraphPlanMatch[1]!);
       const body = await readJsonBody<{ approver?: string }>(req);
       if (!body.approver) {
-        sendJson(res, 400, { error: 'approver is required' });
+        sendJson(res, 400, { error: 'approver is required' }, req);
         return;
       }
       if (!state.commandService) {
-        sendJson(res, 503, { error: 'command_service_unavailable' });
+        sendJson(res, 503, { error: 'command_service_unavailable' }, req);
         return;
       }
       if (!state.fabric) {
         sendJson(res, 503, {
           error: 'message_fabric_unavailable',
           message: 'Cannot reach orchestration-worker to run the planner right now.',
-        });
+        }, req);
         return;
       }
 
       const graph = await state.persistentWorkGraph!.load(projectId);
       const ready = graph.listReadyNodes(projectId);
       if (ready.length === 0) {
-        sendJson(res, 200, { projectId, readyNodeIds: [], message: 'No ready nodes to plan.' });
+        sendJson(res, 200, { projectId, readyNodeIds: [], message: 'No ready nodes to plan.' }, req);
         return;
       }
 
@@ -1239,7 +1271,7 @@ export function createControlApiServer(state: ControlApiState) {
         taskIdsByNodeId,
         targetPath: targetPath ?? null,
         message: 'Planning requested. Check GET /v1/work-graph/:projectId shortly for the result.',
-      });
+      }, req);
       return;
     }
 
@@ -1251,7 +1283,7 @@ export function createControlApiServer(state: ControlApiState) {
       const store = state.agentRunReadModel ?? new InMemoryAgentRunReadModelStore();
       const statusParam = url.searchParams.get('status');
       const status = statusParam === 'running' || statusParam === 'completed' || statusParam === 'failed' ? statusParam : undefined;
-      sendJson(res, 200, { agentRuns: await store.list(status ? { status } : undefined) });
+      sendJson(res, 200, { agentRuns: await store.list(status ? { status } : undefined) }, req);
       return;
     }
 
@@ -1261,10 +1293,10 @@ export function createControlApiServer(state: ControlApiState) {
       const store = state.agentRunReadModel ?? new InMemoryAgentRunReadModelStore();
       const snapshot = await store.get(workPackageId);
       if (!snapshot) {
-        sendJson(res, 404, { error: `No agent run known for work package ${workPackageId}` });
+        sendJson(res, 404, { error: `No agent run known for work package ${workPackageId}` }, req);
         return;
       }
-      sendJson(res, 200, snapshot);
+      sendJson(res, 200, snapshot, req);
       return;
     }
 
@@ -1287,7 +1319,7 @@ export function createControlApiServer(state: ControlApiState) {
         agents: await Promise.all(
           agents.map(async (agent) => enrichAgentWithControlState(state, await enrichAgentWithProject(state, agent))),
         ),
-      });
+      }, req);
       return;
     }
 
@@ -1296,10 +1328,10 @@ export function createControlApiServer(state: ControlApiState) {
       const agentId = decodeURIComponent(agentMatch[1]!);
       const agent = await state.agentRegistry?.get(agentId);
       if (!agent) {
-        sendJson(res, 404, { error: `No agent known for id ${agentId}` });
+        sendJson(res, 404, { error: `No agent known for id ${agentId}` }, req);
         return;
       }
-      sendJson(res, 200, await enrichAgentWithControlState(state, await enrichAgentWithProject(state, agent)));
+      sendJson(res, 200, await enrichAgentWithControlState(state, await enrichAgentWithProject(state, agent)), req);
       return;
     }
 
@@ -1310,14 +1342,14 @@ export function createControlApiServer(state: ControlApiState) {
     // record and reads back as controlState "active".
     if (path === '/v1/specialists' && req.method === 'GET') {
       const records = (await state.specialistControlStore?.list()) ?? [];
-      sendJson(res, 200, { specialists: records });
+      sendJson(res, 200, { specialists: records }, req);
       return;
     }
 
     const specialistMatch = path.match(/^\/v1\/specialists\/([^/]+)$/);
     if (specialistMatch && req.method === 'GET') {
       const specialistId = decodeURIComponent(specialistMatch[1]!);
-      sendJson(res, 200, await getSpecialistControlState(state, specialistId));
+      sendJson(res, 200, await getSpecialistControlState(state, specialistId), req);
       return;
     }
 
@@ -1328,7 +1360,7 @@ export function createControlApiServer(state: ControlApiState) {
       const status = (url.searchParams.get('status') as ProjectStatus | null) ?? undefined;
       const owner = url.searchParams.get('owner') ?? undefined;
       const projects = (await state.projectStore?.list({ status, owner })) ?? [];
-      sendJson(res, 200, { projects });
+      sendJson(res, 200, { projects }, req);
       return;
     }
 
@@ -1337,10 +1369,10 @@ export function createControlApiServer(state: ControlApiState) {
       const projectId = decodeURIComponent(workProjectMatch[1]!);
       const project = await state.projectStore?.get(projectId);
       if (!project) {
-        sendJson(res, 404, { error: `No project known for id ${projectId}` });
+        sendJson(res, 404, { error: `No project known for id ${projectId}` }, req);
         return;
       }
-      sendJson(res, 200, project);
+      sendJson(res, 200, project, req);
       return;
     }
 
@@ -1358,7 +1390,7 @@ export function createControlApiServer(state: ControlApiState) {
         productionStatus,
         deployments,
         incidents,
-      });
+      }, req);
       return;
     }
 
@@ -1378,7 +1410,7 @@ export function createControlApiServer(state: ControlApiState) {
       }>(req);
 
       if (!body.releasePackageId || !body.targetVersion) {
-        sendJson(res, 400, { error: 'releasePackageId and targetVersion are required' });
+        sendJson(res, 400, { error: 'releasePackageId and targetVersion are required' }, req);
         return;
       }
 
@@ -1427,9 +1459,9 @@ export function createControlApiServer(state: ControlApiState) {
           correlationId,
         );
 
-        sendJson(res, outcome.deployment.status === 'deployed' ? 200 : 500, outcome);
+        sendJson(res, outcome.deployment.status === 'deployed' ? 200 : 500, outcome, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -1445,7 +1477,7 @@ export function createControlApiServer(state: ControlApiState) {
       }>(req);
 
       if (!body.deploymentId || !body.reason) {
-        sendJson(res, 400, { error: 'deploymentId and reason are required' });
+        sendJson(res, 400, { error: 'deploymentId and reason are required' }, req);
         return;
       }
 
@@ -1474,9 +1506,9 @@ export function createControlApiServer(state: ControlApiState) {
           correlationId,
         );
 
-        sendJson(res, 200, outcome);
+        sendJson(res, 200, outcome, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -1486,7 +1518,7 @@ export function createControlApiServer(state: ControlApiState) {
       const projectId = decodeURIComponent(deploymentsListMatch[1]!);
       state.deploymentEngine ??= new DeploymentEngine();
       const deployments = state.deploymentEngine.listDeployments(projectId);
-      sendJson(res, 200, { projectId, deployments });
+      sendJson(res, 200, { projectId, deployments }, req);
       return;
     }
 
@@ -1495,7 +1527,7 @@ export function createControlApiServer(state: ControlApiState) {
       const projectId = decodeURIComponent(incidentsListMatch[1]!);
       state.deploymentEngine ??= new DeploymentEngine();
       const incidents = state.deploymentEngine.listIncidents(projectId);
-      sendJson(res, 200, { projectId, incidents });
+      sendJson(res, 200, { projectId, incidents }, req);
       return;
     }
 
@@ -1504,7 +1536,7 @@ export function createControlApiServer(state: ControlApiState) {
       const assignedAgentId = url.searchParams.get('agent') ?? undefined;
       const projectId = url.searchParams.get('project') ?? undefined;
       const tasks = (await state.taskStore?.list({ status, assignedAgentId, projectId })) ?? [];
-      sendJson(res, 200, { tasks });
+      sendJson(res, 200, { tasks }, req);
       return;
     }
 
@@ -1513,10 +1545,10 @@ export function createControlApiServer(state: ControlApiState) {
       const taskId = decodeURIComponent(taskMatch[1]!);
       const task = await state.taskStore?.get(taskId);
       if (!task) {
-        sendJson(res, 404, { error: `No task known for id ${taskId}` });
+        sendJson(res, 404, { error: `No task known for id ${taskId}` }, req);
         return;
       }
-      sendJson(res, 200, task);
+      sendJson(res, 200, task, req);
       return;
     }
 
@@ -1524,7 +1556,7 @@ export function createControlApiServer(state: ControlApiState) {
       const statusFilter = url.searchParams.get('status') ?? undefined;
       const all = (await state.opportunityReader?.listOpportunities()) ?? [];
       const filtered = statusFilter ? all.filter((o) => o.status === statusFilter) : all;
-      sendJson(res, 200, { opportunities: filtered });
+      sendJson(res, 200, { opportunities: filtered }, req);
       return;
     }
 
@@ -1533,10 +1565,10 @@ export function createControlApiServer(state: ControlApiState) {
       const opportunityId = decodeURIComponent(opportunityMatch[1]!);
       const opportunity = await state.opportunityReader?.getOpportunity(opportunityId);
       if (!opportunity) {
-        sendJson(res, 404, { error: `No opportunity known for id ${opportunityId}` });
+        sendJson(res, 404, { error: `No opportunity known for id ${opportunityId}` }, req);
         return;
       }
-      sendJson(res, 200, opportunity);
+      sendJson(res, 200, opportunity, req);
       return;
     }
 
@@ -1568,7 +1600,7 @@ export function createControlApiServer(state: ControlApiState) {
 
     if (path === '/v1/niches' && req.method === 'GET') {
       const niches = (await state.opportunityReader?.listNiches()) ?? [];
-      sendJson(res, 200, { niches });
+      sendJson(res, 200, { niches }, req);
       return;
     }
 
@@ -1578,7 +1610,7 @@ export function createControlApiServer(state: ControlApiState) {
       const reader = state.opportunityReader;
       const business = await reader?.getBusiness(businessId);
       if (!business) {
-        sendJson(res, 404, { error: `No prospect known for id ${businessId}` });
+        sendJson(res, 404, { error: `No prospect known for id ${businessId}` }, req);
         return;
       }
       const problems = (await reader?.listProblems({ businessId })) ?? [];
@@ -1619,7 +1651,7 @@ export function createControlApiServer(state: ControlApiState) {
         ]),
       ];
       const evidence = (await reader?.listEvidence(evidenceIds)) ?? [];
-      sendJson(res, 200, { business, discoveryCandidate, runId: runId ?? null, problems, opportunities, outreach, evidence });
+      sendJson(res, 200, { business, discoveryCandidate, runId: runId ?? null, problems, opportunities, outreach, evidence }, req);
       return;
     }
 
@@ -1630,7 +1662,7 @@ export function createControlApiServer(state: ControlApiState) {
       const requestedRunId = url.searchParams.get('runId') ?? undefined;
       const runId = requestedRunId ?? (await reader?.getLatestRun(nicheId))?.runId;
       if (!runId) {
-        sendJson(res, 200, { nicheId, runId: null, prospects: [] });
+        sendJson(res, 200, { nicheId, runId: null, prospects: [] }, req);
         return;
       }
       const [candidates, problems, opportunities] = await Promise.all([
@@ -1659,7 +1691,7 @@ export function createControlApiServer(state: ControlApiState) {
           };
         }),
       );
-      sendJson(res, 200, { nicheId, runId, prospects });
+      sendJson(res, 200, { nicheId, runId, prospects }, req);
       return;
     }
 
@@ -1670,7 +1702,7 @@ export function createControlApiServer(state: ControlApiState) {
       const requestedRunId = url.searchParams.get('runId') ?? undefined;
       const runId = requestedRunId ?? (await reader?.getLatestRun(nicheId))?.runId;
       const events = runId ? ((await reader?.listEvents(runId)) ?? []) : [];
-      sendJson(res, 200, { nicheId, runId: runId ?? null, events });
+      sendJson(res, 200, { nicheId, runId: runId ?? null, events }, req);
       return;
     }
 
@@ -1727,7 +1759,7 @@ export function createControlApiServer(state: ControlApiState) {
         outreachDraftsAwaitingReview,
         businessesConsidered,
         cap: COMMERCIAL_SUMMARY_BUSINESS_CAP,
-      });
+      }, req);
       return;
     }
 
@@ -1743,7 +1775,7 @@ export function createControlApiServer(state: ControlApiState) {
         stage: stage ?? undefined,
         opportunityId,
       })) ?? [];
-      sendJson(res, 200, { deals });
+      sendJson(res, 200, { deals }, req);
       return;
     }
 
@@ -1759,7 +1791,7 @@ export function createControlApiServer(state: ControlApiState) {
       if (!body.opportunityId || !body.primaryProspectId || !body.title) {
         sendJson(res, 400, {
           error: 'opportunityId, primaryProspectId, and title are required',
-        });
+        }, req);
         return;
       }
       try {
@@ -1771,11 +1803,11 @@ export function createControlApiServer(state: ControlApiState) {
           currency: body.currency,
           actor: body.actor ?? 'commercial.sales-representative',
         });
-        sendJson(res, 201, deal);
+        sendJson(res, 201, deal, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -1785,11 +1817,11 @@ export function createControlApiServer(state: ControlApiState) {
       const dealId = decodeURIComponent(commercialDealContactsMatch[1]!);
       const deal = await state.commercialPipeline?.getDeal(dealId);
       if (!deal) {
-        sendJson(res, 404, { error: `Deal not found: ${dealId}` });
+        sendJson(res, 404, { error: `Deal not found: ${dealId}` }, req);
         return;
       }
       const contacts = (await state.commercialPipeline?.listContacts(deal.primaryProspectId)) ?? [];
-      sendJson(res, 200, { contacts });
+      sendJson(res, 200, { contacts }, req);
       return;
     }
 
@@ -1797,7 +1829,7 @@ export function createControlApiServer(state: ControlApiState) {
       const dealId = decodeURIComponent(commercialDealContactsMatch[1]!);
       const deal = await state.commercialPipeline?.getDeal(dealId);
       if (!deal) {
-        sendJson(res, 404, { error: `Deal not found: ${dealId}` });
+        sendJson(res, 404, { error: `Deal not found: ${dealId}` }, req);
         return;
       }
       const body = await readJsonBody<{
@@ -1817,7 +1849,7 @@ export function createControlApiServer(state: ControlApiState) {
         };
       }>(req);
       if (!body.name || !body.provenance) {
-        sendJson(res, 400, { error: 'name and provenance are required' });
+        sendJson(res, 400, { error: 'name and provenance are required' }, req);
         return;
       }
       try {
@@ -1832,11 +1864,11 @@ export function createControlApiServer(state: ControlApiState) {
           verificationStatus: body.verificationStatus ?? 'unverified',
           provenance: body.provenance,
         });
-        sendJson(res, 201, contact);
+        sendJson(res, 201, contact, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -1846,16 +1878,16 @@ export function createControlApiServer(state: ControlApiState) {
       const contactId = decodeURIComponent(commercialContactVerifyMatch[1]!);
       const body = await readJsonBody<{ status?: ContactVerificationStatus }>(req);
       if (!body.status) {
-        sendJson(res, 400, { error: 'status is required (unverified | verified | bounced)' });
+        sendJson(res, 400, { error: 'status is required (unverified | verified | bounced)' }, req);
         return;
       }
       try {
         const contact = await state.commercialPipeline!.verifyContact(contactId, body.status);
-        sendJson(res, 200, contact);
+        sendJson(res, 200, contact, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -1871,7 +1903,7 @@ export function createControlApiServer(state: ControlApiState) {
         senderAgentId?: string;
       }>(req);
       if (!body.contactId || !body.channel || !body.body) {
-        sendJson(res, 400, { error: 'contactId, channel, and body are required' });
+        sendJson(res, 400, { error: 'contactId, channel, and body are required' }, req);
         return;
       }
       try {
@@ -1883,11 +1915,11 @@ export function createControlApiServer(state: ControlApiState) {
           body: body.body,
           senderAgentId: body.senderAgentId,
         });
-        sendJson(res, 201, event);
+        sendJson(res, 201, event, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -1904,7 +1936,7 @@ export function createControlApiServer(state: ControlApiState) {
       if (!body.outreachEventId || !body.contactId || !body.sentiment || !body.content) {
         sendJson(res, 400, {
           error: 'outreachEventId, contactId, sentiment, and content are required',
-        });
+        }, req);
         return;
       }
       try {
@@ -1915,11 +1947,11 @@ export function createControlApiServer(state: ControlApiState) {
           sentiment: body.sentiment,
           content: body.content,
         });
-        sendJson(res, 201, response);
+        sendJson(res, 201, response, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -1949,11 +1981,11 @@ export function createControlApiServer(state: ControlApiState) {
           },
           body.actor ?? 'commercial.sales-representative',
         );
-        sendJson(res, 200, deal);
+        sendJson(res, 200, deal, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -1962,7 +1994,7 @@ export function createControlApiServer(state: ControlApiState) {
     if (commercialDealProposalsMatch && req.method === 'GET') {
       const dealId = decodeURIComponent(commercialDealProposalsMatch[1]!);
       const proposals = (await state.commercialPipeline?.listProposals(dealId)) ?? [];
-      sendJson(res, 200, { proposals });
+      sendJson(res, 200, { proposals }, req);
       return;
     }
 
@@ -1981,7 +2013,7 @@ export function createControlApiServer(state: ControlApiState) {
       if (!body.title || !body.scope || !body.deliverables || !body.pricingModel || !body.totalAmount || !body.validUntil) {
         sendJson(res, 400, {
           error: 'title, scope, deliverables, pricingModel, totalAmount, and validUntil are required',
-        });
+        }, req);
         return;
       }
       try {
@@ -1996,11 +2028,11 @@ export function createControlApiServer(state: ControlApiState) {
           discountPercent: body.discountPercent,
           validUntil: body.validUntil,
         });
-        sendJson(res, 201, proposal);
+        sendJson(res, 201, proposal, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -2015,11 +2047,11 @@ export function createControlApiServer(state: ControlApiState) {
           body.actor ?? 'ceo',
           body.ceoApprovalId,
         );
-        sendJson(res, 200, proposal);
+        sendJson(res, 200, proposal, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -2033,11 +2065,11 @@ export function createControlApiServer(state: ControlApiState) {
           proposalId,
           body.actor ?? 'commercial.sales-representative',
         );
-        sendJson(res, 200, proposal);
+        sendJson(res, 200, proposal, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -2052,11 +2084,11 @@ export function createControlApiServer(state: ControlApiState) {
           body.actor ?? 'commercial.sales-representative',
           body.reason,
         );
-        sendJson(res, 200, result);
+        sendJson(res, 200, result, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -2071,11 +2103,11 @@ export function createControlApiServer(state: ControlApiState) {
           body.actor ?? 'commercial.sales-representative',
           body.reason,
         );
-        sendJson(res, 200, deal);
+        sendJson(res, 200, deal, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -2085,10 +2117,10 @@ export function createControlApiServer(state: ControlApiState) {
       const dealId = decodeURIComponent(commercialDealGetMatch[1]!);
       const deal = await state.commercialPipeline?.getDeal(dealId);
       if (!deal) {
-        sendJson(res, 404, { error: `Deal not found: ${dealId}` });
+        sendJson(res, 404, { error: `Deal not found: ${dealId}` }, req);
         return;
       }
-      sendJson(res, 200, deal);
+      sendJson(res, 200, deal, req);
       return;
     }
 
@@ -2099,7 +2131,7 @@ export function createControlApiServer(state: ControlApiState) {
         currency: 'USD',
       };
       const attributions = (await state.commercialPipeline?.listRevenueAttributions()) ?? [];
-      sendJson(res, 200, { summary, attributions });
+      sendJson(res, 200, { summary, attributions }, req);
       return;
     }
 
@@ -2109,7 +2141,7 @@ export function createControlApiServer(state: ControlApiState) {
 
     if (path === '/v1/customers' && req.method === 'GET') {
       const customers = (await state.customerSuccess?.listCustomers()) ?? [];
-      sendJson(res, 200, { customers });
+      sendJson(res, 200, { customers }, req);
       return;
     }
 
@@ -2123,7 +2155,7 @@ export function createControlApiServer(state: ControlApiState) {
         lifetimeValue?: number;
       }>(req);
       if (!body.prospectId || !body.companyName) {
-        sendJson(res, 400, { error: 'prospectId and companyName are required' });
+        sendJson(res, 400, { error: 'prospectId and companyName are required' }, req);
         return;
       }
       try {
@@ -2135,9 +2167,9 @@ export function createControlApiServer(state: ControlApiState) {
           mrr: body.mrr,
           lifetimeValue: body.lifetimeValue,
         });
-        sendJson(res, 201, customer);
+        sendJson(res, 201, customer, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2155,7 +2187,7 @@ export function createControlApiServer(state: ControlApiState) {
         notes?: string;
       }>(req);
       if (!body.projectId || !body.status || body.scopeDeliveredPercent === undefined || !body.clientSignoff) {
-        sendJson(res, 400, { error: 'projectId, status, scopeDeliveredPercent, and clientSignoff are required' });
+        sendJson(res, 400, { error: 'projectId, status, scopeDeliveredPercent, and clientSignoff are required' }, req);
         return;
       }
       try {
@@ -2169,9 +2201,9 @@ export function createControlApiServer(state: ControlApiState) {
           kpiResults: body.kpiResults,
           notes: body.notes,
         });
-        sendJson(res, 201, outcome);
+        sendJson(res, 201, outcome, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2181,10 +2213,10 @@ export function createControlApiServer(state: ControlApiState) {
       const projectId = decodeURIComponent(projectDeliveryOutcomeMatch[1]!) as ProjectId;
       const outcome = await state.customerSuccess?.getDeliveryOutcome(ProjectIdSchema.parse(projectId));
       if (!outcome) {
-        sendJson(res, 404, { error: `Delivery outcome not found for project ${projectId}` });
+        sendJson(res, 404, { error: `Delivery outcome not found for project ${projectId}` }, req);
         return;
       }
-      sendJson(res, 200, outcome);
+      sendJson(res, 200, outcome, req);
       return;
     }
 
@@ -2192,7 +2224,7 @@ export function createControlApiServer(state: ControlApiState) {
     if (customerSupportCasesMatch && req.method === 'GET') {
       const customerId = decodeURIComponent(customerSupportCasesMatch[1]!) as CustomerId;
       const cases = (await state.customerSuccess?.listSupportCases(CustomerIdSchema.parse(customerId))) ?? [];
-      sendJson(res, 200, { supportCases: cases });
+      sendJson(res, 200, { supportCases: cases }, req);
       return;
     }
 
@@ -2208,7 +2240,7 @@ export function createControlApiServer(state: ControlApiState) {
         slaHours?: number;
       }>(req);
       if (!body.title || !body.description || !body.severity || !body.reportedBy) {
-        sendJson(res, 400, { error: 'title, description, severity, and reportedBy are required' });
+        sendJson(res, 400, { error: 'title, description, severity, and reportedBy are required' }, req);
         return;
       }
       try {
@@ -2222,9 +2254,9 @@ export function createControlApiServer(state: ControlApiState) {
           assignedSpecialist: body.assignedSpecialist,
           slaHours: body.slaHours,
         });
-        sendJson(res, 201, supportCase);
+        sendJson(res, 201, supportCase, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2237,7 +2269,7 @@ export function createControlApiServer(state: ControlApiState) {
         resolvedAt?: string;
       }>(req);
       if (!body.resolutionSummary) {
-        sendJson(res, 400, { error: 'resolutionSummary is required' });
+        sendJson(res, 400, { error: 'resolutionSummary is required' }, req);
         return;
       }
       try {
@@ -2245,9 +2277,9 @@ export function createControlApiServer(state: ControlApiState) {
           resolutionSummary: body.resolutionSummary,
           resolvedAt: body.resolvedAt,
         });
-        sendJson(res, 200, resolved);
+        sendJson(res, 200, resolved, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2256,7 +2288,7 @@ export function createControlApiServer(state: ControlApiState) {
     if (customerFeedbackMatch && req.method === 'GET') {
       const customerId = decodeURIComponent(customerFeedbackMatch[1]!) as CustomerId;
       const feedback = (await state.customerSuccess?.listFeedback(CustomerIdSchema.parse(customerId))) ?? [];
-      sendJson(res, 200, { feedback });
+      sendJson(res, 200, { feedback }, req);
       return;
     }
 
@@ -2272,7 +2304,7 @@ export function createControlApiServer(state: ControlApiState) {
         actionableQuotes?: string[];
       }>(req);
       if (!body.projectId || body.npsScore === undefined || body.csatScore === undefined || !body.sentiment || !body.category || !body.feedbackText) {
-        sendJson(res, 400, { error: 'projectId, npsScore, csatScore, sentiment, category, and feedbackText are required' });
+        sendJson(res, 400, { error: 'projectId, npsScore, csatScore, sentiment, category, and feedbackText are required' }, req);
         return;
       }
       try {
@@ -2286,9 +2318,9 @@ export function createControlApiServer(state: ControlApiState) {
           feedbackText: body.feedbackText,
           actionableQuotes: body.actionableQuotes,
         });
-        sendJson(res, 201, fb);
+        sendJson(res, 201, fb, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2298,10 +2330,10 @@ export function createControlApiServer(state: ControlApiState) {
       const projectId = decodeURIComponent(projectFinancialsMatch[1]!) as ProjectId;
       const summary = await state.customerSuccess?.getFinancialSummary(ProjectIdSchema.parse(projectId));
       if (!summary) {
-        sendJson(res, 404, { error: `Financial summary not found for project ${projectId}` });
+        sendJson(res, 404, { error: `Financial summary not found for project ${projectId}` }, req);
         return;
       }
-      sendJson(res, 200, summary);
+      sendJson(res, 200, summary, req);
       return;
     }
 
@@ -2316,7 +2348,7 @@ export function createControlApiServer(state: ControlApiState) {
         costs?: Partial<FinancialCosts>;
       }>(req);
       if (!body.customerId || body.contractRevenue === undefined || !body.costs) {
-        sendJson(res, 400, { error: 'customerId, contractRevenue, and costs are required' });
+        sendJson(res, 400, { error: 'customerId, contractRevenue, and costs are required' }, req);
         return;
       }
       try {
@@ -2329,9 +2361,9 @@ export function createControlApiServer(state: ControlApiState) {
           collectedAmount: body.collectedAmount,
           costs: body.costs,
         });
-        sendJson(res, 201, summary);
+        sendJson(res, 201, summary, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2341,17 +2373,17 @@ export function createControlApiServer(state: ControlApiState) {
       const customerId = decodeURIComponent(customerGetMatch[1]!) as CustomerId;
       const customer = await state.customerSuccess?.getCustomer(CustomerIdSchema.parse(customerId));
       if (!customer) {
-        sendJson(res, 404, { error: `Customer not found: ${customerId}` });
+        sendJson(res, 404, { error: `Customer not found: ${customerId}` }, req);
         return;
       }
-      sendJson(res, 200, customer);
+      sendJson(res, 200, customer, req);
       return;
     }
 
     if (path === '/v1/learnings' && req.method === 'GET') {
       const category = url.searchParams.get('category') as LearningCategory | null;
       const learnings = (await state.customerSuccess?.listLearnings(category ?? undefined)) ?? [];
-      sendJson(res, 200, { learnings });
+      sendJson(res, 200, { learnings }, req);
       return;
     }
 
@@ -2371,7 +2403,7 @@ export function createControlApiServer(state: ControlApiState) {
         };
       }>(req);
       if (!body.sourceType || !body.title || !body.category || !body.keyInsight || !body.recommendedActions) {
-        sendJson(res, 400, { error: 'sourceType, title, category, keyInsight, and recommendedActions are required' });
+        sendJson(res, 400, { error: 'sourceType, title, category, keyInsight, and recommendedActions are required' }, req);
         return;
       }
       try {
@@ -2386,9 +2418,9 @@ export function createControlApiServer(state: ControlApiState) {
           recommendedActions: body.recommendedActions,
           impactOnFutureEstimates: body.impactOnFutureEstimates,
         });
-        sendJson(res, 201, learning);
+        sendJson(res, 201, learning, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2404,7 +2436,7 @@ export function createControlApiServer(state: ControlApiState) {
         activeLearnings: [],
         calibratedAt: new Date().toISOString(),
       };
-      sendJson(res, 200, { calibration });
+      sendJson(res, 200, { calibration }, req);
       return;
     }
 
@@ -2415,13 +2447,13 @@ export function createControlApiServer(state: ControlApiState) {
     if (path === '/v1/company/overview' && req.method === 'GET') {
       try {
         if (!state.companyLoop) {
-          sendJson(res, 503, { error: 'Company loop subsystem not initialized' });
+          sendJson(res, 503, { error: 'Company loop subsystem not initialized' }, req);
           return;
         }
         const overview = await state.companyLoop.generateCompanyOverview();
-        sendJson(res, 200, { overview });
+        sendJson(res, 200, { overview }, req);
       } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
@@ -2429,25 +2461,25 @@ export function createControlApiServer(state: ControlApiState) {
     if (path === '/v1/company/loop/run' && req.method === 'POST') {
       try {
         if (!state.companyLoop) {
-          sendJson(res, 503, { error: 'Company loop subsystem not initialized' });
+          sendJson(res, 503, { error: 'Company loop subsystem not initialized' }, req);
           return;
         }
         const body = (await readJsonBody(req)) as RunCycleInput;
         const cycle = await state.companyLoop.runCycle(body);
-        sendJson(res, 201, { cycle });
+        sendJson(res, 201, { cycle }, req);
       } catch (err) {
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
 
     if (path === '/v1/company/loop/cycles' && req.method === 'GET') {
       if (!state.companyLoop) {
-        sendJson(res, 503, { error: 'Company loop subsystem not initialized' });
+        sendJson(res, 503, { error: 'Company loop subsystem not initialized' }, req);
         return;
       }
       const cycles = state.companyLoop.listCycles();
-      sendJson(res, 200, { cycles });
+      sendJson(res, 200, { cycles }, req);
       return;
     }
 
@@ -2456,10 +2488,10 @@ export function createControlApiServer(state: ControlApiState) {
       const cycleId = decodeURIComponent(loopCycleMatch[1]!);
       const cycle = state.companyLoop?.getCycle(cycleId);
       if (!cycle) {
-        sendJson(res, 404, { error: `No company loop cycle found with id ${cycleId}` });
+        sendJson(res, 404, { error: `No company loop cycle found with id ${cycleId}` }, req);
         return;
       }
-      sendJson(res, 200, { cycle });
+      sendJson(res, 200, { cycle }, req);
       return;
     }
 
@@ -2470,7 +2502,7 @@ export function createControlApiServer(state: ControlApiState) {
       const execId = url.searchParams.get('execId') ?? undefined;
       const all = (await state.artifactStore?.list()) ?? [];
       const filtered = execId ? all.filter((a) => a.producedFor === execId) : all;
-      sendJson(res, 200, { artifacts: filtered });
+      sendJson(res, 200, { artifacts: filtered }, req);
       return;
     }
 
@@ -2479,10 +2511,10 @@ export function createControlApiServer(state: ControlApiState) {
       const artifactId = decodeURIComponent(artifactMatch[1]!);
       const artifact = await state.artifactStore?.get(artifactId);
       if (!artifact) {
-        sendJson(res, 404, { error: `No artifact known for id ${artifactId}` });
+        sendJson(res, 404, { error: `No artifact known for id ${artifactId}` }, req);
         return;
       }
-      sendJson(res, 200, artifact);
+      sendJson(res, 200, artifact, req);
       return;
     }
 
@@ -2520,7 +2552,7 @@ export function createControlApiServer(state: ControlApiState) {
         return;
       }
       if (!state.commandService) {
-        sendJson(res, 503, { error: 'command_service_unavailable' });
+        sendJson(res, 503, { error: 'command_service_unavailable' }, req);
         return;
       }
 
@@ -2545,25 +2577,25 @@ export function createControlApiServer(state: ControlApiState) {
 
       try {
         const result = await state.commandService.execute(envelope);
-        sendJson(res, result.status === 'applied' ? 201 : 200, result);
+        sendJson(res, result.status === 'applied' ? 201 : 200, result, req);
       } catch (err) {
         if (err instanceof CommandError) {
           const status = err.code === 'UNAUTHORIZED' ? 403 : err.code === 'NOT_FOUND' ? 404 : 400;
-          sendJson(res, status, { error: err.code, message: err.message });
+          sendJson(res, status, { error: err.code, message: err.message }, req);
           return;
         }
-        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
 
     if (path === '/v1/gates/pending' && req.method === 'GET') {
-      sendJson(res, 200, { gates: await state.controlPlane.listPending() });
+      sendJson(res, 200, { gates: await state.controlPlane.listPending() }, req);
       return;
     }
 
     if (path === '/v1/audit/recent' && req.method === 'GET') {
-      sendJson(res, 200, { records: await listRecentAudit(state) });
+      sendJson(res, 200, { records: await listRecentAudit(state) }, req);
       return;
     }
 
@@ -2575,7 +2607,7 @@ export function createControlApiServer(state: ControlApiState) {
         (item) => item.waitId === waitId,
       );
       if (!gate) {
-        sendJson(res, 404, { error: 'gate_not_pending', waitId });
+        sendJson(res, 404, { error: 'gate_not_pending', waitId }, req);
         return;
       }
       const artifacts = state.artifactStore ? await state.artifactStore.list() : undefined;
@@ -2587,10 +2619,10 @@ export function createControlApiServer(state: ControlApiState) {
         projectRegistry: state.projectRegistry,
       });
       if (!review) {
-        sendJson(res, 404, { error: 'no_intake_for_gate', waitId });
+        sendJson(res, 404, { error: 'no_intake_for_gate', waitId }, req);
         return;
       }
-      sendJson(res, 200, { review });
+      sendJson(res, 200, { review }, req);
       return;
     }
 
@@ -2603,7 +2635,7 @@ export function createControlApiServer(state: ControlApiState) {
         rationale?: string;
       }>(req);
       if (!body.decision || !body.approver || !body.rationale) {
-        sendJson(res, 400, { error: 'decision, approver, and rationale are required' });
+        sendJson(res, 400, { error: 'decision, approver, and rationale are required' }, req);
         return;
       }
       try {
@@ -2713,11 +2745,11 @@ export function createControlApiServer(state: ControlApiState) {
             }));
         }
 
-        sendJson(res, 200, { ...result, applyResult: applyResult ?? null, runtimeSync });
+        sendJson(res, 200, { ...result, applyResult: applyResult ?? null, runtimeSync }, req);
       } catch (err) {
         sendJson(res, 400, {
           error: err instanceof Error ? err.message : String(err),
-        });
+        }, req);
       }
       return;
     }
@@ -2762,14 +2794,14 @@ export function createControlApiServer(state: ControlApiState) {
         };
 
         const graph = await buildCompanyGraph(state, filterOptions);
-        sendJson(res, 200, graph);
+        sendJson(res, 200, graph, req);
       } catch (err) {
-        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) }, req);
       }
       return;
     }
 
-    sendJson(res, 404, { error: 'not_found', path });
+    sendJson(res, 404, { error: 'not_found', path }, req);
   });
 }
 
