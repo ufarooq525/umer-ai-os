@@ -1,0 +1,275 @@
+- generic [ref=f1e3]:
+  - navigation [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - link "U Umer AI OS Autonomous OS" [ref=f1e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=f1e7]:
+          - generic [ref=f1e8]: U
+          - generic [ref=f1e9]:
+            - text: Umer AI OS
+            - generic [ref=f1e10]: Autonomous OS
+      - button "Collapse navigation" [ref=f1e11] [cursor=pointer]
+    - generic [ref=f1e14]:
+      - link "Home" [ref=f1e16] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f1e23]:
+        - button "Opportunities & Leads" [ref=f1e24] [cursor=pointer]
+        - generic [ref=f1e28]:
+          - link "Opportunities" [ref=f1e29] [cursor=pointer]:
+            - /url: /company/opportunities
+          - link "Prospects" [ref=f1e35] [cursor=pointer]:
+            - /url: /company/prospects
+          - link "Markets & Niches" [ref=f1e43] [cursor=pointer]:
+            - /url: /markets
+          - link "SEO Sites" [ref=f1e49] [cursor=pointer]:
+            - /url: /seo
+      - generic [ref=f1e55]:
+        - button "Approvals & Decisions" [ref=f1e56] [cursor=pointer]
+        - generic [ref=f1e60]:
+          - link "Approvals" [ref=f1e61] [cursor=pointer]:
+            - /url: /decisions
+          - link "Quality Review" [ref=f1e68] [cursor=pointer]:
+            - /url: /gates
+          - link "Attention Items" [ref=f1e74] [cursor=pointer]:
+            - /url: /attention
+      - generic [ref=f1e79]:
+        - button "Agents & Work" [ref=f1e80] [cursor=pointer]
+        - generic [ref=f1e84]:
+          - link "Agents" [ref=f1e85] [cursor=pointer]:
+            - /url: /company/agents
+          - link "Projects" [ref=f1e91] [cursor=pointer]:
+            - /url: /company/projects
+          - link "Tasks" [ref=f1e99] [cursor=pointer]:
+            - /url: /company/tasks
+          - link "Activity" [ref=f1e105] [cursor=pointer]:
+            - /url: /activity
+      - generic [ref=f1e114]:
+        - button "Sales" [ref=f1e115] [cursor=pointer]
+        - generic [ref=f1e119]:
+          - link "Pipeline (CRM)" [ref=f1e120] [cursor=pointer]:
+            - /url: /sales
+          - link "Proposals" [ref=f1e126] [cursor=pointer]:
+            - /url: /sales/proposals
+          - link "Customers" [ref=f1e132] [cursor=pointer]:
+            - /url: /sales/customers
+      - generic [ref=f1e140]:
+        - button "Finance" [ref=f1e141] [cursor=pointer]
+        - link "Revenue & Outcomes" [ref=f1e146] [cursor=pointer]:
+          - /url: /finance
+      - button "Advanced" [ref=f1e152] [cursor=pointer]
+  - button "Open JARVIS" [ref=f1e156] [cursor=pointer]: Ask JARVIS
+  - generic [ref=f1e158]:
+    - banner [ref=f1e159]:
+      - generic [ref=f1e160]:
+        - generic [ref=f1e161]:
+          - link "OS" [ref=f1e163] [cursor=pointer]:
+            - /url: /command-center
+          - generic [ref=f1e164]: Dashboard
+        - generic [ref=f1e168]:
+          - heading "Autonomous Company OS" [level=1] [ref=f1e169]
+          - generic [ref=f1e170]: Real-time executive control plane
+      - button "Search company & entities... ⌘K" [ref=f1e172] [cursor=pointer]:
+        - generic [ref=f1e173]: Search company & entities...
+        - generic [ref=f1e178]: ⌘K
+      - generic [ref=f1e179]:
+        - link "SYSTEM" [ref=f1e180] [cursor=pointer]:
+          - /url: /system-health
+        - link "0 ATTENTION" [ref=f1e185] [cursor=pointer]:
+          - /url: /attention
+        - link "Quality & Review Gates" [ref=f1e189] [cursor=pointer]:
+          - /url: /gates
+        - link "Company Settings" [ref=f1e193] [cursor=pointer]:
+          - /url: /settings
+    - main [ref=f1e197]:
+      - generic [ref=f1e200]:
+        - generic [ref=f1e201]:
+          - generic [ref=f1e202]:
+            - generic [ref=f1e203]:
+              - generic [ref=f1e204]:
+                - generic [ref=f1e205]: UMER AI OS · EXECUTIVE CONTROL PLANE
+                - generic [ref=f1e206]: INCIDENT
+              - heading "Good morning, CEO." [level=1] [ref=f1e211]
+              - paragraph [ref=f1e212]: Here's what is happening across the company.
+            - link "⬡ Company Intelligence Graph →" [ref=f1e214] [cursor=pointer]:
+              - /url: /company/graph
+              - generic [ref=f1e215]: ⬡
+              - text: Company Intelligence Graph →
+          - generic [ref=f1e216]:
+            - link "Active Work 0 0 agents working · 0 active tasks" [ref=f1e217] [cursor=pointer]:
+              - /url: /company/projects
+              - generic [ref=f1e218]: Active Work
+              - generic [ref=f1e223]: "0"
+              - generic [ref=f1e224]: 0 agents working · 0 active tasks
+            - link "Attention 0 0 decisions · 0 blocked" [ref=f1e225] [cursor=pointer]:
+              - /url: /attention
+              - generic [ref=f1e226]: Attention
+              - generic [ref=f1e230]: "0"
+              - generic [ref=f1e231]: 0 decisions · 0 blocked
+            - link "Opportunities 0 0 promising · 0 selected" [ref=f1e232] [cursor=pointer]:
+              - /url: /company/opportunities
+              - generic [ref=f1e233]: Opportunities
+              - generic [ref=f1e238]: "0"
+              - generic [ref=f1e239]: 0 promising · 0 selected
+            - link "Recognized Revenue $0 Won $0 · Pipeline $$0" [ref=f1e240] [cursor=pointer]:
+              - /url: /finance
+              - generic [ref=f1e241]: Recognized Revenue
+              - generic [ref=f1e245]: $0
+              - generic [ref=f1e246]: Won $0 · Pipeline $$0
+        - generic [ref=f1e248]:
+          - generic [ref=f1e249]:
+            - generic [ref=f1e250]:
+              - generic [ref=f1e251]:
+                - generic [ref=f1e252]: COMPANY NOW
+                - generic [ref=f1e255]: ·
+                - generic [ref=f1e256]: Real-time autonomous operations
+              - heading "What is happening right now" [level=2] [ref=f1e257]
+            - generic [ref=f1e258]:
+              - generic [ref=f1e259]:
+                - generic [ref=f1e260]: "0"
+                - generic [ref=f1e261]: Agents Working
+              - generic [ref=f1e262]:
+                - generic [ref=f1e263]: "0"
+                - generic [ref=f1e264]: Work Packages
+              - generic [ref=f1e265]:
+                - generic [ref=f1e266]: "0"
+                - generic [ref=f1e267]: Decisions Waiting
+          - generic [ref=f1e269]:
+            - generic [ref=f1e274]:
+              - generic [ref=f1e275]: NO ACTIVE WORK IN PROGRESS
+              - paragraph [ref=f1e276]: There are currently no executing Work Packages. The autonomous company is standing by and waiting for executable work or new opportunity qualification.
+            - generic [ref=f1e277]:
+              - link "View Opportunities" [ref=f1e278] [cursor=pointer]:
+                - /url: /company/opportunities
+              - link "Inspect Workforce" [ref=f1e282] [cursor=pointer]:
+                - /url: /company/agents
+        - generic [ref=f1e284]:
+          - generic [ref=f1e285]:
+            - generic [ref=f1e286]:
+              - heading "CEO Attention" [level=3] [ref=f1e290]
+              - link "View all (0)" [ref=f1e291] [cursor=pointer]:
+                - /url: /attention
+            - generic [ref=f1e294]: Zero critical attention signals. Operations are within autonomous thresholds.
+          - generic [ref=f1e300]:
+            - generic [ref=f1e301]:
+              - heading "Active Work" [level=3] [ref=f1e306]
+              - link "Projects (0)" [ref=f1e307] [cursor=pointer]:
+                - /url: /company/projects
+            - generic [ref=f1e310]: No active packages running. Ready for new project execution.
+          - generic [ref=f1e312]:
+            - generic [ref=f1e313]:
+              - heading "Next Actions" [level=3] [ref=f1e318]
+              - generic [ref=f1e319]: Executive priority
+            - generic [ref=f1e320]:
+              - 'link "Inspect high-value qualified opportunities PRIORITY: MEDIUM · TARGET: Opportunities" [ref=f1e321] [cursor=pointer]':
+                - /url: /company/opportunities
+                - generic [ref=f1e322]:
+                  - generic [ref=f1e323]: Inspect high-value qualified opportunities
+                  - generic [ref=f1e324]: "PRIORITY: MEDIUM · TARGET: Opportunities"
+              - 'link "Verify nightly automated quality gates & security scans PRIORITY: LOW · TARGET: Gates" [ref=f1e327] [cursor=pointer]':
+                - /url: /gates
+                - generic [ref=f1e328]:
+                  - generic [ref=f1e329]: Verify nightly automated quality gates & security scans
+                  - generic [ref=f1e330]: "PRIORITY: LOW · TARGET: Gates"
+        - generic [ref=f1e334]:
+          - generic [ref=f1e335]:
+            - generic [ref=f1e336]:
+              - generic [ref=f1e337]: AUTONOMOUS COMPANY OPERATING FLOW
+              - generic [ref=f1e338]: From Market Discovery to Revenue Lineage & Autonomous Learning
+            - generic [ref=f1e339]: Click any stage to drill down
+          - generic [ref=f1e340]:
+            - link "Market Scan City Rankings" [ref=f1e342] [cursor=pointer]:
+              - /url: /markets
+              - generic [ref=f1e343]:
+                - generic [ref=f1e344]: Market
+                - generic [ref=f1e345]: Scan
+              - generic [ref=f1e346]: City Rankings
+            - link "Opportunity 0 Monitoring" [ref=f1e350] [cursor=pointer]:
+              - /url: /company/opportunities
+              - generic [ref=f1e351]:
+                - generic [ref=f1e352]: Opportunity
+                - generic [ref=f1e353]: "0"
+              - generic [ref=f1e354]: Monitoring
+            - link "Sales CRM Deals & Drafts" [ref=f1e358] [cursor=pointer]:
+              - /url: /sales
+              - generic [ref=f1e359]:
+                - generic [ref=f1e360]: Sales
+                - generic [ref=f1e361]: CRM
+              - generic [ref=f1e362]: Deals & Drafts
+            - link "Requirements Formal Standard Spec" [ref=f1e366] [cursor=pointer]:
+              - /url: /delivery/requirements
+              - generic [ref=f1e367]:
+                - generic [ref=f1e368]: Requirements
+                - generic [ref=f1e369]: Formal
+              - generic [ref=f1e370]: Standard Spec
+            - link "Product Ready Scope & Brief" [ref=f1e374] [cursor=pointer]:
+              - /url: /delivery
+              - generic [ref=f1e375]:
+                - generic [ref=f1e376]: Product
+                - generic [ref=f1e377]: Ready
+              - generic [ref=f1e378]: Scope & Brief
+            - link "Engineering 0 Codebase" [ref=f1e382] [cursor=pointer]:
+              - /url: /projects
+              - generic [ref=f1e383]:
+                - generic [ref=f1e384]: Engineering
+                - generic [ref=f1e385]: "0"
+              - generic [ref=f1e386]: Codebase
+            - link "QA Verified Test Suite" [ref=f1e390] [cursor=pointer]:
+              - /url: /gates
+              - generic [ref=f1e391]:
+                - generic [ref=f1e392]: QA
+                - generic [ref=f1e393]: Verified
+              - generic [ref=f1e394]: Test Suite
+            - link "Release Packaged Automated CI" [ref=f1e398] [cursor=pointer]:
+              - /url: /delivery
+              - generic [ref=f1e399]:
+                - generic [ref=f1e400]: Release
+                - generic [ref=f1e401]: Packaged
+              - generic [ref=f1e402]: Automated CI
+            - link "Customer Success Health 98%" [ref=f1e406] [cursor=pointer]:
+              - /url: /sales/customers
+              - generic [ref=f1e407]:
+                - generic [ref=f1e408]: Customer
+                - generic [ref=f1e409]: Success
+              - generic [ref=f1e410]: Health 98%
+            - link "Revenue $0 Recognized" [ref=f1e414] [cursor=pointer]:
+              - /url: /finance
+              - generic [ref=f1e415]:
+                - generic [ref=f1e416]: Revenue
+                - generic [ref=f1e417]: $0
+              - generic [ref=f1e418]: Recognized
+            - link "Learning Loop Autonomous" [ref=f1e422] [cursor=pointer]:
+              - /url: /autonomy
+              - generic [ref=f1e423]:
+                - generic [ref=f1e424]: Learning
+                - generic [ref=f1e425]: Loop
+              - generic [ref=f1e426]: Autonomous
+        - generic [ref=f1e427]:
+          - generic [ref=f1e428]:
+            - generic [ref=f1e429]:
+              - heading "Recent Decisions" [level=3] [ref=f1e435]
+              - link "Decision Center →" [ref=f1e436] [cursor=pointer]:
+                - /url: /decisions
+            - generic [ref=f1e437]: No quality gates, decisions, or watchdog findings pending. Autonomous operations running within approved boundaries.
+          - generic [ref=f1e442]:
+            - generic [ref=f1e443]:
+              - heading "Executive Activity" [level=3] [ref=f1e448]
+              - link "Full Stream →" [ref=f1e449] [cursor=pointer]:
+                - /url: /activity
+            - generic [ref=f1e450]: Zero recent audit events logged.
+          - generic [ref=f1e452]:
+            - generic [ref=f1e453]:
+              - heading "Outcome & Learning" [level=3] [ref=f1e458]
+              - link "Revenue Lineage →" [ref=f1e459] [cursor=pointer]:
+                - /url: /finance
+            - generic [ref=f1e460]:
+              - generic [ref=f1e461]:
+                - generic [ref=f1e462]: Pricing Multiplier
+                - strong [ref=f1e463]: 1.0x
+              - generic [ref=f1e464]:
+                - generic [ref=f1e465]: Target Margin
+                - strong [ref=f1e466]: 85%
+              - generic [ref=f1e467]:
+                - generic [ref=f1e468]: Active Autonomous Cycles
+                - strong [ref=f1e469]: 1 Cycles
+        - group [ref=f1e470]:
+          - generic "Technical operations & runtime diagnostics" [ref=f1e471] [cursor=pointer]

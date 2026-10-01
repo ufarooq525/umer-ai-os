@@ -1,0 +1,156 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]:
+      - link "U Umer AI OS Autonomous OS" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - generic [ref=e7]:
+          - generic [ref=e8]: U
+          - generic [ref=e9]:
+            - text: Umer AI OS
+            - generic [ref=e10]: Autonomous OS
+      - button "Collapse navigation" [ref=e11] [cursor=pointer]
+    - generic [ref=e14]:
+      - link "Home" [ref=e16] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e23]:
+        - button "Opportunities & Leads" [ref=e24] [cursor=pointer]
+        - generic [ref=e28]:
+          - link "Opportunities" [ref=e29] [cursor=pointer]:
+            - /url: /company/opportunities
+          - link "Prospects" [ref=e35] [cursor=pointer]:
+            - /url: /company/prospects
+          - link "Markets & Niches" [ref=e43] [cursor=pointer]:
+            - /url: /markets
+          - link "SEO Sites" [ref=e49] [cursor=pointer]:
+            - /url: /seo
+      - generic [ref=e55]:
+        - button "Approvals & Decisions" [ref=e56] [cursor=pointer]
+        - generic [ref=e60]:
+          - link "Approvals" [ref=e61] [cursor=pointer]:
+            - /url: /decisions
+          - link "Quality Review" [ref=e68] [cursor=pointer]:
+            - /url: /gates
+          - link "Attention Items" [ref=e74] [cursor=pointer]:
+            - /url: /attention
+      - generic [ref=e79]:
+        - button "Agents & Work" [ref=e80] [cursor=pointer]
+        - generic [ref=e84]:
+          - link "Agents" [ref=e85] [cursor=pointer]:
+            - /url: /company/agents
+          - link "Projects" [ref=e91] [cursor=pointer]:
+            - /url: /company/projects
+          - link "Tasks" [ref=e99] [cursor=pointer]:
+            - /url: /company/tasks
+          - link "Activity" [ref=e105] [cursor=pointer]:
+            - /url: /activity
+      - generic [ref=e114]:
+        - button "Sales" [ref=e115] [cursor=pointer]
+        - generic [ref=e119]:
+          - link "Pipeline (CRM)" [ref=e120] [cursor=pointer]:
+            - /url: /sales
+          - link "Proposals" [ref=e126] [cursor=pointer]:
+            - /url: /sales/proposals
+          - link "Customers" [ref=e132] [cursor=pointer]:
+            - /url: /sales/customers
+      - generic [ref=e140]:
+        - button "Finance" [ref=e141] [cursor=pointer]
+        - link "Revenue & Outcomes" [ref=e146] [cursor=pointer]:
+          - /url: /finance
+      - button "Advanced" [ref=e152] [cursor=pointer]
+  - button "Open JARVIS" [ref=e156] [cursor=pointer]: Ask JARVIS
+  - generic [ref=e158]:
+    - banner [ref=e159]:
+      - generic [ref=e160]:
+        - generic [ref=e161]: OS
+        - generic [ref=e164]:
+          - heading "Autonomous Company OS" [level=1] [ref=e165]
+          - generic [ref=e166]: Real-time executive control plane
+      - button "Search company & entities... ⌘K" [ref=e168] [cursor=pointer]:
+        - generic [ref=e169]: Search company & entities...
+        - generic [ref=e174]: ⌘K
+      - generic [ref=e175]:
+        - link "SYSTEM" [ref=e176] [cursor=pointer]:
+          - /url: /system-health
+        - link "0 ATTENTION" [ref=e181] [cursor=pointer]:
+          - /url: /attention
+        - link "Quality & Review Gates" [ref=e185] [cursor=pointer]:
+          - /url: /gates
+        - link "Company Settings" [ref=e189] [cursor=pointer]:
+          - /url: /settings
+    - main [ref=e193]:
+      - generic [ref=e196]:
+        - generic [ref=e197]:
+          - heading "Today" [level=1] [ref=e198]
+          - paragraph [ref=e199]: Thursday, October 1, 2026
+        - generic [ref=e200]:
+          - button "Dismiss guide" [ref=e201] [cursor=pointer]
+          - heading "How to use this system" [level=2] [ref=e205]
+          - paragraph [ref=e206]: "Your AI business OS runs on a simple loop:"
+          - list [ref=e207]:
+            - listitem [ref=e208]:
+              - strong [ref=e209]: "Find leads:"
+              - text: Run
+              - link "discovery for a niche + city" [ref=e210] [cursor=pointer]:
+                - /url: /markets
+              - text: (e.g. "Umrah travel agencies in Makkah")
+            - listitem [ref=e211]:
+              - strong [ref=e212]: "Review & approve opportunities:"
+              - text: Check
+              - link "ranked opportunities" [ref=e213] [cursor=pointer]:
+                - /url: /company/opportunities
+              - text: and approve the ones worth pursuing
+            - listitem [ref=e214]:
+              - strong [ref=e215]: "Review outreach drafts:"
+              - text: All outreach is
+              - link "draft-only" [ref=e216] [cursor=pointer]:
+                - /url: /sales/proposals
+              - text: — you decide when to send
+            - listitem [ref=e217]:
+              - strong [ref=e218]: "Track deals:"
+              - text: Follow
+              - link "your sales pipeline" [ref=e219] [cursor=pointer]:
+                - /url: /sales
+              - text: as leads become customers
+        - generic [ref=e220]:
+          - generic [ref=e221]:
+            - generic [ref=e222]:
+              - heading "Needs Your Decision" [level=3] [ref=e223]
+              - generic [ref=e224]: "0"
+            - generic [ref=e226]:
+              - generic [ref=e230]: No decisions pending.
+              - generic [ref=e231]: You're all caught up!
+          - generic [ref=e232]:
+            - generic [ref=e233]:
+              - heading "What's New" [level=3] [ref=e234]
+              - link "View All →" [ref=e235] [cursor=pointer]:
+                - /url: /company/opportunities
+            - generic [ref=e237]:
+              - generic [ref=e241]: No new opportunities this week.
+              - link "Start discovery →" [ref=e242] [cursor=pointer]:
+                - /url: /markets
+          - generic [ref=e243]:
+            - generic [ref=e244]:
+              - heading "What's Running" [level=3] [ref=e245]
+              - link "View All →" [ref=e246] [cursor=pointer]:
+                - /url: /company/agents
+            - generic [ref=e247]:
+              - generic [ref=e248]:
+                - generic [ref=e249]:
+                  - generic [ref=e250]: Active Agents
+                  - generic [ref=e251]: "0"
+                - generic [ref=e252]:
+                  - generic [ref=e253]: Opportunities
+                  - generic [ref=e254]: "0"
+              - generic [ref=e255]: No agents currently active.
+        - link "Next Step Start discovery for a niche" [ref=e261] [cursor=pointer]:
+          - /url: /markets
+          - generic [ref=e267]:
+            - generic [ref=e268]: Next Step
+            - generic [ref=e269]: Start discovery for a niche
+        - generic [ref=e273]:
+          - link "Advanced Dashboard" [ref=e274] [cursor=pointer]:
+            - /url: /command-center
+          - link "Company Graph" [ref=e279] [cursor=pointer]:
+            - /url: /company/graph
+          - link "System Health" [ref=e284] [cursor=pointer]:
+            - /url: /system-health
