@@ -171,6 +171,11 @@ export function startOpportunityRun(market?: Parameters<typeof normalizeMarket>[
   state.progress = 5;
   state.stage = 'Discovery';
   state.completedStages = [];
+  
+  if (!live) {
+    console.warn('[opportunity-engine] GOOGLE_MAPS_API_KEY not configured — falling back to deterministic example businesses (*.example domains). Set GOOGLE_MAPS_API_KEY in .env for live Google Places discovery.');
+    event('Discovery Agent', '⚠️ Running in FALLBACK mode: GOOGLE_MAPS_API_KEY not configured. Using example businesses only.', 'Discovery', 'warn');
+  }
   state.error = null;
   state.events = [];
   state.metrics = { businessesDiscovered: 0, businessesResearched: 0, problemsDetected: 0, opportunitiesFound: 0, highValueOpportunities: 0, estimatedPipeline: 0 };

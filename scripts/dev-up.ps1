@@ -60,7 +60,8 @@ if ($Status) {
     @{ Name = 'NATS (Message Fabric)'; Port = 4222 },
     @{ Name = 'control-api';           Port = 4000 },
     @{ Name = 'agent-worker (health)'; Port = 8080 },
-    @{ Name = 'web dashboard';         Port = 3001 }
+    @{ Name = 'web dashboard';         Port = 3001 },
+    @{ Name = 'jarvis-api';            Port = 3010 }
   )
   foreach ($row in $rows) {
     $up = Test-PortOpen -Port $row.Port
@@ -139,9 +140,24 @@ if (Test-PortOpen -Port 3001) {
   else { Write-Host "    still starting - check $webLog in a few seconds" -ForegroundColor Yellow }
 }
 
+# --- 5. jarvis-api (CEO agentic assistant) ------------------------------------
+Write-Step 'jarvis-api'
+if (Test-PortOpen -Port 3010) {
+  Write-Skip 'http://127.0.0.1:3010'
+} else {
+  $jarvisLog = Join-Path $LogDir 'jarvis-api.log'
+  $jarvisErrLog = Join-Path $LogDir 'jarvis-api.err.log'
+  Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', 'pnpm --filter @umer/jarvis-api run dev' `
+    -WorkingDirectory $RepoRoot -RedirectStandardOutput $jarvisLog -RedirectStandardError $jarvisErrLog -WindowStyle Hidden
+  Start-Sleep -Seconds 4
+  if (Test-PortOpen -Port 3010) { Write-Ok "started - log: $jarvisLog" }
+  else { Write-Host "    still starting - check $jarvisLog in a few seconds" -ForegroundColor Yellow }
+}
+
 Write-Host ""
 Write-Host "Dashboard:   http://localhost:3001/command-center" -ForegroundColor White
 Write-Host "control-api: http://localhost:4000/health" -ForegroundColor White
+Write-Host "jarvis-api:  http://localhost:3010/health" -ForegroundColor White
 Write-Host "Logs:        $LogDir" -ForegroundColor DarkGray
 Write-Host "Stop everything with: scripts\dev-down.ps1" -ForegroundColor DarkGray
 

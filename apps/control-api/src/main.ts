@@ -19,6 +19,12 @@ import { connectCustomerSuccessStore } from './customer-success-link.js';
 const serviceName = 'control-api';
 const log = createLogger(serviceName);
 const env = loadEnv();
+
+// Log security configuration at startup
+const bindHost = process.env.CONTROL_API_BIND_HOST ?? '127.0.0.1';
+const corsOrigins = process.env.CONTROL_API_CORS_ORIGINS ?? 'http://localhost:3001,http://127.0.0.1:3001';
+const hasToken = Boolean(process.env.CONTROL_API_TOKEN?.trim());
+
 const state = await createControlApiState();
 await connectGateWaitStore(state);
 await connectSpecialistControlStore(state);
@@ -54,8 +60,19 @@ const qaNightly = startQaNightlyWatchdogCron(state, {
   onError: (err) => log.error({ err: err instanceof Error ? err.message : String(err) }, 'qa nightly watchdog tick failed'),
 });
 
-server.listen(env.CONTROL_API_PORT, () => {
-  log.info({ port: env.CONTROL_API_PORT, projects: state.projectRegistry.list().length, projectsRoot: state.projectRegistry.getProjectsRoot(), qaNightlyWatchdog: { enabled: qaNightly.enabled, cron: qaNightly.expression, projectId: 'school-app' } }, 'control-api listening');
+server.listen(env.CONTROL_API_PORT, bindHost, () => {
+  log.info({ 
+    host: bindHost,
+    port: env.CONTROL_API_PORT, 
+    projects: state.projectRegistry.list().length, 
+    projectsRoot: state.projectRegistry.getProjectsRoot(), 
+    qaNightlyWatchdog: { enabled: qaNightly.enabled, cron: qaNightly.expression, projectId: 'school-app' },
+    corsOrigins,
+    tokenAuth: hasToken
+  }, 'control-api listening');
+  if (!hasToken) {
+    log.warn('CONTROL_API_TOKEN not set — accepting requests from localhost without authentication. Set CONTROL_API_TOKEN in production.');
+  }
 });
 
 void runtime;
